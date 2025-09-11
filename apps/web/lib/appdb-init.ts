@@ -32,7 +32,7 @@ export function renderInitSql(schema: string, prefix: string): string {
     `CREATE SCHEMA IF NOT EXISTS ${s};`,
     `-- Core tables`,
     `CREATE TABLE IF NOT EXISTS ${t('users')} (
-  id UUID PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   email_verified BOOLEAN NOT NULL DEFAULT false,
@@ -40,8 +40,8 @@ export function renderInitSql(schema: string, prefix: string): string {
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );`,
     `CREATE TABLE IF NOT EXISTS ${t('user_connections')} (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
   alias TEXT NOT NULL CHECK (length(alias) BETWEEN 1 AND 50),
   dsn_cipher TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -50,16 +50,16 @@ export function renderInitSql(schema: string, prefix: string): string {
 );`,
     `-- Session storage (Better Auth: email/password)
 CREATE TABLE IF NOT EXISTS ${t('sessions')} (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
   UNIQUE(id)
 );`,
     `-- Verification codes (email verification, password reset)
 CREATE TABLE IF NOT EXISTS ${t('verification_codes')} (
-  id UUID PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
   code TEXT NOT NULL,
   purpose TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
