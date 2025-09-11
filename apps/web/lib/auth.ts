@@ -59,8 +59,19 @@ export const auth = betterAuth({
     modelName: `${prefix}accounts`,
     fields: {
       userId: 'user_id',
+      accountId: 'account_id',
+      providerId: 'provider_id',
+      accessToken: 'access_token',
+      refreshToken: 'refresh_token',
+      idToken: 'id_token',
+      accessTokenExpiresAt: 'access_token_expires_at',
+      refreshTokenExpiresAt: 'refresh_token_expires_at',
+      scope: 'scope',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
     },
     // keep default column name 'password' for hashed password
+    schema,
   },
   session: {
     modelName: `${prefix}sessions`,
