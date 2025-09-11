@@ -1,6 +1,19 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import {
+  Badge,
+  Button,
+  Code,
+  Group,
+  Paper,
+  Select,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core'
 
 type SavedConn = { id: string; alias: string }
 const STORAGE_KEY = 'rdv.savedConns'
@@ -23,24 +36,27 @@ export default function ConnectionsPage() {
   const [saved, setSaved] = useState<SavedConn[]>([])
   const [current, setCurrent] = useState<string | null>(null)
   const [alias, setAlias] = useState('')
-  const [selectedId, setSelectedId] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     setSaved(loadSaved())
     setCurrent(localStorage.getItem(CURRENT_KEY))
-    fetch('/api/connections').then((r) => r.json()).then((j) => setServerIds(j.ids || [])).catch((e) => setError(String(e)))
+    fetch('/api/connections')
+      .then((r) => r.json())
+      .then((j) => setServerIds(j.ids || []))
+      .catch((e) => setError(String(e)))
   }, [])
 
-  const canAdd = useMemo(() => alias.trim().length > 0 && serverIds.includes(selectedId), [alias, selectedId, serverIds])
+  const canAdd = useMemo(() => alias.trim().length > 0 && !!selectedId && serverIds.includes(selectedId), [alias, selectedId, serverIds])
 
   const onAdd = () => {
-    if (!canAdd) return
+    if (!canAdd || !selectedId) return
     const next = [...saved, { id: selectedId, alias: alias.trim() }]
     setSaved(next)
     saveSaved(next)
     setAlias('')
-    setSelectedId('')
+    setSelectedId(null)
   }
 
   const onRemove = (aliasToRemove: string) => {
@@ -59,45 +75,83 @@ export default function ConnectionsPage() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 720 }}>
-      <h2>连接管理（客户端书签，不含凭据）</h2>
-      <p style={{ color: '#64748b' }}>仅保存服务器允许的连接ID的“别名”，不保存连接串。服务器端通过白名单映射管理真实连接。</p>
-      {error && <p style={{ color: 'red' }}>加载失败：{error}</p>}
+    <Stack gap="md" maw={840}>
+      <div>
+        <Title order={3}>连接管理（客户端书签，不含凭据）</Title>
+        <Text c="dimmed">仅保存服务器允许的连接ID的“别名”，不保存连接串。服务器端通过白名单映射管理真实连接。</Text>
+        {error && (
+          <Text c="red" mt="xs">
+            加载失败：{error}
+          </Text>
+        )}
+      </div>
 
-      <section style={{ marginTop: 16 }}>
-        <h3>新增别名</h3>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input placeholder="别名（如：生产库）" value={alias} onChange={(e) => setAlias(e.target.value)} />
-          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-            <option value="">选择连接ID</option>
-            {serverIds.map((id) => (
-              <option key={id} value={id}>{id}</option>
-            ))}
-          </select>
-          <button disabled={!canAdd} onClick={onAdd}>添加</button>
-        </div>
-      </section>
+      <Paper withBorder p="md">
+        <Title order={4}>新增别名</Title>
+        <Group mt="sm" gap="sm" align="end">
+          <TextInput label="别名" placeholder="如：生产库" value={alias} onChange={(e) => setAlias(e.currentTarget.value)} w={220} />
+          <Select
+            label="连接ID"
+            placeholder="选择连接ID"
+            data={serverIds}
+            value={selectedId}
+            onChange={setSelectedId}
+            searchable
+            w={260}
+          />
+          <Button disabled={!canAdd} onClick={onAdd}>
+            添加
+          </Button>
+        </Group>
+      </Paper>
 
-      <section style={{ marginTop: 24 }}>
-        <h3>已保存</h3>
-        <ul>
-          {saved.map((s) => (
-            <li key={s.alias} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0' }}>
-              <span style={{ minWidth: 160 }}><strong>{s.alias}</strong></span>
-              <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{s.id}</code>
-              <button onClick={() => onUse(s.alias)} disabled={current === s.alias}>设为当前</button>
-              <button onClick={() => onRemove(s.alias)} style={{ color: '#ef4444' }}>删除</button>
-            </li>
-          ))}
-          {saved.length === 0 && <li style={{ color: '#64748b' }}>暂无别名</li>}
-        </ul>
-      </section>
+      <Paper withBorder p="md">
+        <Title order={4}>已保存</Title>
+        {saved.length === 0 ? (
+          <Text c="dimmed" mt="xs">
+            暂无别名
+          </Text>
+        ) : (
+          <Table mt="sm" striped withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>别名</Table.Th>
+                <Table.Th>连接ID</Table.Th>
+                <Table.Th w={200}>操作</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {saved.map((s) => (
+                <Table.Tr key={s.alias}>
+                  <Table.Td>
+                    <Badge variant={current === s.alias ? 'filled' : 'light'} color={current === s.alias ? 'green' : 'gray'}>
+                      {s.alias}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Code>{s.id}</Code>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap="xs">
+                      <Button size="xs" onClick={() => onUse(s.alias)} disabled={current === s.alias}>
+                        设为当前
+                      </Button>
+                      <Button size="xs" color="red" variant="light" onClick={() => onRemove(s.alias)}>
+                        删除
+                      </Button>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Paper>
 
-      <section style={{ marginTop: 24 }}>
-        <h3>当前连接</h3>
-        <p>{current ? current : '未选择（默认：default，如已配置）'}</p>
-      </section>
-    </main>
+      <Paper withBorder p="md">
+        <Title order={4}>当前连接</Title>
+        <Text mt="xs">{current ? current : '未选择（默认：default，如已配置）'}</Text>
+      </Paper>
+    </Stack>
   )
 }
-

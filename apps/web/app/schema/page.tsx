@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Loader, Paper, Stack, Table, Text, Title } from '@mantine/core'
 
 type TableMeta = { schema: string; name: string; columns: { name: string; dataType: string }[] }
 
@@ -17,28 +18,49 @@ export default function SchemaPage() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <main style={{ padding: 24 }}>加载中…</main>
-  if (error) return <main style={{ padding: 24, color: 'red' }}>加载失败：{error}</main>
+  if (loading)
+    return (
+      <Stack gap="md">
+        <Loader />
+        <Text c="dimmed">加载中…</Text>
+      </Stack>
+    )
+  if (error)
+    return (
+      <Text c="red">加载失败：{error}</Text>
+    )
 
   return (
-    <main style={{ padding: 24 }}>
-      <h2>Schema Explorer（Mock）</h2>
-      <p>来自 /api/schema/tables 的 mock 数据。</p>
-      <ul>
-        {tables.map((t) => (
-          <li key={`${t.schema}.${t.name}`}>
-            <strong>{t.schema}.{t.name}</strong>
-            <ul>
+    <Stack gap="md">
+      <div>
+        <Title order={3}>Schema Explorer（Mock）</Title>
+        <Text c="dimmed">来自 /api/schema/tables 的 mock 数据。</Text>
+      </div>
+      {tables.map((t) => (
+        <Paper withBorder p="sm" key={`${t.schema}.${t.name}`}>
+          <Title order={5}>
+            {t.schema}.{t.name}
+          </Title>
+          <Table mt="xs" striped withTableBorder withColumnBorders>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>列名</Table.Th>
+                <Table.Th>数据类型</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
               {t.columns.map((c) => (
-                <li key={c.name}>
-                  {c.name} <em style={{ color: '#666' }}>({c.dataType})</em>
-                </li>
+                <Table.Tr key={c.name}>
+                  <Table.Td>{c.name}</Table.Td>
+                  <Table.Td>
+                    <Text c="dimmed">{c.dataType}</Text>
+                  </Table.Td>
+                </Table.Tr>
               ))}
-            </ul>
-          </li>
-        ))}
-      </ul>
-    </main>
+            </Table.Tbody>
+          </Table>
+        </Paper>
+      ))}
+    </Stack>
   )
 }
-
