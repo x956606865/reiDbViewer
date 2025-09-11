@@ -49,12 +49,18 @@ export const auth = betterAuth({
   user: {
     modelName: `${prefix}users`,
     fields: {
-      passwordHash: 'password_hash',
       createdAt: 'created_at',
       updatedAt: 'updated_at',
       emailVerified: 'email_verified',
     },
     schema,
+  },
+  account: {
+    modelName: `${prefix}accounts`,
+    fields: {
+      userId: 'user_id',
+    },
+    // keep default column name 'password' for hashed password
   },
   session: {
     modelName: `${prefix}sessions`,

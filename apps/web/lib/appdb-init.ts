@@ -17,6 +17,7 @@ function expectedTableNames(prefix: string) {
   // Email+Password: users(with password_hash), sessions, verification_codes
   return [
     `${prefix}users`,
+    `${prefix}accounts`,
     `${prefix}sessions`,
     `${prefix}verification_codes`,
     `${prefix}user_connections`,
@@ -34,8 +35,23 @@ export function renderInitSql(schema: string, prefix: string): string {
     `CREATE TABLE IF NOT EXISTS ${t('users')} (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
   email_verified BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);`,
+    `-- Accounts (providers + password storage)
+CREATE TABLE IF NOT EXISTS ${t('accounts')} (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  provider_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  access_token TEXT,
+  refresh_token TEXT,
+  id_token TEXT,
+  access_token_expires_at TIMESTAMPTZ,
+  refresh_token_expires_at TIMESTAMPTZ,
+  scope TEXT,
+  password TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );`,
