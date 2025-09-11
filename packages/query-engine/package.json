@@ -1,0 +1,14 @@
+{
+  "name": "@rei-db-view/query-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sql": "./src/sql.ts"
+  },
+  "dependencies": {
+    "@rei-db-view/types": "workspace:*"
+  }
+}

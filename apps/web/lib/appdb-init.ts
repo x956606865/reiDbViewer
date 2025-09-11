@@ -1,0 +1,100 @@
+import { Pool } from 'pg'
+import { env } from './env'
+
+export type InitStatus = {
+  configured: boolean
+  schema: string
+  prefix: string
+  schemaExists: boolean
+  initialized: boolean
+  existingTables: string[]
+  expectedTables: string[]
+  warnings: string[]
+  suggestedSQL: string
+}
+
+function expectedTableNames(prefix: string) {
+  // Email+Password: users(with password_hash), sessions, verification_codes
+  return [
+    `${prefix}users`,
+    `${prefix}sessions`,
+    `${prefix}verification_codes`,
+    `${prefix}user_connections`,
+  ]
+}
+
+export function renderInitSql(schema: string, prefix: string): string {
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const s = q(schema)
+  const t = (name: string) => `${s}.${q(prefix + name)}`
+  return [
+    `-- Create schema if missing`,
+    `CREATE SCHEMA IF NOT EXISTS ${s};`,
+    `-- Core tables`,
+    `CREATE TABLE IF NOT EXISTS ${t('users')} (
+  id UUID PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);`,
+    `CREATE TABLE IF NOT EXISTS ${t('user_connections')} (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  alias TEXT NOT NULL CHECK (length(alias) BETWEEN 1 AND 50),
+  dsn_cipher TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
+  UNIQUE(user_id, alias)
+);`,
+    `-- Session storage (Better Auth: email/password)
+CREATE TABLE IF NOT EXISTS ${t('sessions')} (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  UNIQUE(id)
+);`,
+    `-- Verification codes (email verification, password reset)
+CREATE TABLE IF NOT EXISTS ${t('verification_codes')} (
+  id UUID PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  code TEXT NOT NULL,
+  purpose TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL
+);`,
+  ].join('\n')
+}
+
+export async function checkInitStatus(appPool: Pool, schema?: string, prefix?: string): Promise<InitStatus> {
+  const sch = schema || env.APP_DB_SCHEMA || 'public'
+  const pfx = prefix ?? env.APP_DB_TABLE_PREFIX ?? 'rdv_'
+  const warnings: string[] = []
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const resSchema = await appPool.query('SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1) AS exists', [sch])
+  const schemaExists = Boolean(resSchema.rows[0]?.exists)
+  let existingTables: string[] = []
+  if (schemaExists) {
+    const resTables = await appPool.query(
+      'SELECT tablename FROM pg_tables WHERE schemaname = $1 ORDER BY tablename',
+      [sch]
+    )
+    existingTables = resTables.rows.map((r: any) => String(r.tablename))
+  }
+  const exp = expectedTableNames(pfx)
+  const hasAllExpected = exp.every((t) => existingTables.includes(t))
+  const nonAppTables = existingTables.filter((t) => !exp.includes(t))
+  if (nonAppTables.length > 0) warnings.push(`Schema ${sch} 非空，其他表：` + nonAppTables.slice(0, 10).join(', '))
+
+  return {
+    configured: true,
+    schema: sch,
+    prefix: pfx,
+    schemaExists,
+    initialized: schemaExists && hasAllExpected,
+    existingTables,
+    expectedTables: exp,
+    warnings,
+    suggestedSQL: renderInitSql(sch, pfx),
+  }
+}

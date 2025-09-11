@@ -1,0 +1,32 @@
+{
+  "name": "@rei-db-view/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rei-db-view/query-engine": "workspace:*",
+    "@rei-db-view/types": "workspace:*",
+    "@tanstack/react-query": "^5.50.0",
+    "@tanstack/react-table": "^8.20.0",
+    "@tanstack/react-virtual": "^3.0.0-beta.26",
+    "@xyflow/react": "^12.0.0",
+    "next": "^15.1.0",
+    "pg": "^8.12.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-json-view": "^1.21.3",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "19.1.12",
+    "typescript": "^5.5.4"
+  }
+}

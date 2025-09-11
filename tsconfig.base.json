@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "allowJs": false,
+    "types": ["vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "@rei-db-view/types": ["packages/types/src"],
+      "@rei-db-view/query-engine": ["packages/query-engine/src"]
+    }
+  }
+}
