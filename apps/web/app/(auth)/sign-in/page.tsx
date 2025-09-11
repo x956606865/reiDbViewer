@@ -1,15 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { Anchor, Button, Paper, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
+import { notifications } from '@mantine/notifications'
 
 export default function SignInPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  const validEmail = useMemo(() => /.+@.+\..+/.test(email), [email])
+  const validPwd = useMemo(() => password.length >= 6, [password])
+  const canSubmit = validEmail && validPwd && !submitting
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setMsg(null)
+    if (!canSubmit) return
+    setSubmitting(true)
     try {
       const res = await fetch('/api/auth/sign-in/email', {
         method: 'POST',
@@ -18,29 +26,52 @@ export default function SignInPage() {
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error || '登录失败')
-      setMsg('登录成功，正在跳转…')
+      notifications.show({ color: 'teal', title: '登录成功', message: '正在跳转…' })
       window.location.href = '/'
     } catch (e: any) {
-      setMsg(String(e.message || e))
+      notifications.show({ color: 'red', title: '登录失败', message: String(e.message || e) })
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 420 }}>
-      <h1>登录</h1>
-      <form onSubmit={submit} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-        <label>
-          邮箱
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </label>
-        <label>
-          密码
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        </label>
-        <button type="submit">登录</button>
-      </form>
-      {msg && <p style={{ marginTop: 12 }}>{msg}</p>}
-    </main>
+    <Stack align="center" mt="xl">
+      <Paper withBorder p="lg" radius="md" maw={420} w="100%">
+        <Title order={3}>登录</Title>
+        <Text c="dimmed" size="sm" mt={4}>
+          使用邮箱与密码登录账户。
+        </Text>
+        <form onSubmit={submit}>
+          <Stack gap="sm" mt="md">
+            <TextInput
+              label="邮箱"
+              placeholder="you@example.com"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.currentTarget.value)}
+              error={email.length > 0 && !validEmail ? '邮箱格式不正确' : undefined}
+            />
+            <PasswordInput
+              label="密码"
+              placeholder="至少 6 位"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.currentTarget.value)}
+              error={password.length > 0 && !validPwd ? '密码至少 6 位' : undefined}
+            />
+            <Button type="submit" loading={submitting} disabled={!canSubmit} fullWidth>
+              登录
+            </Button>
+          </Stack>
+        </form>
+        <Text size="sm" mt="md">
+          还没有账号？
+          <Anchor component={Link} href="/sign-up" ml={6}>
+            去注册
+          </Anchor>
+        </Text>
+      </Paper>
+    </Stack>
   )
 }
-
