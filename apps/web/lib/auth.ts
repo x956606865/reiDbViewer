@@ -26,6 +26,14 @@ const pool = process.env.APP_DB_URL
 const prefix = env.APP_DB_TABLE_PREFIX || ''
 const schema = env.APP_DB_SCHEMA || 'public'
 
+// Ensure better-auth uses the configured schema when it generates unqualified table names
+if (pool) {
+  const quoted = '"' + schema.replace(/"/g, '""') + '"'
+  pool.on('connect', (client) => {
+    client.query(`SET search_path = pg_catalog, ${quoted}`).catch(() => {})
+  })
+}
+
 export const auth = betterAuth({
   // 指向应用数据库（仅在配置时启用）
   // better-auth 将使用现有表；我们不在应用内执行迁移
@@ -66,4 +74,3 @@ export const auth = betterAuth({
   },
   plugins: [nextCookies()],
 })
-
