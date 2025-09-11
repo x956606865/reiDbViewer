@@ -35,7 +35,9 @@ export function renderInitSql(schema: string, prefix: string): string {
   id UUID PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  email_verified BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );`,
     `CREATE TABLE IF NOT EXISTS ${t('user_connections')} (
   id UUID PRIMARY KEY,

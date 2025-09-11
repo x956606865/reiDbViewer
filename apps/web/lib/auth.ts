@@ -51,6 +51,8 @@ export const auth = betterAuth({
     fields: {
       passwordHash: 'password_hash',
       createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      emailVerified: 'email_verified',
     },
     schema,
   },
