@@ -68,8 +68,12 @@ CREATE TABLE IF NOT EXISTS ${t('accounts')} (
 CREATE TABLE IF NOT EXISTS ${t('sessions')} (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
+  ip_address TEXT,
+  user_agent TEXT,
   UNIQUE(id)
 );`,
     `-- Verification codes (email verification, password reset)
