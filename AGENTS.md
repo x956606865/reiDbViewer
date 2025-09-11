@@ -120,6 +120,11 @@
 - JSON：`jq`；YAML/XML：`yq`。
 - 官方文档：使用 Context7 获取库/API 文档（Next.js：`/vercel/next.js`；TanStack：`/tanstack/table`、`/tanstack/query`；Zod：`/colinhacks/zod`；pg：`/brianc/node-postgres`）。
 
+## 语言约定
+
+- 聊天对话时：一律使用中文回复。
+- 其他场景（代码注释、提交信息、文档、标识符等）：默认使用英文，除非用户特别要求中文。
+
 ## 风险与边界
 
 - 高并发 + LATERAL：需限流/超时与结果列聚合（对一对多默认 `count` 或 `json_agg(limit)`）。
