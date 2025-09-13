@@ -25,7 +25,10 @@ export default function BrowseTablePage() {
   const [gridCols, setGridCols] = useState<string[]>([])
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
   const [sorting, setSorting] = useState<SortingState>([])
+  // applied filters: 已应用到后端
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  // pending filters: 筛选框中的草稿，只有点击“应用”才会生效
+  const [pendingFilters, setPendingFilters] = useState<ColumnFiltersState>([])
 
   useEffect(() => {
     try {
@@ -256,7 +259,7 @@ export default function BrowseTablePage() {
         <Code block>{sql || '-- 无 SQL（等待生成）'}</Code>
       </Paper>
 
-      {columnFilters.length > 0 && (
+      {(columnFilters.length > 0 || JSON.stringify(pendingFilters) !== JSON.stringify(columnFilters)) && (
         <Group gap="xs" align="center">
           <Text size="sm" c="dimmed">已筛选:</Text>
           {columnFilters.map((f, idx) => (
@@ -272,6 +275,13 @@ export default function BrowseTablePage() {
               </span>
             </Badge>
           ))}
+          {JSON.stringify(pendingFilters) !== JSON.stringify(columnFilters) && (
+            <>
+              <Text size="sm" c="dimmed">（有未应用的更改）</Text>
+              <Button size="xs" onClick={() => { setColumnFilters(pendingFilters); setPage(0); runQuery(0, pageSize) }}>应用筛选</Button>
+              <Button size="xs" variant="subtle" color="gray" onClick={() => setPendingFilters(columnFilters)}>重置草稿</Button>
+            </>
+          )}
           <Button size="xs" variant="subtle" color="gray" onClick={() => {
             setColumnFilters([])
             setPage(0)
@@ -288,11 +298,11 @@ export default function BrowseTablePage() {
           setSorting((prev) => (typeof updater === 'function' ? updater(prev) : updater))
           setPage(0)
         }}
-        columnFilters={columnFilters}
+        columnFilters={pendingFilters}
         onColumnFiltersChange={(updater) => {
-          setColumnFilters((prev) => (typeof updater === 'function' ? updater(prev) : updater))
-          setPage(0)
+          setPendingFilters((prev) => (typeof updater === 'function' ? updater(prev) : updater))
         }}
+        onApplyFilters={() => { setColumnFilters(pendingFilters); setPage(0); runQuery(0, pageSize) }}
       />
     </Stack>
   )

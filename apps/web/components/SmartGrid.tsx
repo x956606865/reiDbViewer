@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { MantineReactTable, useMantineReactTable, type MRT_ColumnDef, type MRT_Icons } from 'mantine-react-table'
+import { Group, TextInput, Button } from '@mantine/core'
 import {
   IconArrowsSort,
   IconArrowNarrowDown,
@@ -25,9 +26,10 @@ export type SmartGridProps = {
   onSortingChange?: (updater: any) => void
   columnFilters?: any
   onColumnFiltersChange?: (updater: any) => void
+  onApplyFilters?: () => void
 }
 
-export default function SmartGrid({ columns, rows, height = 420, sorting, onSortingChange, columnFilters, onColumnFiltersChange }: SmartGridProps) {
+export default function SmartGrid({ columns, rows, height = 420, sorting, onSortingChange, columnFilters, onColumnFiltersChange, onApplyFilters }: SmartGridProps) {
   const colDefs = React.useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
       columns.map((key) => ({
@@ -114,7 +116,28 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
     enableColumnVirtualization: columns.length > 12,
     columnVirtualizerOptions: { overscan: 3 },
     rowVirtualizerOptions: { overscan: 8 },
-    defaultColumn: { minSize: 80, size: 160, maxSize: 480 },
+    defaultColumn: {
+      minSize: 80,
+      size: 160,
+      maxSize: 480,
+      // 自定义筛选 UI：输入框 + 应用按钮（只更新草稿，点击“应用”才提交）
+      Filter: ({ column, table }) => {
+        const val = (column.getFilterValue() as string) ?? ''
+        return (
+          <Group gap="xs" wrap="nowrap">
+            <TextInput
+              aria-label={`Filter by ${String(column.id)}`}
+              value={val}
+              onChange={(e) => column.setFilterValue(e.currentTarget.value)}
+              size="xs"
+              placeholder={`Filter by ${String(column.id)}`}
+              style={{ flex: 1, minWidth: 140 }}
+            />
+            <Button size="xs" variant="default" onClick={() => onApplyFilters?.()}>应用</Button>
+          </Group>
+        )
+      },
+    },
     mantinePaperProps: { withBorder: true },
     mantineTableProps: { highlightOnHover: true, striped: 'odd' },
     mantineTableHeadRowProps: { style: { height: 34 } },
@@ -156,6 +179,8 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
     onSortingChange,
     onColumnFiltersChange,
     icons,
+    // 将“应用筛选”传入内部，用于自定义 Filter 中调用
+    meta: { applyFilters: onApplyFilters },
   })
 
   return <MantineReactTable table={table} />
