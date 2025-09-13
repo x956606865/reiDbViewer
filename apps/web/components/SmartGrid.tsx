@@ -44,15 +44,32 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     columnResizeMode: 'onEnd',
     enableColumnOrdering: true,
     enableColumnFilters: true,
+    columnFilterDisplayMode: 'popover', // 过滤放到弹出层，去掉表头下方的输入行
     enableFilters: true,
     enableSorting: true,
     enableStickyHeader: true,
     enableHiding: true,
     enablePinning: true,
+    enableTopToolbar: false, // 关闭顶部工具栏，减少干扰
+    enableBottomToolbar: false, // 分页由外部控制
+    enablePagination: false,
     // 大数据集建议开启虚拟化
     enableRowVirtualization: rows.length > 50,
     enableColumnVirtualization: columns.length > 12,
+    columnVirtualizerOptions: { overscan: 3 },
+    rowVirtualizerOptions: { overscan: 8 },
+    defaultColumn: { minSize: 80, size: 160, maxSize: 480 },
     mantinePaperProps: { withBorder: true },
+    mantineTableProps: { highlightOnHover: true, striped: 'odd' },
+    mantineTableHeadCellProps: { style: { fontSize: 12, fontWeight: 600 } },
+    mantineTableBodyCellProps: {
+      style: {
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+        overflow: 'hidden',
+        maxWidth: 560,
+      },
+    },
     mantineTableContainerProps: {
       style: {
         maxHeight: height,
@@ -62,9 +79,9 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     initialState: {
       density: 'xs',
       columnOrder: columns,
+      showColumnFilters: false,
     },
   })
 
   return <MantineReactTable table={table} />
 }
-
