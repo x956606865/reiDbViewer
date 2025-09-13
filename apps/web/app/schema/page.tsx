@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code } from '@mantine/core'
 
@@ -70,6 +70,8 @@ export default function SchemaPage() {
     }
   }
 
+  const filteredTables = selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
+
   if (loading)
     return (
       <Stack gap="md">
@@ -81,10 +83,6 @@ export default function SchemaPage() {
     return (
       <Text c="red">加载失败：{error}</Text>
     )
-
-  const filteredTables = useMemo(() => {
-    return selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
-  }, [tables, selectedSchema])
 
   return (
     <Stack gap="md">
