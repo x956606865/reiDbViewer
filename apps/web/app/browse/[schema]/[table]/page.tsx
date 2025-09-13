@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button, Code, Group, NumberInput, Paper, Stack, Text, Title } from '@mantine/core'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { DataGrid } from '../../../../components/DataGrid'
+import SmartGrid from '../../../../components/SmartGrid'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
@@ -183,7 +183,7 @@ export default function BrowseTablePage() {
         <Code block>{sql || '-- 无 SQL（等待生成）'}</Code>
       </Paper>
 
-      <DataGrid columns={gridCols} rows={rows} height={420} />
+      <SmartGrid columns={gridCols} rows={rows} height={420} />
     </Stack>
   )
 }
