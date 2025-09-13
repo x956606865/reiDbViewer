@@ -7,6 +7,7 @@ import { decryptFromBase64 } from '@/lib/crypto'
 import type { ColumnMeta, SchemaSummary, TableMeta } from '@rei-db-view/types/meta'
 import { Pool } from 'pg'
 import { env } from '@/lib/env'
+import { saveSchemaCache } from '@/lib/schema-cache'
 
 const BodySchema = z.object({ userConnId: z.string().min(1) })
 
@@ -34,7 +35,12 @@ export async function POST(req: NextRequest) {
 
     // 2) Introspect with a safe, read-only transaction
     const { databases, schemas, tables, ddls } = await introspectPostgres(dsn)
-    return NextResponse.json({ databases, schemas, tables, ddls })
+
+    // Write to schema cache (best-effort)
+    const saved = await saveSchemaCache(userId, userConnId, { databases, schemas, tables, ddls })
+    const cacheStatus = saved.ok ? 'cached' : saved.reason === 'missing_table' ? 'cache_table_missing' : 'cache_failed'
+    const extra = saved.ok ? {} : saved.reason === 'missing_table' ? { suggestedSQL: saved.suggestedSQL } : { message: (saved as any).message }
+    return NextResponse.json({ databases, schemas, tables, ddls, cacheStatus, ...extra })
   } catch (e: any) {
     return NextResponse.json({
       error: 'introspect_failed',

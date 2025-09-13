@@ -21,6 +21,7 @@ function expectedTableNames(prefix: string) {
     `${prefix}sessions`,
     `${prefix}verification_codes`,
     `${prefix}user_connections`,
+    `${prefix}schema_cache`,
   ]
 }
 
@@ -63,6 +64,14 @@ CREATE TABLE IF NOT EXISTS ${t('accounts')} (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_used_at TIMESTAMPTZ,
   UNIQUE(user_id, alias)
+);`,
+    `-- Cached schema & DDLs per user-connection
+CREATE TABLE IF NOT EXISTS ${t('schema_cache')} (
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  user_conn_id TEXT NOT NULL REFERENCES ${t('user_connections')}(id) ON DELETE CASCADE,
+  payload JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, user_conn_id)
 );`,
     `-- Session storage (Better Auth: email/password)
 CREATE TABLE IF NOT EXISTS ${t('sessions')} (

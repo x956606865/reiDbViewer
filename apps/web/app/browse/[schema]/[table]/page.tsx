@@ -38,7 +38,10 @@ export default function BrowseTablePage() {
       setError(null)
       try {
         // 先尝试轻量的 mock/schema 接口（便于在未配置 APP_DB_URL 时也能展示）
-        const basic = await fetch('/api/schema/tables').then((r) => r.json()).catch(() => null)
+        const basicUrl = userConnId
+          ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}`
+          : '/api/schema/tables'
+        const basic = await fetch(basicUrl).then((r) => r.json()).catch(() => null)
         let found: TableMeta | null = null
         if (basic?.tables) {
           found = (basic.tables as TableMeta[]).find((t) => t.schema === schema && t.name === table) || null
@@ -184,4 +187,3 @@ export default function BrowseTablePage() {
     </Stack>
   )
 }
-

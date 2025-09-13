@@ -20,12 +20,17 @@ export default function SchemaPage() {
       const id = localStorage.getItem('rdv.currentUserConnId')
       setUserConnId(id)
     } catch {}
-    fetch('/api/schema/tables')
+  }, [])
+
+  useEffect(() => {
+    const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
+    setLoading(true)
+    fetch(url)
       .then((r) => r.json())
       .then((json) => setTables(json.tables || []))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [])
+  }, [userConnId])
 
   const onRefresh = async () => {
     if (!userConnId) {
