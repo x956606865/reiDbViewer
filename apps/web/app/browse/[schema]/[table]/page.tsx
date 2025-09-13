@@ -170,7 +170,8 @@ export default function BrowseTablePage() {
           if (res.ok) {
             execOk = true
             setSql(json.sql || '')
-            setGridCols((json.columns as string[]) || columns)
+            const apiCols: string[] = Array.isArray(json.columns) && json.columns.length > 0 ? json.columns : columns
+            setGridCols(apiCols)
             setRows((json.rows as Array<Record<string, unknown>>) || [])
           } else {
             // 失败时保留错误信息，稍后做预览降级
@@ -194,7 +195,8 @@ export default function BrowseTablePage() {
           })
           const json = await res.json()
           setSql(json.sql || json.text || '')
-          setGridCols(columns)
+          const apiCols: string[] = Array.isArray(json.columns) && json.columns.length > 0 ? json.columns : columns
+          setGridCols(apiCols)
           setRows([])
         } catch {}
       }

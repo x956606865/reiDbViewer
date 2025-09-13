@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
 import { buildSelectSql } from '@rei-db-view/query-engine/sql'
-import type { Select } from '@rei-db-view/types/ast'
+import type { Select, ColumnSelect, ComputedSelect } from '@rei-db-view/types/ast'
 import { withSafeSession } from '@/lib/db'
 import { env } from '@/lib/env'
 import { headers } from 'next/headers'
@@ -39,7 +39,14 @@ export async function POST(req: NextRequest) {
       return res.rows as Array<Record<string, unknown>>
     })
 
-    const columns = Object.keys(rows[0] ?? {})
+    // 列名：优先按 AST 投影推导；若有数据再校正为结果列顺序
+    const projected: string[] = (ast.columns || []).map((c: any) => {
+      const isCol = (c as ColumnSelect).kind === 'column'
+      if (isCol) return (c as ColumnSelect).alias || (c as ColumnSelect).ref.name
+      return (c as ComputedSelect).alias
+    })
+    const resultCols = Object.keys(rows[0] ?? {})
+    const columns = resultCols.length > 0 ? resultCols : projected
     return NextResponse.json({ sql: text, columns, rowCount: rows.length, rows })
   } catch (e: any) {
     return NextResponse.json({ error: 'db_query_failed', message: String(e?.message || e), preview: { text, values } }, { status: 500 })
