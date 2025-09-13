@@ -45,6 +45,9 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
             <Anchor component={Link} href="/connections" underline="hover">
               Connections
             </Anchor>
+            <Anchor component={Link} href="/ops" underline="hover">
+              Ops
+            </Anchor>
           </Group>
           <Group ml="auto" gap="xs">
             <Button component={Link} href="/install" variant="default" size="xs">
@@ -58,4 +61,3 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
     </AppShell>
   )
 }
-

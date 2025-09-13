@@ -1,143 +1,153 @@
-'use client'
+"use client"
 
-import { useEffect, useMemo, useState } from 'react'
-import {
-  Badge,
-  Button,
-  Code,
-  Group,
-  Paper,
-  Select,
-  Stack,
-  Table,
-  Text,
-  TextInput,
-  Title,
-} from '@mantine/core'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Badge, Button, Code, Group, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 
-type SavedConn = { id: string; alias: string }
-const STORAGE_KEY = 'rdv.savedConns'
-const CURRENT_KEY = 'rdv.currentConnId'
-
-function loadSaved(): SavedConn[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-  } catch {
-    return []
-  }
-}
-
-function saveSaved(conns: SavedConn[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(conns))
-}
+type UserConn = { id: string; alias: string; createdAt?: string | null; lastUsedAt?: string | null }
+const CURRENT_KEY = 'rdv.currentUserConnId'
 
 export default function ConnectionsPage() {
-  const [serverIds, setServerIds] = useState<string[]>([])
-  const [saved, setSaved] = useState<SavedConn[]>([])
-  const [current, setCurrent] = useState<string | null>(null)
+  const [items, setItems] = useState<UserConn[]>([])
   const [alias, setAlias] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [dsn, setDsn] = useState('')
+  const [currentId, setCurrentId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    setSaved(loadSaved())
-    setCurrent(localStorage.getItem(CURRENT_KEY))
-    fetch('/api/connections')
-      .then((r) => r.json())
-      .then((j) => setServerIds(j.ids || []))
-      .catch((e) => setError(String(e)))
+  const refresh = useCallback(() => {
+    setError(null)
+    fetch('/api/user/connections', { cache: 'no-store' })
+      .then(async (r) => {
+        if (r.status === 501) throw new Error('应用数据库未配置或未初始化，请先到 /install 按提示完成初始化。')
+        if (r.status === 401) throw new Error('未登录，请先登录。')
+        const j = await r.json()
+        setItems(j.items || [])
+      })
+      .catch((e) => setError(String(e?.message || e)))
   }, [])
 
-  const canAdd = useMemo(() => alias.trim().length > 0 && !!selectedId && serverIds.includes(selectedId), [alias, selectedId, serverIds])
+  useEffect(() => {
+    setCurrentId(localStorage.getItem(CURRENT_KEY))
+    refresh()
+  }, [refresh])
 
-  const onAdd = () => {
-    if (!canAdd || !selectedId) return
-    const next = [...saved, { id: selectedId, alias: alias.trim() }]
-    setSaved(next)
-    saveSaved(next)
-    setAlias('')
-    setSelectedId(null)
-  }
+  const canAdd = useMemo(() => alias.trim().length > 0 && dsn.trim().length > 0, [alias, dsn])
 
-  const onRemove = (aliasToRemove: string) => {
-    const next = saved.filter((s) => s.alias !== aliasToRemove)
-    setSaved(next)
-    saveSaved(next)
-    if (current && !next.find((s) => s.alias === current)) {
-      setCurrent(null)
-      localStorage.removeItem(CURRENT_KEY)
+  const onAdd = async () => {
+    if (!canAdd) return
+    setLoading(true)
+    setError(null)
+    setInfo(null)
+    try {
+      const res = await fetch('/api/user/connections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ alias: alias.trim(), dsn: dsn.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (json?.error === 'invalid_dsn') throw new Error(`无效的 DSN：${json?.reason || 'unknown'}`)
+        if (json?.error === 'alias_exists') throw new Error('别名已存在，请更换别名。')
+        if (json?.error === 'app_db_not_configured') throw new Error('应用数据库未配置，请先到 /install 初始化。')
+        if (json?.error === 'unauthorized') throw new Error('未登录，请先登录。')
+        throw new Error(json?.error || `保存失败（HTTP ${res.status}）`)
+      }
+      setAlias('')
+      setDsn('')
+      setInfo('已保存。凭据已加密存储，列表不展示明文。')
+      refresh()
+    } catch (e: any) {
+      setError(String(e?.message || e))
+    } finally {
+      setLoading(false)
     }
   }
 
-  const onUse = (aliasToUse: string) => {
-    setCurrent(aliasToUse)
-    localStorage.setItem(CURRENT_KEY, aliasToUse)
+  const onUse = (id: string) => {
+    setCurrentId(id)
+    localStorage.setItem(CURRENT_KEY, id)
   }
 
   return (
     <Stack gap="md" maw={840}>
       <div>
-        <Title order={3}>连接管理（客户端书签，不含凭据）</Title>
-        <Text c="dimmed">仅保存服务器允许的连接ID的“别名”，不保存连接串。服务器端通过白名单映射管理真实连接。</Text>
+        <Title order={3}>用户连接管理</Title>
+        <Text c="dimmed">连接凭据加密存储于应用数据库；仅显示别名等非敏感信息。</Text>
         {error && (
           <Text c="red" mt="xs">
-            加载失败：{error}
+            {error}
+          </Text>
+        )}
+        {info && (
+          <Text c="green" mt="xs">
+            {info}
           </Text>
         )}
       </div>
 
       <Paper withBorder p="md">
-        <Title order={4}>新增别名</Title>
+        <Title order={4}>新增连接</Title>
         <Group mt="sm" gap="sm" align="end">
           <TextInput label="别名" placeholder="如：生产库" value={alias} onChange={(e) => setAlias(e.currentTarget.value)} w={220} />
-          <Select
-            label="连接ID"
-            placeholder="选择连接ID"
-            data={serverIds}
-            value={selectedId}
-            onChange={setSelectedId}
-            searchable
-            w={260}
+          <TextInput
+            label="Postgres DSN"
+            placeholder="postgres://user:pass@host:5432/db?sslmode=require"
+            value={dsn}
+            onChange={(e) => setDsn(e.currentTarget.value)}
+            w={480}
           />
-          <Button disabled={!canAdd} onClick={onAdd}>
-            添加
+          <Button disabled={!canAdd || loading} onClick={onAdd} loading={loading}>
+            保存
           </Button>
         </Group>
+        <Text c="dimmed" size="sm" mt="xs">
+          安全提示：允许私网/本机；建议启用 TLS（sslmode=require），也支持禁用 TLS（仅限内网/开发环境）。
+        </Text>
       </Paper>
 
       <Paper withBorder p="md">
-        <Title order={4}>已保存</Title>
-        {saved.length === 0 ? (
+        <Title order={4}>我的连接</Title>
+        {items.length === 0 ? (
           <Text c="dimmed" mt="xs">
-            暂无别名
+            暂无连接
           </Text>
         ) : (
           <Table mt="sm" striped withTableBorder withColumnBorders>
             <Table.Thead>
               <Table.Tr>
+                <Table.Th>当前</Table.Th>
                 <Table.Th>别名</Table.Th>
-                <Table.Th>连接ID</Table.Th>
-                <Table.Th w={200}>操作</Table.Th>
+                <Table.Th>记录ID</Table.Th>
+                <Table.Th>创建时间</Table.Th>
+                <Table.Th w={180}>操作</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {saved.map((s) => (
-                <Table.Tr key={s.alias}>
+              {items.map((s) => (
+                <Table.Tr key={s.id}>
                   <Table.Td>
-                    <Badge variant={current === s.alias ? 'filled' : 'light'} color={current === s.alias ? 'green' : 'gray'}>
-                      {s.alias}
-                    </Badge>
+                    {currentId === s.id ? (
+                      <Badge color="green">当前</Badge>
+                    ) : (
+                      <Badge color="gray" variant="light">
+                        否
+                      </Badge>
+                    )}
                   </Table.Td>
+                  <Table.Td>{s.alias}</Table.Td>
                   <Table.Td>
                     <Code>{s.id}</Code>
                   </Table.Td>
                   <Table.Td>
+                    <Text size="sm" c="dimmed">
+                      {s.createdAt ? new Date(s.createdAt).toLocaleString() : '-'}
+                    </Text>
+                  </Table.Td>
+                  <Table.Td>
                     <Group gap="xs">
-                      <Button size="xs" onClick={() => onUse(s.alias)} disabled={current === s.alias}>
+                      <Button size="xs" onClick={() => onUse(s.id)} disabled={currentId === s.id}>
                         设为当前
-                      </Button>
-                      <Button size="xs" color="red" variant="light" onClick={() => onRemove(s.alias)}>
-                        删除
                       </Button>
                     </Group>
                   </Table.Td>
@@ -150,7 +160,8 @@ export default function ConnectionsPage() {
 
       <Paper withBorder p="md">
         <Title order={4}>当前连接</Title>
-        <Text mt="xs">{current ? current : '未选择（默认：default，如已配置）'}</Text>
+        <Text mt="xs">{currentId ? <Code>{currentId}</Code> : '未选择'}</Text>
+        <Text c="dimmed" size="sm">查询预览/执行尚未使用该 ID（下一步对接）。</Text>
       </Paper>
     </Stack>
   )

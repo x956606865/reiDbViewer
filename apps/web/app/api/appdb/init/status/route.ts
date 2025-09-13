@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getAppDb } from '../../../../../lib/appdb'
-import { checkInitStatus } from '../../../../../lib/appdb-init'
-import { env } from '../../../../../lib/env'
+import { getAppDb } from '@/lib/appdb'
+import { checkInitStatus } from '@/lib/appdb-init'
+import { env } from '@/lib/env'
 
 export async function GET(request: Request) {
   if (!process.env.APP_DB_URL) {

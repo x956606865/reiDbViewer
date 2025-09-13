@@ -11,7 +11,24 @@ export type DataGridProps = {
 
 export function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
   const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(
-    () => columns.map((key) => ({ header: key, accessorKey: key })),
+    () =>
+      columns.map((key) => ({
+        header: key,
+        accessorKey: key,
+        cell: (info) => {
+          const v: any = info.getValue()
+          if (React.isValidElement(v)) return v
+          if (v == null) return ''
+          if (typeof v === 'object') {
+            try {
+              return JSON.stringify(v)
+            } catch {
+              return String(v)
+            }
+          }
+          return String(v)
+        },
+      })),
     [columns]
   )
 
@@ -57,4 +74,3 @@ export function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
     </div>
   )
 }
-

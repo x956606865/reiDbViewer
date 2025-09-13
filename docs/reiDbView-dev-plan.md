@@ -69,6 +69,38 @@ lastUpdated: 2025-09-11
 6) 安全与治理（贯穿）
 - 只读 DB 角色、参数化查询、列白名单、最大行数/查询超时、审计日志（谁在看什么）。
 
+7) 运维快速按钮（MVP+，只读）
+- 目的：提供常用只读“运维/排障”查询的一键入口（白名单、参数化、服务端生成 SQL）。
+- 交互：新增页面 `/ops`，提供按钮与少量参数（如阈值/上限），点击即返回结果与 SQL 文本（只读）。
+- 示例（长跑查询）：
+  - 语义：列出非 idle 且运行超过 N 分钟的会话（排除自身），按运行时长倒序。
+  - 默认阈值：`minMinutes = 5`；返回上限 `limit = 200`（受 `MAX_ROW_LIMIT` 约束）。
+  - SQL（等价形态）：
+    ```sql
+    SELECT pid, usename, application_name, client_addr,
+           state, wait_event_type, wait_event,
+           backend_type,
+           now() - query_start AS run_for,
+           left(query, 2000) AS query
+    FROM pg_stat_activity
+    WHERE state <> 'idle'
+      AND pid <> pg_backend_pid()
+      AND (now() - query_start) > interval '1 minute' * $1  -- $1=minMinutes
+    ORDER BY run_for DESC
+    LIMIT $2; -- $2=limit
+    ```
+- 安全约束：
+  - 仅服务端白名单动作（如 `long_running_activity`）；禁止自定义原始 SQL。
+  - 所有参数使用占位符；会话内统一 `SET LOCAL statement_timeout` 与收窄 `search_path`。
+  - 仍遵循“只读连接 + 结束时 ROLLBACK”的会话策略；不提供 `pg_cancel_backend/pg_terminate_backend` 按钮。
+  - 说明：若连接角色缺少 `pg_stat_activity.query` 的可见权限，查询文本可能为空（允许，仅展示可见字段）。
+
+- 其他内置动作（首批）：
+  - `blocking_activity`：显示被阻塞会话与阻塞者（基于 `pg_blocking_pids`）。
+  - `long_transactions`：长事务清单（`xact_start` 超过阈值）。
+  - `waiting_locks`：等待中锁明细（`pg_locks.granted=false`，含关联对象名与会话信息）。
+  - `connections_overview`：按 `usename`/`application_name` 的连接/活跃概览。
+
 ## 4. 技术架构（读优先、Web 优先）
 
 - 运行形态：
@@ -288,7 +320,7 @@ MVP（单仓库，后续可演进 Monorepo）：
 - 存储安全：
   - 环境变量：`APP_DB_URL`、`APP_ENCRYPTION_KEY`（32B base64）。
   - 敏感字段（DSN）使用 AES-256-GCM（`apps/web/lib/crypto.ts`）加密后存储。
-  - DSN 校验与 SSRF 防护（`apps/web/lib/validate-dsn.ts`）：拒绝私网/本机、默认要求 TLS。
+- DSN 校验（`apps/web/lib/validate-dsn.ts`）：允许私网/本机；建议 TLS（sslmode=require）。
 - API（占位实现已加）：
   - `GET/POST /api/user/connections`：APP_DB_URL 未配置时返回 501；POST 做 DSN 校验与加密预览。
 - 登录方案：Better Auth（Next.js App Router）

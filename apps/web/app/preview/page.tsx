@@ -1,4 +1,4 @@
-'use client'
+"use client"
 
 import { useEffect, useState } from 'react'
 import { Button, Code, Group, Paper, ScrollArea, Stack, Text, Textarea, Title } from '@mantine/core'
@@ -37,25 +37,14 @@ export default function PreviewPage() {
   const [err, setErr] = useState<string | null>(null)
   const [gridCols, setGridCols] = useState<string[]>([])
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
-  const [connId, setConnId] = useState<string | null>(null)
-  const [serverIds, setServerIds] = useState<string[]>([])
+  const [userConnId, setUserConnId] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/connections')
-      .then((r) => r.json())
-      .then((j) => setServerIds(j.ids || []))
-      .catch(() => {})
     try {
-      const currentAlias = localStorage.getItem('rdv.currentConnId')
-      const saved = JSON.parse(localStorage.getItem('rdv.savedConns') || '[]') as Array<{
-        alias: string
-        id: string
-      }>
-      const found = saved.find((s) => s.alias === currentAlias)
-      if (found) setConnId(found.id)
-      else setConnId(null)
+      const id = localStorage.getItem('rdv.currentUserConnId')
+      setUserConnId(id)
     } catch {
-      setConnId(null)
+      setUserConnId(null)
     }
   }, [])
 
@@ -63,7 +52,7 @@ export default function PreviewPage() {
     try {
       setErr(null)
       const ast = JSON.parse(astText)
-      const body = { select: ast, connId: connId || undefined }
+      const body = { select: ast }
       const res = await fetch('/api/query/preview', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -97,7 +86,7 @@ export default function PreviewPage() {
     try {
       setErr(null)
       const ast = JSON.parse(astText)
-      const body = { select: ast, connId: connId || undefined }
+      const body = { select: ast, userConnId: userConnId || '' }
       const res = await fetch('/api/query/execute', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -136,9 +125,7 @@ export default function PreviewPage() {
           <Button variant="light" onClick={onExecute}>
             执行
           </Button>
-          <Text c="dimmed" size="sm">
-            当前连接: {connId ? connId : '未选择'} {serverIds.length ? `(允许: ${serverIds.join(', ')})` : ''}
-          </Text>
+          <Text c="dimmed" size="sm">当前连接: {userConnId ? userConnId : '未选择'}</Text>
         </Group>
         {err && (
           <Text c="red" mt="xs">

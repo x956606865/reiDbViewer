@@ -1,14 +1,19 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { z } from 'zod'
-import { buildSelectSql } from '@rei-db-view/query-engine/sql'
-import type { Select } from '@rei-db-view/types/ast'
 import { withSafeSession } from '@/lib/db'
 import { env } from '@/lib/env'
+import { OpsActionId, buildOpsQuery, LongRunningParams } from '@/lib/ops/queries'
 import { headers } from 'next/headers'
 import { auth } from '@/lib/auth'
 import { getUserConnPool } from '@/lib/user-conn'
 
-const BodySchema = z.object({ select: z.any(), userConnId: z.string().min(1) })
+const LimitOnly = z.object({ limit: z.number().int().min(1).max(1000).default(200) })
+
+const BodySchema = z.object({
+  actionId: OpsActionId,
+  params: z.union([LongRunningParams, LimitOnly, z.any()]).optional(),
+  userConnId: z.string().min(1),
+})
 
 export async function POST(req: NextRequest) {
   const json = await req.json().catch(() => null)
@@ -17,15 +22,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid_body', detail: parsed.error.format() }, { status: 400 })
   }
 
-  // 读取并规整 AST：限制最大行数
-  const inputAst = parsed.data.select as Select
-  const userConnId = parsed.data.userConnId as string
-  const maxRows = env.MAX_ROW_LIMIT
-  const limit = Math.min(typeof inputAst.limit === 'number' ? inputAst.limit : maxRows, maxRows)
-  const ast: Select = { ...inputAst, limit }
-
-  // 生成 SQL
-  const { text, values } = buildSelectSql(ast)
+  const { actionId, params, userConnId } = parsed.data
+  const { text, values } = buildOpsQuery(actionId, params)
 
   try {
     if (!process.env.APP_DB_URL) {
@@ -38,10 +36,10 @@ export async function POST(req: NextRequest) {
       const res = await client.query({ text, values })
       return res.rows as Array<Record<string, unknown>>
     })
-
     const columns = Object.keys(rows[0] ?? {})
     return NextResponse.json({ sql: text, columns, rowCount: rows.length, rows })
   } catch (e: any) {
+    // 常见情况：权限不足无法读取其他会话的 query 文本
     return NextResponse.json({ error: 'db_query_failed', message: String(e?.message || e), preview: { text, values } }, { status: 500 })
   }
 }

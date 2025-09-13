@@ -6,7 +6,7 @@
 
 - 只读安全：严禁任何写库操作；不做 DB 迁移与权限变更。执行接口默认仅返回 SQL 预览；真实执行前需显式确认只读连接。
 - 依赖安装与重型命令：安装/构建/端到端测试需要事先征求同意（本项目已确认可安装依赖）。
-- Secrets：不提交 `.env`、密钥、令牌；本地使用 `DATABASE_URL_RO` 等环境变量（示例配置走 `.env.example`）。
+- Secrets：不提交 `.env`、密钥、令牌；生产数据库连接改为“用户自有连接”存放应用库（加密后），不再使用 `DATABASE_URL_RO` 白名单。
 - CI/Infra：未经确认不改动；优先在本地验证。
 
 ## 开发规范
@@ -52,18 +52,14 @@
 
 ## 多数据库连接（安全方案）
 
-- 白名单策略（服务器端）：
-  - 单数据库：`DATABASE_URL_RO`
-  - 多数据库：`RDV_CONN_IDS=prod,staging` + `DATABASE_URL_RO__prod`、`DATABASE_URL_RO__staging`
-  - 仅服务器持有连接串；客户端永不保存连接串。
-- 连接选择（客户端）：
-  - `/api/connections` 返回允许的 `id` 列表（不含 URL）。
-  - 页面 `/connections` 允许将 `id` 绑定为“别名”（localStorage），并选择一个“当前连接”。
-  - 查询请求在 body 中携带 `connId`（仅 ID）。
-- 执行安全：
-  - 每请求：`SET LOCAL statement_timeout`、`idle_in_transaction_session_timeout`、`search_path=pg_catalog,"$user"`。
-  - 强制只读：不提供写入口；执行后 `ROLLBACK` 清理作用域。
-- 审计（后续）：记录 `connId` + AST hash + 行数分档。
+- 用户自有连接（服务器端持久化）：
+  - 用户在 `/connections` 新增 `别名 + DSN`；服务端以 `APP_ENCRYPTION_KEY` 加密后存入 `<prefix>user_connections`。
+  - 客户端仅保存“当前连接记录 ID”（`localStorage['rdv.currentUserConnId']`），不保存明文 DSN。
+- 查询执行（服务器端解密）：
+  - `/api/query/execute` 从会话中获取 `userId`，依据 `userConnId` 读取并解密 DSN，动态创建只读连接池。
+  - 每请求：`SET LOCAL statement_timeout`、`idle_in_transaction_session_timeout`、`search_path=pg_catalog,"$user"`；执行后 `ROLLBACK`。
+- 兼容性：
+  - 旧的环境白名单（`DATABASE_URL_RO`/`RDV_CONN_IDS`、`/api/connections`、body.connId）已移除。
 
 ## 用户系统与应用数据库（设计草案）
 
@@ -71,7 +67,7 @@
 - 重要约束：
   - 浏览器端永不保存数据库连接串；仅保存“别名→连接ID”。
   - 服务端存储的 DSN 必须使用 `APP_ENCRYPTION_KEY`（32B base64）进行 AES-256-GCM 加密。
-  - 对用户提交的 DSN 做 SSRF 防护：拒绝私网/本机地址、要求 TLS（`sslmode=require`）。
+  - 对用户提交的 DSN 做基本校验：允许私网/本机地址；为安全起见建议 TLS（`sslmode=require`）。
 - 环境变量：
   - `APP_DB_URL`：应用自有 PG（用于用户/连接等数据）
   - `APP_ENCRYPTION_KEY`：32 字节 base64，用于对敏感字段加解密
