@@ -104,20 +104,34 @@ export function buildSelectSql(ast: Select): BuildResult {
     for (const j of ast.joins) parts.push(joinToSql(ast, j))
   }
   if (ast.where && ast.where.length) {
-    const ws = ast.where.map((w) => {
+    const ws = ast.where.map((w: any) => {
       const left = `${qid(w.left.table || '')}.${qid(w.left.name)}`
-      if (w.kind === 'eq') {
-        if ((w as any).right.kind === 'param') {
-          return `${left} = ${param((w as any).right.value)}`
+      switch (w.kind) {
+        case 'eq':
+          if (w.right?.kind === 'param') return `${left} = ${param(w.right.value)}`
+          return `${left} = ${qid(w.right.table || '')}.${qid(w.right.name)}`
+        case 'ilike': {
+          const rv = w.right?.value
+          const l = w.castText ? `${left}::text` : left
+          return `${l} ILIKE ${param(rv)}`
         }
-        const r = (w as any).right
-        return `${left} = ${qid(r.table || '')}.${qid(r.name)}`
+        case 'gt':
+          return `${left} > ${param(w.right?.value)}`
+        case 'lt':
+          return `${left} < ${param(w.right?.value)}`
+        case 'gte':
+          return `${left} >= ${param(w.right?.value)}`
+        case 'lte':
+          return `${left} <= ${param(w.right?.value)}`
+        case 'between':
+          return `${left} BETWEEN ${param(w.from?.value)} AND ${param(w.to?.value)}`
+        case 'json_contains':
+          return `${left} @> ${param(w.right?.value)}::jsonb`
+        case 'json_path_exists':
+          return `jsonb_path_exists(${left}, ${param(w.right?.value)}::jsonpath)`
+        default:
+          return 'TRUE'
       }
-      if (w.kind === 'ilike') {
-        const rv = (w as any).right?.value
-        return `${left} ILIKE ${param(rv)}`
-      }
-      return 'TRUE'
     })
     parts.push('WHERE ' + ws.join(' AND '))
   }

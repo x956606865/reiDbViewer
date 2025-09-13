@@ -76,7 +76,11 @@ export interface KeysetCursor {
 
 export type WhereOp =
   | { kind: 'eq'; left: ColumnRef; right: ColumnRef | LiteralParam }
-  | { kind: 'ilike'; left: ColumnRef; right: LiteralParam } // paramized text search
+  | { kind: 'ilike'; left: ColumnRef; right: LiteralParam; castText?: boolean } // paramized text search
+  | { kind: 'gt' | 'lt' | 'gte' | 'lte'; left: ColumnRef; right: LiteralParam }
+  | { kind: 'between'; left: ColumnRef; from: LiteralParam; to: LiteralParam }
+  | { kind: 'json_contains'; left: ColumnRef; right: LiteralParam } // jsonb @>
+  | { kind: 'json_path_exists'; left: ColumnRef; right: LiteralParam } // jsonb_path_exists(col, path)
 
 export interface Select {
   columns: SelectItem[]

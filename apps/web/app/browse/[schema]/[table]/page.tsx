@@ -76,6 +76,61 @@ export default function BrowseTablePage() {
   }, [schema, table, userConnId])
 
   const buildAst = useMemo(() => {
+    function classify(dt: string): 'json' | 'text' | 'number' | 'date' {
+      const s = dt.toLowerCase()
+      if (s.includes('json')) return 'json'
+      if (/(int|numeric|decimal|real|double|money|bigint|smallint)/.test(s)) return 'number'
+      if (/(timestamp|date|time)/.test(s)) return 'date'
+      return 'text'
+    }
+    function parseFilters(t: TableMeta, alias: string, filters: ColumnFiltersState) {
+      const wh: any[] = []
+      for (const f of filters) {
+        const id = String((f as any).id)
+        const col = t.columns.find((c) => c.name === id)
+        if (!col) continue
+        const raw = (f as any).value
+        const v = String(raw ?? '').trim()
+        if (!v) continue
+        const kind = classify(col.dataType)
+        const left = { kind: 'colref', table: alias, name: id }
+        if (kind === 'json') {
+          if (v.startsWith('@>')) {
+            const jsonText = v.replace(/^@>\s*/, '')
+            try { JSON.parse(jsonText) } catch { continue }
+            wh.push({ kind: 'json_contains', left, right: { kind: 'param', value: jsonText } })
+            continue
+          }
+          if (v.toLowerCase().startsWith('path:')) {
+            const path = v.slice(5).trim()
+            if (path) wh.push({ kind: 'json_path_exists', left, right: { kind: 'param', value: path } })
+            continue
+          }
+          wh.push({ kind: 'ilike', left, right: { kind: 'param', value: `%${v}%` }, castText: true })
+          continue
+        }
+        const m = v.match(/^([<>]=?|=)\s*(.+)$/)
+        const range = v.match(/^(.*)\.\.(.*)$/)
+        if (range) {
+          const a = range[1].trim(), b = range[2].trim()
+          if (a) wh.push({ kind: 'gte', left, right: { kind: 'param', value: a } })
+          if (b) wh.push({ kind: 'lte', left, right: { kind: 'param', value: b } })
+          continue
+        }
+        if (m) {
+          const op = m[1]
+          const val = m[2]
+          const map: any = { '>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte', '=': 'eq' }
+          const k = map[op]
+          if (k === 'eq') wh.push({ kind: 'eq', left, right: { kind: 'param', value: val } })
+          else wh.push({ kind: k, left, right: { kind: 'param', value: val } })
+          continue
+        }
+        if (kind === 'text') wh.push({ kind: 'ilike', left, right: { kind: 'param', value: `%${v}%` } })
+        else wh.push({ kind: 'eq', left, right: { kind: 'param', value: v } })
+      }
+      return wh
+    }
     return (t: TableMeta, pageIndex: number, size: number, sortingState: SortingState, filters: ColumnFiltersState) => {
       const alias = 't'
       const orderPk = t.columns.filter((c) => c.isPrimaryKey)
@@ -83,25 +138,14 @@ export default function BrowseTablePage() {
         from: { schema: t.schema, name: t.name, alias },
         columns: t.columns.map((c) => ({ kind: 'column', ref: { kind: 'colref', table: alias, name: c.name } })),
         orderBy: undefined as any,
-        where: undefined as any,
+        where: parseFilters(t, alias, filters),
         limit: size,
         offset: Math.max(0, pageIndex) * size,
       }
-      // 排序：优先使用前端状态，否则兜底主键
       if (sortingState && sortingState.length > 0) {
         base.orderBy = sortingState.map((s) => ({ expr: { kind: 'colref', table: alias, name: s.id }, dir: s.desc ? 'DESC' : 'ASC' as const }))
       } else if (orderPk.length) {
         base.orderBy = orderPk.map((c) => ({ expr: { kind: 'colref', table: alias, name: c.name }, dir: 'ASC' as const }))
-      }
-      // 筛选：列 ILIKE '%value%'
-      if (filters && filters.length > 0) {
-        base.where = filters
-          .filter((f) => typeof f.value === 'string' && f.value.trim().length > 0)
-          .map((f) => ({
-            kind: 'ilike',
-            left: { kind: 'colref', table: alias, name: String(f.id) },
-            right: { kind: 'param', value: `%${String(f.value).trim()}%` },
-          }))
       }
       return base
     }
