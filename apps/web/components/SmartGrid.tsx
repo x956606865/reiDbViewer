@@ -111,12 +111,17 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     defaultColumn: { minSize: 80, size: 160, maxSize: 480 },
     mantinePaperProps: { withBorder: true },
     mantineTableProps: { highlightOnHover: true, striped: 'odd' },
+    mantineTableHeadRowProps: { style: { height: 34 } },
     mantineTableHeadCellProps: {
       style: {
         fontSize: 12,
         fontWeight: 600,
         color: 'var(--mantine-color-dimmed)', // 与图标一致的中性灰
         gap: 6,
+        verticalAlign: 'middle',
+        lineHeight: '16px', // 与图标容器 16px 匹配，文本与图标同基线
+        paddingTop: 6,
+        paddingBottom: 6,
       },
     },
     mantineTableBodyCellProps: {
