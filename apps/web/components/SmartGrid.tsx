@@ -21,9 +21,13 @@ export type SmartGridProps = {
   columns: string[]
   rows: Array<Record<string, unknown>>
   height?: number
+  sorting?: any
+  onSortingChange?: (updater: any) => void
+  columnFilters?: any
+  onColumnFiltersChange?: (updater: any) => void
 }
 
-export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProps) {
+export default function SmartGrid({ columns, rows, height = 420, sorting, onSortingChange, columnFilters, onColumnFiltersChange }: SmartGridProps) {
   const colDefs = React.useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
     () =>
       columns.map((key) => ({
@@ -97,6 +101,8 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     columnFilterDisplayMode: 'popover', // 过滤放到弹出层，去掉表头下方的输入行
     enableFilters: true,
     enableSorting: true,
+    manualSorting: true,
+    manualFiltering: true,
     enableStickyHeader: true,
     enableHiding: true,
     enablePinning: true,
@@ -143,6 +149,12 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
       columnOrder: columns,
       showColumnFilters: false,
     },
+    state: {
+      sorting,
+      columnFilters,
+    },
+    onSortingChange,
+    onColumnFiltersChange,
     icons,
   })
 

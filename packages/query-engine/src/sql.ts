@@ -92,6 +92,10 @@ function joinToSql(select: Select, j: JoinDef): string {
 export function buildSelectSql(ast: Select): BuildResult {
   const values: unknown[] = []
   const parts: string[] = []
+  const param = (v: unknown) => {
+    values.push(v)
+    return '$' + values.length
+  }
   parts.push('SELECT')
   parts.push(ast.columns.map(selectItemToSql).join(', '))
   parts.push('FROM')
@@ -100,9 +104,20 @@ export function buildSelectSql(ast: Select): BuildResult {
     for (const j of ast.joins) parts.push(joinToSql(ast, j))
   }
   if (ast.where && ast.where.length) {
-    const ws = ast.where.map((w, i) => {
-      // MVP：等值且仅列=列
-      return `${qid(w.left.table || '')}.${qid(w.left.name)} = ${qid(w.right.table || '')}.${qid(w.right.name)}`
+    const ws = ast.where.map((w) => {
+      const left = `${qid(w.left.table || '')}.${qid(w.left.name)}`
+      if (w.kind === 'eq') {
+        if ((w as any).right.kind === 'param') {
+          return `${left} = ${param((w as any).right.value)}`
+        }
+        const r = (w as any).right
+        return `${left} = ${qid(r.table || '')}.${qid(r.name)}`
+      }
+      if (w.kind === 'ilike') {
+        const rv = (w as any).right?.value
+        return `${left} ILIKE ${param(rv)}`
+      }
+      return 'TRUE'
     })
     parts.push('WHERE ' + ws.join(' AND '))
   }

@@ -74,11 +74,15 @@ export interface KeysetCursor {
   last: Record<string, string | number | boolean | null | Date>
 }
 
+export type WhereOp =
+  | { kind: 'eq'; left: ColumnRef; right: ColumnRef | LiteralParam }
+  | { kind: 'ilike'; left: ColumnRef; right: LiteralParam } // paramized text search
+
 export interface Select {
   columns: SelectItem[]
   from: TableRef
   joins?: JoinDef[]
-  where?: OnEq[] // MVP：等值
+  where?: WhereOp[] // 支持等值与 ILIKE
   orderBy?: OrderByItem[]
   limit?: number
   offset?: number
@@ -99,4 +103,3 @@ export interface BuildResult {
   text: string
   values: unknown[]
 }
-

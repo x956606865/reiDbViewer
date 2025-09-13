@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Code, Group, NumberInput, Paper, Stack, Text, Title } from '@mantine/core'
+import type { ColumnFiltersState, SortingState } from 'mantine-react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import SmartGrid from '../../../../components/SmartGrid'
@@ -23,6 +24,8 @@ export default function BrowseTablePage() {
   const [pageSize, setPageSize] = useState<number>(50)
   const [gridCols, setGridCols] = useState<string[]>([])
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
   useEffect(() => {
     try {
@@ -73,18 +76,34 @@ export default function BrowseTablePage() {
   }, [schema, table, userConnId])
 
   const buildAst = useMemo(() => {
-    return (t: TableMeta, pageIndex: number, size: number) => {
+    return (t: TableMeta, pageIndex: number, size: number, sortingState: SortingState, filters: ColumnFiltersState) => {
       const alias = 't'
       const orderPk = t.columns.filter((c) => c.isPrimaryKey)
-      return {
+      const base: any = {
         from: { schema: t.schema, name: t.name, alias },
         columns: t.columns.map((c) => ({ kind: 'column', ref: { kind: 'colref', table: alias, name: c.name } })),
-        orderBy: orderPk.length
-          ? orderPk.map((c) => ({ expr: { kind: 'colref', table: alias, name: c.name }, dir: 'ASC' as const }))
-          : undefined,
+        orderBy: undefined as any,
+        where: undefined as any,
         limit: size,
         offset: Math.max(0, pageIndex) * size,
       }
+      // 排序：优先使用前端状态，否则兜底主键
+      if (sortingState && sortingState.length > 0) {
+        base.orderBy = sortingState.map((s) => ({ expr: { kind: 'colref', table: alias, name: s.id }, dir: s.desc ? 'DESC' : 'ASC' as const }))
+      } else if (orderPk.length) {
+        base.orderBy = orderPk.map((c) => ({ expr: { kind: 'colref', table: alias, name: c.name }, dir: 'ASC' as const }))
+      }
+      // 筛选：列 ILIKE '%value%'
+      if (filters && filters.length > 0) {
+        base.where = filters
+          .filter((f) => typeof f.value === 'string' && f.value.trim().length > 0)
+          .map((f) => ({
+            kind: 'ilike',
+            left: { kind: 'colref', table: alias, name: String(f.id) },
+            right: { kind: 'param', value: `%${String(f.value).trim()}%` },
+          }))
+      }
+      return base
     }
   }, [])
 
@@ -93,7 +112,7 @@ export default function BrowseTablePage() {
     setLoading(true)
     setError(null)
     try {
-      const ast = buildAst(meta, pageIndex, size)
+      const ast = buildAst(meta, pageIndex, size, sorting, columnFilters)
       let columns: string[] = meta.columns.map((c) => c.name)
       let execOk = false
       if (userConnId) {
@@ -183,7 +202,25 @@ export default function BrowseTablePage() {
         <Code block>{sql || '-- 无 SQL（等待生成）'}</Code>
       </Paper>
 
-      <SmartGrid columns={gridCols} rows={rows} height={420} />
+      <SmartGrid
+        columns={gridCols}
+        rows={rows}
+        height={420}
+        sorting={sorting}
+        onSortingChange={(updater) => {
+          setSorting((prev) => (typeof updater === 'function' ? updater(prev) : updater))
+          // 改变排序后从第 0 页开始
+          setPage(0)
+          // 触发刷新
+          setTimeout(() => runQuery(0, pageSize), 0)
+        }}
+        columnFilters={columnFilters}
+        onColumnFiltersChange={(updater) => {
+          setColumnFilters((prev) => (typeof updater === 'function' ? updater(prev) : updater))
+          setPage(0)
+          setTimeout(() => runQuery(0, pageSize), 0)
+        }}
+      />
     </Stack>
   )
 }
