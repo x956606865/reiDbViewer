@@ -51,22 +51,39 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     [columns]
   )
 
-  // 统一化的轻量中性色图标
+  // 统一化的轻量中性色图标：固定在 16x16 盒内，垂直居中，避免不同 glyph 视盒差异造成的错位
   const gray = 'var(--mantine-color-dimmed)'
-  const Icon = (C: any) => (props: any) => <C stroke={1.75} color={gray} size={props?.size ?? 16} {...props} />
+  const BOX = 16
+  const GLYPH = 14 // 内部图标尺寸略小，留 1px 内边距，视觉居中更稳
+  const wrapIcon = (C: any, dy = 0) => (props: any) => (
+    <span
+      style={{
+        display: 'inline-flex',
+        width: BOX,
+        height: BOX,
+        alignItems: 'center',
+        justifyContent: 'center',
+        verticalAlign: 'middle',
+        transform: dy ? `translateY(${dy}px)` : undefined,
+      }}
+    >
+      <C stroke={1.75} color={gray} size={GLYPH} {...props} />
+    </span>
+  )
   const icons: Partial<MRT_Icons> = {
-    IconArrowsSort: Icon(IconArrowsSort),
-    IconArrowDown: Icon(IconArrowNarrowDown),
-    IconArrowUp: Icon(IconArrowNarrowUp),
-    IconSearch: Icon(IconSearch),
-    IconFilter: Icon(IconFilter),
-    IconChevronDown: Icon(IconChevronDown),
-    IconChevronUp: Icon(IconChevronUp),
-    IconGripVertical: Icon(IconGripVertical), // 拖拽手柄（若显示）
-    IconEye: Icon(IconEye),
-    IconEyeOff: Icon(IconEyeOff),
-    IconPinned: Icon(IconPinned),
-    IconPinnedOff: Icon(IconPinnedOff),
+    IconArrowsSort: wrapIcon(IconArrowsSort),
+    IconArrowDown: wrapIcon(IconArrowNarrowDown),
+    IconArrowUp: wrapIcon(IconArrowNarrowUp),
+    IconSearch: wrapIcon(IconSearch),
+    // 某些滤镜图标的视盒偏移略大，轻微上移 0.5px 提升对齐感
+    IconFilter: wrapIcon(IconFilter, -0.5),
+    IconChevronDown: wrapIcon(IconChevronDown),
+    IconChevronUp: wrapIcon(IconChevronUp),
+    IconGripVertical: wrapIcon(IconGripVertical), // 拖拽手柄（若显示）
+    IconEye: wrapIcon(IconEye),
+    IconEyeOff: wrapIcon(IconEyeOff),
+    IconPinned: wrapIcon(IconPinned),
+    IconPinnedOff: wrapIcon(IconPinnedOff),
   }
 
   const table = useMantineReactTable({
