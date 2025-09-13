@@ -1,10 +1,11 @@
-'use client'
+"use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Button, Group, Loader, Paper, Stack, Table, Text, Title, Code } from '@mantine/core'
+import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code } from '@mantine/core'
 
-type TableMeta = { schema: string; name: string; columns: { name: string; dataType: string }[] }
+type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
+type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
 
 export default function SchemaPage() {
   const [tables, setTables] = useState<TableMeta[]>([])
@@ -14,6 +15,8 @@ export default function SchemaPage() {
   const [schemas, setSchemas] = useState<string[]>([])
   const [ddls, setDdls] = useState<Record<string, string>>({})
   const [userConnId, setUserConnId] = useState<string | null>(null)
+  const [cachedAt, setCachedAt] = useState<string | null>(null)
+  const [selectedSchema, setSelectedSchema] = useState<string>('')
 
   useEffect(() => {
     try {
@@ -27,7 +30,13 @@ export default function SchemaPage() {
     setLoading(true)
     fetch(url)
       .then((r) => r.json())
-      .then((json) => setTables(json.tables || []))
+      .then((json) => {
+        setTables(json.tables || [])
+        setSchemas(json.schemas || [])
+        setDatabases(json.databases || [])
+        setCachedAt(json.cachedAt ?? null)
+        if (!selectedSchema && (json.schemas?.length ?? 0) > 0) setSelectedSchema('')
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false))
   }, [userConnId])
@@ -50,6 +59,7 @@ export default function SchemaPage() {
       setTables(json.tables || [])
       setDatabases(json.databases || [])
       setSchemas(json.schemas || [])
+      setCachedAt(new Date().toISOString())
       const map: Record<string, string> = {}
       for (const d of json.ddls || []) map[`${d.schema}.${d.name}`] = d.ddl
       setDdls(map)
@@ -72,6 +82,10 @@ export default function SchemaPage() {
       <Text c="red">加载失败：{error}</Text>
     )
 
+  const filteredTables = useMemo(() => {
+    return selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
+  }, [tables, selectedSchema])
+
   return (
     <Stack gap="md">
       <div>
@@ -85,17 +99,34 @@ export default function SchemaPage() {
             <Button variant="light" onClick={onRefresh} loading={loading}>刷新元数据</Button>
           </Group>
         </Group>
-        {(databases.length > 0 || schemas.length > 0) && (
-          <Text c="dimmed" mt="xs" size="sm">
-            数据库：{databases.length} 个；Schema：{schemas.length} 个；表：{tables.length} 张
-          </Text>
-        )}
+        <Group mt="xs" gap="sm">
+          <Text c="dimmed" size="sm">数据库：{databases.length} 个；Schema：{schemas.length} 个；表：{tables.length} 张</Text>
+          <Text c="dimmed" size="sm">{cachedAt ? `缓存时间：${new Date(cachedAt).toLocaleString()}` : '无缓存（请刷新）'}</Text>
+          <Select
+            label="筛选 Schema"
+            placeholder="全部"
+            value={selectedSchema}
+            onChange={(v) => setSelectedSchema(v || '')}
+            data={[{ value: '', label: '全部 Schema' }, ...schemas.map((s) => ({ value: s, label: s }))]}
+            styles={{ root: { width: 240 } }}
+          />
+        </Group>
       </div>
-      {tables.map((t) => (
+      {userConnId && !cachedAt && filteredTables.length === 0 && (
+        <Paper withBorder p="md">
+          <Text>当前连接尚无元数据缓存，请点击右上角“刷新元数据”。</Text>
+        </Paper>
+      )}
+      {filteredTables.map((t) => (
         <Paper withBorder p="sm" key={`${t.schema}.${t.name}`}>
-          <Title order={5}>
-            {t.schema}.{t.name}
-          </Title>
+          <Group justify="space-between" align="center">
+            <Title order={5}>
+              {t.schema}.{t.name}
+            </Title>
+            <Button component={Link} href={`/browse/${t.schema}/${t.name}`} size="xs" variant="light">
+              浏览数据
+            </Button>
+          </Group>
           {ddls[`${t.schema}.${t.name}`] && (
             <details style={{ marginTop: 6 }}>
               <summary>查看 DDL</summary>
@@ -107,7 +138,6 @@ export default function SchemaPage() {
               <Table.Tr>
                 <Table.Th>列名</Table.Th>
                 <Table.Th>数据类型</Table.Th>
-                <Table.Th style={{ width: 120 }}>操作</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -116,11 +146,6 @@ export default function SchemaPage() {
                   <Table.Td>{c.name}</Table.Td>
                   <Table.Td>
                     <Text c="dimmed">{c.dataType}{c.nullable === false ? ' NOT NULL' : ''}</Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Button component={Link} href={`/browse/${t.schema}/${t.name}`} size="xs" variant="light">
-                      浏览数据
-                    </Button>
                   </Table.Td>
                 </Table.Tr>
               ))}
