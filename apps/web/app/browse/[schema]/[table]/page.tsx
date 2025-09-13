@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Code, Group, NumberInput, Paper, Stack, Text, Title } from '@mantine/core'
+import { Badge, Button, Code, Group, NumberInput, Paper, Stack, Text, Title, CloseButton } from '@mantine/core'
 import type { ColumnFiltersState, SortingState } from 'mantine-react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -247,6 +247,31 @@ export default function BrowseTablePage() {
         <Text fw={600} mb={6}>SQL</Text>
         <Code block>{sql || '-- 无 SQL（等待生成）'}</Code>
       </Paper>
+
+      {columnFilters.length > 0 && (
+        <Group gap="xs" align="center">
+          <Text size="sm" c="dimmed">已筛选:</Text>
+          {columnFilters.map((f, idx) => (
+            <Badge key={(f as any).id + ':' + idx} variant="light" rightSection={
+              <CloseButton size="xs" onClick={() => {
+                const id = String((f as any).id)
+                setColumnFilters((prev) => prev.filter((x: any) => String(x.id) !== id))
+                setPage(0)
+                setTimeout(() => runQuery(0, pageSize), 0)
+              }} />
+            }>
+              <span style={{ fontFamily: 'var(--mantine-font-family-monospace)' }}>
+                {String((f as any).id)}: {String((f as any).value ?? '')}
+              </span>
+            </Badge>
+          ))}
+          <Button size="xs" variant="subtle" color="gray" onClick={() => {
+            setColumnFilters([])
+            setPage(0)
+            setTimeout(() => runQuery(0, pageSize), 0)
+          }}>清除全部</Button>
+        </Group>
+      )}
 
       <SmartGrid
         columns={gridCols}
