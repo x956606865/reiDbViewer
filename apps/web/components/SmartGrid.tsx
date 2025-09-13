@@ -1,7 +1,21 @@
 "use client"
 
 import * as React from 'react'
-import { MantineReactTable, useMantineReactTable, type MRT_ColumnDef } from 'mantine-react-table'
+import { MantineReactTable, useMantineReactTable, type MRT_ColumnDef, type MRT_Icons } from 'mantine-react-table'
+import {
+  IconArrowsSort,
+  IconArrowNarrowDown,
+  IconArrowNarrowUp,
+  IconSearch,
+  IconFilter,
+  IconChevronDown,
+  IconChevronUp,
+  IconGripVertical,
+  IconEye,
+  IconEyeOff,
+  IconPinned,
+  IconPinnedOff,
+} from '@tabler/icons-react'
 
 export type SmartGridProps = {
   columns: string[]
@@ -37,12 +51,31 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     [columns]
   )
 
+  // 统一化的轻量中性色图标
+  const gray = 'var(--mantine-color-dimmed)'
+  const Icon = (C: any) => (props: any) => <C stroke={1.75} color={gray} size={props?.size ?? 16} {...props} />
+  const icons: Partial<MRT_Icons> = {
+    IconArrowsSort: Icon(IconArrowsSort),
+    IconArrowDown: Icon(IconArrowNarrowDown),
+    IconArrowUp: Icon(IconArrowNarrowUp),
+    IconSearch: Icon(IconSearch),
+    IconFilter: Icon(IconFilter),
+    IconChevronDown: Icon(IconChevronDown),
+    IconChevronUp: Icon(IconChevronUp),
+    IconGripVertical: Icon(IconGripVertical), // 拖拽手柄（若显示）
+    IconEye: Icon(IconEye),
+    IconEyeOff: Icon(IconEyeOff),
+    IconPinned: Icon(IconPinned),
+    IconPinnedOff: Icon(IconPinnedOff),
+  }
+
   const table = useMantineReactTable({
     columns: colDefs,
     data: rows,
     enableColumnResizing: true,
     columnResizeMode: 'onEnd',
     enableColumnOrdering: true,
+    enableColumnDragging: false, // 隐藏拖拽手柄，保持更专业的简洁外观
     enableColumnFilters: true,
     columnFilterDisplayMode: 'popover', // 过滤放到弹出层，去掉表头下方的输入行
     enableFilters: true,
@@ -61,7 +94,14 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
     defaultColumn: { minSize: 80, size: 160, maxSize: 480 },
     mantinePaperProps: { withBorder: true },
     mantineTableProps: { highlightOnHover: true, striped: 'odd' },
-    mantineTableHeadCellProps: { style: { fontSize: 12, fontWeight: 600 } },
+    mantineTableHeadCellProps: {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: 'var(--mantine-color-dimmed)', // 与图标一致的中性灰
+        gap: 6,
+      },
+    },
     mantineTableBodyCellProps: {
       style: {
         whiteSpace: 'nowrap',
@@ -81,6 +121,7 @@ export default function SmartGrid({ columns, rows, height = 420 }: SmartGridProp
       columnOrder: columns,
       showColumnFilters: false,
     },
+    icons,
   })
 
   return <MantineReactTable table={table} />
