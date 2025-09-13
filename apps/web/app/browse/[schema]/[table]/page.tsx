@@ -209,6 +209,14 @@ export default function BrowseTablePage() {
     if (meta) runQuery(page, pageSize)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta, page, pageSize])
+  // 当排序或筛选变化时，自动重置到第 1 页并刷新（即使 page 已为 0 也会刷新）
+  useEffect(() => {
+    if (!meta) return
+    // 保持 page 状态为 0，但无论是否变化都触发一次查询
+    setPage(0)
+    runQuery(0, pageSize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sorting, columnFilters])
 
   const onRefresh = () => runQuery(page, pageSize)
 
@@ -257,7 +265,6 @@ export default function BrowseTablePage() {
                 const id = String((f as any).id)
                 setColumnFilters((prev) => prev.filter((x: any) => String(x.id) !== id))
                 setPage(0)
-                setTimeout(() => runQuery(0, pageSize), 0)
               }} />
             }>
               <span style={{ fontFamily: 'var(--mantine-font-family-monospace)' }}>
@@ -268,7 +275,6 @@ export default function BrowseTablePage() {
           <Button size="xs" variant="subtle" color="gray" onClick={() => {
             setColumnFilters([])
             setPage(0)
-            setTimeout(() => runQuery(0, pageSize), 0)
           }}>清除全部</Button>
         </Group>
       )}
@@ -280,16 +286,12 @@ export default function BrowseTablePage() {
         sorting={sorting}
         onSortingChange={(updater) => {
           setSorting((prev) => (typeof updater === 'function' ? updater(prev) : updater))
-          // 改变排序后从第 0 页开始
           setPage(0)
-          // 触发刷新
-          setTimeout(() => runQuery(0, pageSize), 0)
         }}
         columnFilters={columnFilters}
         onColumnFiltersChange={(updater) => {
           setColumnFilters((prev) => (typeof updater === 'function' ? updater(prev) : updater))
           setPage(0)
-          setTimeout(() => runQuery(0, pageSize), 0)
         }}
       />
     </Stack>
