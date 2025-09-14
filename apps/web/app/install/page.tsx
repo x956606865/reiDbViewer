@@ -119,6 +119,17 @@ export default function InstallPage() {
                   </div>
                 </>
               )}
+
+              {status.initialized && status.suggestedSQL && /ALTER\s+TABLE/i.test(status.suggestedSQL) && (
+                <>
+                  <h3 style={{ marginTop: 16 }}>升级 SQL（按需执行）</h3>
+                  <pre style={{ whiteSpace: 'pre-wrap', background: '#f8fafc', border: '1px solid #e2e8f0', padding: 12 }}>{status.suggestedSQL}</pre>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={copySql}>复制 SQL</button>
+                    <button onClick={recheck}>我已执行，重新检测</button>
+                  </div>
+                </>
+              )}
               {status.initialized && (
                 <div style={{ background: '#ecfdf5', border: '1px solid #34d399', padding: 12, borderRadius: 6 }}>
                   <p>检测到应用数据库已就绪。你可以返回首页继续使用。</p>
