@@ -2,15 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Badge, Button, Code, Group, Paper, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { useCurrentConnId } from '@/lib/current-conn'
 
 type UserConn = { id: string; alias: string; createdAt?: string | null; lastUsedAt?: string | null }
-const CURRENT_KEY = 'rdv.currentUserConnId'
 
 export default function ConnectionsPage() {
   const [items, setItems] = useState<UserConn[]>([])
   const [alias, setAlias] = useState('')
   const [dsn, setDsn] = useState('')
-  const [currentId, setCurrentId] = useState<string | null>(null)
+  const [currentId, setCurrentId] = useCurrentConnId()
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -27,10 +27,7 @@ export default function ConnectionsPage() {
       .catch((e) => setError(String(e?.message || e)))
   }, [])
 
-  useEffect(() => {
-    setCurrentId(localStorage.getItem(CURRENT_KEY))
-    refresh()
-  }, [refresh])
+  useEffect(() => { refresh() }, [refresh])
 
   const canAdd = useMemo(() => alias.trim().length > 0 && dsn.trim().length > 0, [alias, dsn])
 
@@ -64,10 +61,7 @@ export default function ConnectionsPage() {
     }
   }
 
-  const onUse = (id: string) => {
-    setCurrentId(id)
-    localStorage.setItem(CURRENT_KEY, id)
-  }
+  const onUse = (id: string) => setCurrentId(id)
 
   return (
     <Stack gap="md" maw={840}>
@@ -161,7 +155,7 @@ export default function ConnectionsPage() {
       <Paper withBorder p="md">
         <Title order={4}>当前连接</Title>
         <Text mt="xs">{currentId ? <Code>{currentId}</Code> : '未选择'}</Text>
-        <Text c="dimmed" size="sm">查询预览/执行尚未使用该 ID（下一步对接）。</Text>
+        <Text c="dimmed" size="sm">提示：右上角可快速切换当前连接。</Text>
       </Paper>
     </Stack>
   )

@@ -113,7 +113,7 @@
       if(!session) return NextResponse.redirect(new URL('/sign-in', req.url))
       return NextResponse.next()
     }
-    export const config = { runtime: 'nodejs', matcher: ['/connections','/preview','/schema'] }
+    export const config = { runtime: 'nodejs', matcher: ['/connections','/schema'] }
     ```
 - 注意：登录后端与应用库（APP_DB_URL）表结构需要你执行迁移；本项目不自动变更数据库。初始化页可配置 schema 与表前缀，生成与 Better Auth 对齐的表：`<prefix>users`（password_hash）、`<prefix>sessions`、`<prefix>verification_codes`。
 

@@ -70,10 +70,10 @@ async function introspectPostgres(connectionString: string): Promise<{
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
-    // 安全守护：全程只读 + 快速超时 + 收窄 search_path
-    const timeout = Math.min(Math.max(env.QUERY_TIMEOUT_DEFAULT_MS, 1), env.QUERY_TIMEOUT_MAX_MS)
+    // 安全守护：全程只读 + 超时（元数据适当放宽） + 收窄 search_path
+    const timeout = Math.max(1, env.SCHEMA_REFRESH_TIMEOUT_MS)
     await client.query(`SET LOCAL statement_timeout = ${timeout}`)
-    await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${env.QUERY_TIMEOUT_MAX_MS}`)
+    await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`)
     await client.query(`SET LOCAL search_path = pg_catalog, "$user"`)
     await client.query(`SET TRANSACTION READ ONLY`)
 

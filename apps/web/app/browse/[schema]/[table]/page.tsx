@@ -6,6 +6,7 @@ import type { ColumnFiltersState, SortingState } from 'mantine-react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import SmartGrid from '../../../../components/SmartGrid'
+import { useCurrentConnId } from '@/lib/current-conn'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
@@ -15,7 +16,7 @@ export default function BrowseTablePage() {
   const schema = params?.schema
   const table = params?.table
 
-  const [userConnId, setUserConnId] = useState<string | null>(null)
+  const [userConnId] = useCurrentConnId()
   const [meta, setMeta] = useState<TableMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,13 +30,6 @@ export default function BrowseTablePage() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   // pending filters: 筛选框中的草稿，只有点击“应用”才会生效
   const [pendingFilters, setPendingFilters] = useState<ColumnFiltersState>([])
-
-  useEffect(() => {
-    try {
-      const id = localStorage.getItem('rdv.currentUserConnId')
-      setUserConnId(id)
-    } catch {}
-  }, [])
 
   useEffect(() => {
     if (!schema || !table) return

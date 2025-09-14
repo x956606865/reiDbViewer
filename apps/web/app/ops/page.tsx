@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button, Group, NumberInput, Paper, Stack, Text, Title, Code, Select, ActionIcon, Tooltip } from '@mantine/core'
 import { IconPlayerPause, IconPlayerStop } from '@tabler/icons-react'
 import { DataGrid } from '../../components/DataGrid'
+import { useCurrentConnId } from '@/lib/current-conn'
 
 type Row = Record<string, unknown>
 
@@ -15,7 +16,7 @@ export default function OpsPage() {
   const [info, setInfo] = useState<string | null>(null)
   const [minMinutes, setMinMinutes] = useState<number | ''>(5)
   const [limit, setLimit] = useState<number | ''>(200)
-  const [userConnId, setUserConnId] = useState<string | null>(null)
+  const [userConnId, setUserConnId] = useCurrentConnId()
   const [userConns, setUserConns] = useState<Array<{ value: string; label: string }>>([])
 
   useEffect(() => {
@@ -26,13 +27,16 @@ export default function OpsPage() {
         setUserConns(items.map((it) => ({ value: it.id, label: it.alias })))
       })
       .catch(() => {})
-    try {
-      const id = localStorage.getItem('rdv.currentUserConnId')
-      setUserConnId(id)
-    } catch {
-      setUserConnId(null)
-    }
   }, [])
+
+  // 连接切换后清空展示，避免误解
+  useEffect(() => {
+    setRows([])
+    setCols([])
+    setSql('')
+    setErr(null)
+    setInfo(null)
+  }, [userConnId])
 
   const runLongRunning = async () => {
     setErr(null)

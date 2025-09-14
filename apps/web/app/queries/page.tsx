@@ -22,6 +22,7 @@ import {
 import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText } from '@tabler/icons-react'
 import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types'
 import { DataGrid } from '../../components/DataGrid'
+import { useCurrentConnId } from '@/lib/current-conn'
 
 type SavedItem = { id: string; name: string; description?: string | null; variables: SavedQueryVariableDef[]; createdAt?: string | null; updatedAt?: string | null }
 
@@ -33,7 +34,6 @@ type TreeNode = {
   item?: SavedItem
 }
 
-const CURRENT_KEY = 'rdv.currentUserConnId'
 
 const VAR_TYPES: Array<{ value: SavedQueryVariableDef['type']; label: string }> = [
   { value: 'text', label: 'text' },
@@ -60,7 +60,7 @@ export default function SavedQueriesPage() {
   ])
 
   const [runValues, setRunValues] = useState<Record<string, any>>({ user_id: 1 })
-  const [userConnId, setUserConnId] = useState<string | null>(null)
+  const [userConnId] = useCurrentConnId()
 
   const [previewSQL, setPreviewSQL] = useState('')
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
@@ -95,10 +95,9 @@ export default function SavedQueriesPage() {
       .catch((e) => setError(String(e?.message || e)))
   }, [])
 
-  useEffect(() => {
-    refresh()
-    setUserConnId(localStorage.getItem(CURRENT_KEY))
-  }, [refresh])
+  useEffect(() => { refresh() }, [refresh])
+  // 连接切换后，清空预览与结果，避免误会
+  useEffect(() => { setPreviewSQL(''); setRows([]); setGridCols([]) }, [userConnId])
 
   useEffect(() => {
     try { localStorage.setItem('rdv.savedSql.expanded', JSON.stringify(Array.from(expanded))) } catch {}

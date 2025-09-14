@@ -18,7 +18,6 @@ export function NavBar() {
       <a href="/" style={{ fontWeight: 700 }}>reiDbView</a>
       <nav style={{ display: 'flex', gap: 10 }}>
         <a href="/schema">Schema</a>
-        <a href="/preview">Preview</a>
         <a href="/connections">Connections</a>
       </nav>
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
@@ -37,4 +36,3 @@ export function NavBar() {
     </header>
   )
 }
-

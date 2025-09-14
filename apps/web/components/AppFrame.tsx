@@ -11,6 +11,7 @@ import {
   useMantineColorScheme,
 } from '@mantine/core'
 import { IconMoon, IconSun, IconDatabase } from '@tabler/icons-react'
+import ConnectionSwitcher from './ConnectionSwitcher'
 
 function ThemeToggle() {
   const { colorScheme, setColorScheme } = useMantineColorScheme()
@@ -39,9 +40,6 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
             <Anchor component={Link} href="/schema" underline="hover">
               Schema
             </Anchor>
-            <Anchor component={Link} href="/preview" underline="hover">
-              Preview
-            </Anchor>
             <Anchor component={Link} href="/queries" underline="hover">
               Queries
             </Anchor>
@@ -53,6 +51,7 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
             </Anchor>
           </Group>
           <Group ml="auto" gap="xs">
+            <ConnectionSwitcher />
             <Button component={Link} href="/install" variant="default" size="xs">
               Install
             </Button>

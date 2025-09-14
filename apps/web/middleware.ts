@@ -31,8 +31,8 @@ export async function middleware(request: NextRequest) {
       url.searchParams.set('prefix', prefix)
       return NextResponse.redirect(url)
     }
-    // 需要鉴权的路径：/connections, /preview, /schema
-    const needAuth = [/^\/connections/, /^\/preview/, /^\/schema/].some((re) => re.test(pathname))
+    // 需要鉴权的路径：/connections, /schema
+    const needAuth = [/^\/connections/, /^\/schema/].some((re) => re.test(pathname))
     if (needAuth) {
       // 对于 Next 15.1.7-，用 HTTP 调 get-session
       const { data: session } = await betterFetch<any>(`${request.nextUrl.origin}/api/auth/get-session`, {

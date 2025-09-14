@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge } from '@mantine/core'
+import { useCurrentConnId } from '@/lib/current-conn'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
@@ -14,7 +15,7 @@ export default function SchemaPage() {
   const [databases, setDatabases] = useState<string[]>([])
   const [schemas, setSchemas] = useState<string[]>([])
   const [ddls, setDdls] = useState<Record<string, string>>({})
-  const [userConnId, setUserConnId] = useState<string | null>(null)
+  const [userConnId] = useCurrentConnId()
   const [cachedAt, setCachedAt] = useState<string | null>(null)
   const [selectedSchema, setSelectedSchema] = useState<string>('')
   const [idxOpen, setIdxOpen] = useState(false)
@@ -22,13 +23,6 @@ export default function SchemaPage() {
   const [idxLoading, setIdxLoading] = useState(false)
   const [idxError, setIdxError] = useState<string | null>(null)
   const [indexes, setIndexes] = useState<Array<any>>([])
-
-  useEffect(() => {
-    try {
-      const id = localStorage.getItem('rdv.currentUserConnId')
-      setUserConnId(id)
-    } catch {}
-  }, [])
 
   useEffect(() => {
     const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
@@ -160,24 +154,27 @@ export default function SchemaPage() {
               <Code block mt="xs">{ddls[`${t.schema}.${t.name}`]}</Code>
             </details>
           )}
-          <Table mt="xs" striped withTableBorder withColumnBorders>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>列名</Table.Th>
-                <Table.Th>数据类型</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {t.columns.map((c) => (
-                <Table.Tr key={c.name}>
-                  <Table.Td>{c.name}</Table.Td>
-                  <Table.Td>
-                    <Text c="dimmed">{c.dataType}{c.nullable === false ? ' NOT NULL' : ''}</Text>
-                  </Table.Td>
+          <details style={{ marginTop: 6 }}>
+            <summary>查看列（{t.columns.length}）</summary>
+            <Table mt="xs" striped withTableBorder withColumnBorders>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>列名</Table.Th>
+                  <Table.Th>数据类型</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {t.columns.map((c) => (
+                  <Table.Tr key={c.name}>
+                    <Table.Td>{c.name}</Table.Td>
+                    <Table.Td>
+                      <Text c="dimmed">{c.dataType}{c.nullable === false ? ' NOT NULL' : ''}</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </details>
         </Paper>
       ))}
     </Stack>
