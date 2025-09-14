@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton } from '@mantine/core'
+import { useDebouncedValue } from '@mantine/hooks'
 import { useCurrentConnId } from '@/lib/current-conn'
 import { useSchemaHide } from '@/lib/schema-hide'
 import { IconEyeOff } from '@tabler/icons-react'
@@ -28,6 +29,7 @@ export default function SchemaPage() {
   const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
   const [prefixInput, setPrefixInput] = useState('')
   const [search, setSearch] = useState('')
+  const [debouncedSearch] = useDebouncedValue(search, 300)
 
   useEffect(() => {
     const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
@@ -75,7 +77,7 @@ export default function SchemaPage() {
   }
 
   const filteredTables = selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
-  const searchLower = search.trim().toLowerCase()
+  const searchLower = debouncedSearch.trim().toLowerCase()
   const filteredAndSearched = filteredTables.filter((t) => {
     if (!searchLower) return true
     const fq = `${t.schema}.${t.name}`.toLowerCase()
