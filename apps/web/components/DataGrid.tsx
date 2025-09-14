@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table'
+import { Tooltip } from '@mantine/core'
 import JsonCell from './JsonCell'
 import RowViewButton from './RowViewButton'
 
@@ -65,7 +66,11 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 return <JsonCell value={parsed} />
               } catch {}
             }
-            return v
+            return (
+              <Tooltip label={v} withArrow withinPortal multiline maw={640} position="top-start">
+                <span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+              </Tooltip>
+            )
           }
           return String(v)
         },
