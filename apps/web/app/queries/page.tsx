@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionIcon,
   Badge,
@@ -25,6 +25,7 @@ import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types
 import { DataGrid } from '../../components/DataGrid'
 import { LeftDrawer } from '../../components/LeftDrawer'
 import { useCurrentConnId } from '@/lib/current-conn'
+import { parseSavedQueriesExport, normalizeImportItems } from '@/lib/saved-sql-import-export'
 
 type SavedItem = { id: string; name: string; description?: string | null; variables: SavedQueryVariableDef[]; createdAt?: string | null; updatedAt?: string | null }
 
@@ -52,6 +53,8 @@ export default function SavedQueriesPage() {
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [suggestedSQL, setSuggestedSQL] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [currentId, setCurrentId] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -150,6 +153,81 @@ export default function SavedQueriesPage() {
       return next
     })
   }
+
+  // ---------- 导出 / 导入 ----------
+  const onExportAll = useCallback(async () => {
+    try {
+      if (items.length === 0) { setInfo('暂无可导出的查询。'); return }
+      setBusy('导出中...')
+      const details: Array<{ name: string; description?: string | null; sql: string; variables: any[]; dynamicColumns?: any[] }> = []
+      for (const it of items) {
+        const r = await fetch(`/api/user/saved-sql/${it.id}`, { cache: 'no-store' })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || j?.error) throw new Error(j?.error || `导出失败：读取 ${it.name} 失败`)
+        details.push({
+          name: j.name,
+          description: j.description ?? null,
+          sql: j.sql,
+          variables: Array.isArray(j.variables) ? j.variables : [],
+          dynamicColumns: Array.isArray(j.dynamicColumns) ? j.dynamicColumns : [],
+        })
+      }
+      const payload = { version: 'rdv.saved-sql.v1', exportedAt: new Date().toISOString(), items: details }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const ts = new Date().toISOString().replace(/[:T]/g, '-').replace(/\..+$/, '')
+      const fname = `saved-queries-${ts}.json`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+      setInfo(`已导出 ${details.length} 条到 ${fname}`)
+    } catch (e: any) {
+      setError(String(e?.message || e))
+    } finally {
+      setBusy(null)
+    }
+  }, [items])
+
+  const onImportClick = useCallback(() => { fileInputRef.current?.click() }, [])
+
+  const onImportFile = useCallback(async (file: File) => {
+    setError(null); setInfo(null); setBusy('导入中...')
+    try {
+      const text = await file.text()
+      const parsed = parseSavedQueriesExport(text)
+      if (!parsed.ok) throw new Error(`文件格式不正确：${parsed.error}`)
+      const itemsToImport = normalizeImportItems(parsed.data)
+      if (itemsToImport.length === 0) { setInfo('文件为空，无需导入。'); return }
+      const overwrite = window.confirm('导入：若遇到同名查询，是否覆盖？\n确定=覆盖，取消=跳过重名')
+      let okCount = 0, skipCount = 0, overwriteCount = 0
+      for (const it of itemsToImport) {
+        const res = await fetch('/api/user/saved-sql', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name: it.name, description: it.description ?? undefined, sql: it.sql, variables: it.variables, dynamicColumns: it.dynamicColumns || [] }),
+        })
+        const j = await res.json().catch(() => ({}))
+        if (res.status === 501 && j?.suggestedSQL) { setSuggestedSQL(j.suggestedSQL); throw new Error('功能未初始化：请先在 APP_DB 执行建表/ALTER SQL 后重试。') }
+        if (res.status === 409 && j?.error === 'name_exists' && j?.existingId) {
+          if (overwrite) {
+            const res2 = await fetch(`/api/user/saved-sql/${j.existingId}`, {
+              method: 'PATCH', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ name: it.name, description: it.description ?? null, sql: it.sql, variables: it.variables, dynamicColumns: it.dynamicColumns || [] }),
+            })
+            if (!res2.ok) throw new Error(`覆盖失败：${it.name}`)
+            overwriteCount++
+          } else { skipCount++ }
+        } else if (!res.ok) {
+          throw new Error(j?.error || `导入失败（HTTP ${res.status}）：${it.name}`)
+        } else { okCount++ }
+      }
+      setInfo(`导入完成：新增 ${okCount}，覆盖 ${overwriteCount}，跳过 ${skipCount}`)
+      refresh()
+    } catch (e: any) {
+      setError(String(e?.message || e))
+    } finally {
+      setBusy(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }, [refresh])
 
   const buildTree = (list: SavedItem[]): TreeNode => {
     const root: TreeNode = { type: 'folder', name: '', path: '/', children: [] }
@@ -575,6 +653,9 @@ export default function SavedQueriesPage() {
               }
             }}>新建文件夹</Button>
             <Button size="xs" variant="default" onClick={() => { setMode('edit'); onNew() }}>新建查询</Button>
+            <Button size="xs" variant="default" onClick={onExportAll} disabled={!!busy}>{busy === '导出中...' ? '导出中...' : '导出全部'}</Button>
+            <Button size="xs" variant="light" onClick={onImportClick} disabled={!!busy}>导入</Button>
+            <input ref={fileInputRef} type="file" accept="application/json" style={{ display: 'none' }} onChange={(e) => { const f = e.currentTarget.files?.[0]; if (f) onImportFile(f) }} />
           </Group>
           {items.length === 0 ? (
             <Text c="dimmed" mt="xs">暂无</Text>
@@ -597,6 +678,7 @@ export default function SavedQueriesPage() {
         </LeftDrawer>
 
         <Stack gap="md" style={{ flex: 1 }}>
+          <LoadingOverlay visible={!!busy} zIndex={1000} overlayProps={{ blur: 1 }} />
           {mode === 'edit' ? (
             <>
               <Paper withBorder p="md">

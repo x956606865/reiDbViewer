@@ -41,9 +41,32 @@ CREATE INDEX IF NOT EXISTS "rdv_saved_queries_user" ON "public"."rdv_saved_queri
 - 路径：`/queries`（导航已有入口）。
 - 支持：列表、编辑/新增、变量编辑、提取变量、预览 SQL、执行并用 DataGrid 展示结果。
 
+### 导入/导出
+
+- 导出：左侧抽屉点击“导出全部”，下载 JSON 文件（格式 `rdv.saved-sql.v1`）。
+- 导入：点击“导入”选择上述 JSON；可选择遇到同名时“覆盖”或“跳过”。
+- 文件结构（v1）：
+
+```json
+{
+  "version": "rdv.saved-sql.v1",
+  "exportedAt": "2025-09-14T10:00:00.000Z",
+  "items": [
+    {
+      "name": "reports/daily/top_users",
+      "description": "Top users by score",
+      "sql": "SELECT * FROM users WHERE created_at >= {{from}}",
+      "variables": [{ "name": "from", "type": "timestamp", "required": true }],
+      "dynamicColumns": [{ "name": "fullName", "code": "return `${row.first_name} ${row.last_name}`" }]
+    }
+  ]
+}
+```
+
+注意：导入/导出均不涉及数据库结构变更；若首次使用未初始化 `rdv_saved_queries`，按页面提示执行 SQL 后再重试。
+
 ## 安全
 
 - 执行端口：使用参数化（`$1,$2,...`）替换占位符，避免注入。
 - 只读会话：`SET LOCAL statement_timeout` / `idle_in_transaction_session_timeout`，并 `ROLLBACK`。
 - 输入校验：所有 API 使用 `zod` 校验；用户连接 ID 来自受保护的应用库。
-
