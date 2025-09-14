@@ -59,7 +59,7 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
           </Group>
         </Group>
       </AppShell.Header>
-      <AppShell.Main style={{ overflowX: 'hidden' }}>{children}</AppShell.Main>
+      <AppShell.Main>{children}</AppShell.Main>
     </AppShell>
   )
 }

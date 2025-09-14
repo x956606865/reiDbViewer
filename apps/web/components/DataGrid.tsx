@@ -56,8 +56,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   })
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', width: '100%', maxWidth: '100%', minWidth: 0 }}>
-      <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', display: 'block' }}>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, width: '100%', maxWidth: '100%', minWidth: 0 }}>
+      <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'scroll', overflowY: 'hidden', display: 'block', position: 'relative' }}>
       <table style={{ width: totalWidthPx + 'px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
         <colgroup>
           {allColumnIds.map((id) => (
