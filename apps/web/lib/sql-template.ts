@@ -98,6 +98,52 @@ export function compileSql(
   return { text, values, placeholders }
 }
 
+// Render a human-friendly SQL string by inlining parameter values into the
+// compiled parameterized SQL. This is ONLY for preview purposes. It must never
+// be used for execution because values are stringified and quoted.
+export function renderSqlPreview(compiled: CompiledSql, vars: SavedQueryVariableDef[]): string {
+  const defByName = new Map(vars.map(v => [v.name, v] as const))
+  const { text, values, placeholders } = compiled
+  const esc = (s: string) => s.replaceAll("'", "''")
+  const fmtDate = (d: Date) => {
+    const z = new Date(d)
+    const yyyy = z.getUTCFullYear()
+    const mm = String(z.getUTCMonth() + 1).padStart(2, '0')
+    const dd = String(z.getUTCDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+  const fmt = (name: string | undefined, val: any): string => {
+    if (val === null || val === undefined) return 'NULL'
+    const def = name ? defByName.get(name) : undefined
+    const t = def?.type
+    switch (t) {
+      case 'number':
+        return String(val)
+      case 'boolean':
+        return val ? 'TRUE' : 'FALSE'
+      case 'date':
+        return `'${fmtDate(val instanceof Date ? val : new Date(String(val)))}'::date`
+      case 'timestamp':
+        return `'${(val instanceof Date ? val : new Date(String(val))).toISOString()}'::timestamptz`
+      case 'json': {
+        const json = typeof val === 'string' ? val : JSON.stringify(val)
+        return `'${esc(json)}'::jsonb`
+      }
+      case 'uuid':
+      case 'text':
+      default:
+        return `'${esc(String(val))}'`
+    }
+  }
+
+  return text.replace(/\$(\d+)/g, (_m, g1) => {
+    const idx = Number(g1) - 1
+    const name = placeholders[idx]
+    const val = values[idx]
+    return fmt(name, val)
+  })
+}
+
 function normalizeValue(name: string, def: SavedQueryVariableDef, raw: unknown): any {
   const required = !!def.required
   const type = def.type

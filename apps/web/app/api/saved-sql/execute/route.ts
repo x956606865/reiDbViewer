@@ -6,12 +6,13 @@ import { env } from '@/lib/env'
 import { getAppDb } from '@/lib/appdb'
 import { withSafeSession } from '@/lib/db'
 import { getUserConnPool } from '@/lib/user-conn'
-import { compileSql, isReadOnlySelect } from '@/lib/sql-template'
+import { compileSql, isReadOnlySelect, renderSqlPreview } from '@/lib/sql-template'
 
 const ExecSchema = z.object({
   savedQueryId: z.string().min(1),
   values: z.record(z.any()).default({}),
-  userConnId: z.string().min(1),
+  // 预览无需连接：仅执行时才需要非空
+  userConnId: z.string().optional(),
   previewOnly: z.boolean().optional(),
 })
 
@@ -52,10 +53,15 @@ export async function POST(req: NextRequest) {
     }
 
     const compiled = compileSql(sql, vars, inputValues)
-
-    if (previewOnly) return NextResponse.json({ preview: compiled })
+    if (previewOnly) {
+      const previewInline = renderSqlPreview(compiled, vars)
+      return NextResponse.json({ preview: compiled, previewInline })
+    }
 
     // Execute on user's connection with safety guards
+    if (!userConnId || userConnId.trim() === '') {
+      return NextResponse.json({ error: 'user_conn_required' }, { status: 400 })
+    }
     const pool = await getUserConnPool(userId, userConnId)
     const rows = await withSafeSession(pool, env, async (client) => {
       const res = await client.query({ text: compiled.text, values: compiled.values })
@@ -68,4 +74,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'execute_failed', message: String(e?.message || e) }, { status: 500 })
   }
 }
-

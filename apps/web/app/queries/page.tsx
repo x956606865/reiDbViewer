@@ -7,6 +7,7 @@ import {
   Button,
   Code,
   Group,
+  LoadingOverlay,
   NumberInput,
   Paper,
   ScrollArea,
@@ -19,9 +20,10 @@ import {
   Textarea,
   Title,
 } from '@mantine/core'
-import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText, IconPencil } from '@tabler/icons-react'
 import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types'
 import { DataGrid } from '../../components/DataGrid'
+import { LeftDrawer } from '../../components/LeftDrawer'
 import { useCurrentConnId } from '@/lib/current-conn'
 
 type SavedItem = { id: string; name: string; description?: string | null; variables: SavedQueryVariableDef[]; createdAt?: string | null; updatedAt?: string | null }
@@ -66,6 +68,10 @@ export default function SavedQueriesPage() {
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
   const [gridCols, setGridCols] = useState<string[]>([])
   const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([])
+  const [mode, setMode] = useState<'edit' | 'run'>('run')
+  const [isExecuting, setIsExecuting] = useState(false)
+  const [isPreviewing, setIsPreviewing] = useState(false)
+  const sqlPreviewRef = React.useRef<HTMLDivElement | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('rdv.savedSql.expanded')
@@ -197,6 +203,7 @@ export default function SavedQueriesPage() {
     setRows([])
     setGridCols([])
     setInfo('已切换为新建模式。')
+    setMode('edit')
   }
 
   const onSave = async () => {
@@ -347,24 +354,34 @@ export default function SavedQueriesPage() {
   const onPreview = async () => {
     setError(null)
     setInfo(null)
+    if (!currentId) { setError('请先从列表选择一条或保存新查询后再预览/执行。'); return }
+    setIsPreviewing(true)
     try {
-      if (!currentId) throw new Error('请先从列表选择一条或保存新查询后再预览/执行。')
       const res = await fetch('/api/saved-sql/execute', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ savedQueryId: currentId, values: runValues, userConnId: userConnId || '', previewOnly: true }),
+        // 预览无需连接
+        body: JSON.stringify({ savedQueryId: currentId, values: runValues, previewOnly: true }),
       })
       const j = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(j?.error || `预览失败（HTTP ${res.status}）`)
-      setPreviewSQL(j?.preview?.text || '')
+      setPreviewSQL(j?.previewInline || j?.preview?.text || '')
+      setInfo('已生成 SQL 预览')
+      // 平滑滚动到 SQL 预览区域
+      requestAnimationFrame(() => {
+        sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
     } catch (e: any) {
       setError(String(e?.message || e))
+    } finally {
+      setIsPreviewing(false)
     }
   }
 
   const onExecute = async () => {
     setError(null)
     setInfo(null)
+    setIsExecuting(true)
     try {
       if (!currentId) throw new Error('请先从列表选择一条或保存新查询后再执行。')
       if (!userConnId) throw new Error('未设置当前连接，请先到 Connections 选择。')
@@ -415,6 +432,8 @@ export default function SavedQueriesPage() {
       setRows(data)
     } catch (e: any) {
       setError(String(e?.message || e))
+    } finally {
+      setIsExecuting(false)
     }
   }
 
@@ -437,6 +456,8 @@ export default function SavedQueriesPage() {
       })
       .catch((e) => setError(String(e?.message || e)))
   }
+  const onOpenItemRun = (it: SavedItem) => { onSelectSaved(it.id); setMode('run') }
+  const onOpenItemEdit = (it: SavedItem) => { onSelectSaved(it.id); setMode('edit') }
 
   return (
     <Stack gap="md">
@@ -455,9 +476,8 @@ export default function SavedQueriesPage() {
         </Paper>
       )}
 
-      <Group align="start" justify="space-between" wrap="nowrap">
-        <Paper withBorder p="md" w={420}>
-          <Title order={4}>我的查询</Title>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+        <LeftDrawer title="我的查询">
           <Group mt="xs" gap="xs">
             <Button size="xs" variant="light" onClick={() => { const p = prompt('新建文件夹路径（用/分隔，如 reports/daily）'); if (p) { setExpanded((s) => new Set([...Array.from(s), p])); setName(`${p}/`) } }}>新建文件夹</Button>
           </Group>
@@ -470,7 +490,8 @@ export default function SavedQueriesPage() {
                   nodes={tree.children}
                   expanded={expanded}
                   onToggle={toggleFolder}
-                  onOpenItem={(it) => onSelectSaved(it.id)}
+                  onOpenItem={onOpenItemRun}
+                  onEditItem={onOpenItemEdit}
                   onDeleteItem={(it) => onDeleteById(it.id, it.name)}
                 />
               ) : (
@@ -478,246 +499,268 @@ export default function SavedQueriesPage() {
               )}
             </div>
           )}
-        </Paper>
+        </LeftDrawer>
 
         <Stack gap="md" style={{ flex: 1 }}>
-          <Paper withBorder p="md">
-            <Title order={4}>编辑 / 新增</Title>
-            <Group mt="sm" align="end">
-              <TextInput label="名称" value={name} onChange={(e) => setName(e.currentTarget.value)} w={320} />
-              <TextInput label="描述" value={description} onChange={(e) => setDescription(e.currentTarget.value)} w={420} />
-              <Button onClick={onSave} disabled={!canSave}>{currentId ? '更新' : '保存'}</Button>
-              <Button variant="light" onClick={onSaveAs} disabled={!canSave}>另存为</Button>
-              <Button variant="default" onClick={onNew}>新建</Button>
-              <ActionIcon color="red" variant="light" onClick={onDelete} disabled={!currentId} title="删除当前">
-                <IconTrash size={18} />
-              </ActionIcon>
-            </Group>
-            <Textarea
-              label="SQL（使用 {{var}} 占位符；仅支持 SELECT/WITH）"
-              mt="sm"
-              value={sql}
-              onChange={(e) => setSql(e.currentTarget.value)}
-              autosize minRows={6}
-              styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
-            />
-            <Group gap="xs" mt="xs">
-              <Button size="xs" leftSection={<IconScan size={14} />} variant="light" onClick={onDetectVars}>提取变量</Button>
-              <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={onAddVar}>新增变量</Button>
-            </Group>
-            <Table mt="sm" withTableBorder withColumnBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>名称</Table.Th>
-                  <Table.Th>类型</Table.Th>
-                  <Table.Th>必填</Table.Th>
-                  <Table.Th>默认值</Table.Th>
-                  <Table.Th w={60}>操作</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {vars.map((v, i) => (
-                  <Table.Tr key={v.name + i}>
-                    <Table.Td>
-                      <TextInput
-                        value={v.name}
-                        onChange={(e) => {
-                          const nextName = e.currentTarget.value
-                          setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, name: nextName } : x)))
-                          // 同步重命名运行值键
-                          setRunValues((rv) => {
-                            const copy = { ...rv }
-                            const oldName = v.name
-                            if (oldName !== nextName && Object.prototype.hasOwnProperty.call(copy, oldName)) {
-                              copy[nextName] = copy[oldName]
-                              delete copy[oldName]
-                            }
-                            return copy
-                          })
-                        }}
-                        w={220}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <Select data={VAR_TYPES} value={v.type} onChange={(val) => setVars((vs) => vs.map((x, idx) => idx === i ? { ...x, type: (val as any) || 'text' } : x))} w={140} />
-                    </Table.Td>
-                    <Table.Td>
-                      <Switch
-                        checked={!!v.required}
-                        onChange={(e) => {
-                          const checked = e.currentTarget.checked
-                          setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, required: checked } : x)))
-                        }}
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      {v.type === 'number' ? (
-                        <NumberInput value={(v.default as any) ?? undefined} onChange={(val) => setVars((vs) => vs.map((x, idx) => idx === i ? { ...x, default: val as any } : x))} w={180} />
-                      ) : v.type === 'boolean' ? (
-                        <Switch
-                          checked={!!v.default}
-                          onChange={(e) => {
-                            const checked = e.currentTarget.checked
-                            setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, default: checked } : x)))
-                          }}
-                        />
-                      ) : (
-                        <TextInput
-                          value={String(v.default ?? '')}
-                          onChange={(e) => {
+          {mode === 'edit' ? (
+            <>
+              <Paper withBorder p="md">
+                <Title order={4}>基本信息</Title>
+                <Group mt="sm" align="end">
+                  <TextInput label="名称" value={name} onChange={(e) => setName(e.currentTarget.value)} w={320} />
+                  <TextInput label="描述" value={description} onChange={(e) => setDescription(e.currentTarget.value)} w={420} />
+                  <Button onClick={onSave} disabled={!canSave}>{currentId ? '更新' : '保存'}</Button>
+                  <Button variant="light" onClick={onSaveAs} disabled={!canSave}>另存为</Button>
+                  <Button variant="default" onClick={onNew}>新建</Button>
+                  <ActionIcon color="red" variant="light" onClick={onDelete} disabled={!currentId} title="删除当前">
+                    <IconTrash size={18} />
+                  </ActionIcon>
+                </Group>
+              </Paper>
+
+              <Paper withBorder p="md">
+                <Title order={4}>SQL</Title>
+                <Textarea
+                  mt="sm"
+                  value={sql}
+                  onChange={(e) => setSql(e.currentTarget.value)}
+                  autosize minRows={8}
+                  styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+                />
+                <Group gap="xs" mt="xs">
+                  <Button size="xs" leftSection={<IconScan size={14} />} variant="light" onClick={onDetectVars}>从 SQL 提取变量</Button>
+                  <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={onAddVar}>新增变量</Button>
+                </Group>
+              </Paper>
+
+              <Paper withBorder p="md">
+                <Title order={4}>变量定义</Title>
+                <Table mt="sm" withTableBorder withColumnBorders>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>名称</Table.Th>
+                      <Table.Th>类型</Table.Th>
+                      <Table.Th>必填</Table.Th>
+                      <Table.Th>默认值</Table.Th>
+                      <Table.Th w={60}>操作</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {vars.length === 0 && (
+                      <Table.Tr><Table.Td colSpan={5}><Text c="dimmed">无变量</Text></Table.Td></Table.Tr>
+                    )}
+                    {vars.map((v, i) => (
+                      <Table.Tr key={v.name + i}>
+                        <Table.Td>
+                          <TextInput
+                            value={v.name}
+                            onChange={(e) => {
+                              const nextName = e.currentTarget.value
+                              setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, name: nextName } : x)))
+                              setRunValues((rv) => {
+                                const copy = { ...rv }
+                                const oldName = v.name
+                                if (oldName !== nextName && Object.prototype.hasOwnProperty.call(copy, oldName)) {
+                                  copy[nextName] = copy[oldName]
+                                  delete copy[oldName]
+                                }
+                                return copy
+                              })
+                            }}
+                            w={220}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <Select data={VAR_TYPES} value={v.type} onChange={(val) => setVars((vs) => vs.map((x, idx) => idx === i ? { ...x, type: (val as any) || 'text' } : x))} w={140} />
+                        </Table.Td>
+                        <Table.Td>
+                          <Switch
+                            checked={!!v.required}
+                            onChange={(e) => {
+                              const checked = e.currentTarget.checked
+                              setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, required: checked } : x)))
+                            }}
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          {v.type === 'number' ? (
+                            <NumberInput value={(v.default as any) ?? undefined} onChange={(val) => setVars((vs) => vs.map((x, idx) => idx === i ? { ...x, default: val as any } : x))} w={180} />
+                          ) : v.type === 'boolean' ? (
+                            <Switch
+                              checked={!!v.default}
+                              onChange={(e) => {
+                                const checked = e.currentTarget.checked
+                                setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, default: checked } : x)))
+                              }}
+                            />
+                          ) : (
+                            <TextInput
+                              value={String(v.default ?? '')}
+                              onChange={(e) => {
+                                const val = e.currentTarget.value
+                                setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, default: val } : x)))
+                              }}
+                              w={240}
+                            />
+                          )}
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon color="red" variant="light" onClick={() => onRemoveVar(v.name)}><IconTrash size={14} /></ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+
+                <Title order={4} mt="md">动态列</Title>
+                <Text c="dimmed" size="sm">每个动态列包含“名称”和一个 JS 函数。函数签名：<Code>(row, vars, helpers) =&gt; any</Code></Text>
+                <Table mt="sm" withTableBorder withColumnBorders>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th w={220}>名称</Table.Th>
+                      <Table.Th>JS 函数</Table.Th>
+                      <Table.Th w={60}>操作</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {dynCols.length === 0 && (
+                      <Table.Tr><Table.Td colSpan={3}><Text c="dimmed">暂无动态列</Text></Table.Td></Table.Tr>
+                    )}
+                    {dynCols.map((dc, i) => (
+                      <Table.Tr key={dc.name + i}>
+                        <Table.Td>
+                          <TextInput value={dc.name} onChange={(e) => {
                             const val = e.currentTarget.value
-                            setVars((vs) => vs.map((x, idx) => (idx === i ? { ...x, default: val } : x)))
-                          }}
-                          w={240}
-                        />
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="light" onClick={() => onRemoveVar(v.name)}><IconTrash size={14} /></ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                            setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, name: val } : x))
+                          }} />
+                        </Table.Td>
+                        <Table.Td>
+                          <Textarea
+                            value={dc.code}
+                            onChange={(e) => {
+                              const val = e.currentTarget.value
+                              setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, code: val } : x))
+                            }}
+                            autosize minRows={3}
+                            styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+                            placeholder="(row, vars, helpers) => row.amount * 1.1"
+                          />
+                        </Table.Td>
+                        <Table.Td>
+                          <ActionIcon color="red" variant="light" onClick={() => setDynCols((arr) => arr.filter((_, idx) => idx !== i))}><IconTrash size={14} /></ActionIcon>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+                <Group gap="xs" mt="xs">
+                  <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={() => setDynCols((arr) => [...arr, { name: `dyn_${arr.length + 1}`, code: '(row, vars) => null' }])}>新增动态列</Button>
+                </Group>
+              </Paper>
+            </>
+          ) : (
+            <>
+              <Paper withBorder p="md">
+                <Title order={4}>运行</Title>
+                <Group mt="xs" gap="sm" align="center">
+                  <Text size="sm" c="dimmed">当前连接：</Text>
+                  {userConnId ? <Badge color="green"><Code>{userConnId}</Code></Badge> : <Badge color="gray">未选择</Badge>}
+                </Group>
+                <Title order={5} mt="md">运行参数</Title>
+                <Table mt="xs" withTableBorder withColumnBorders>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>变量</Table.Th>
+                      <Table.Th>运行值</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {vars.length === 0 && (
+                      <Table.Tr><Table.Td colSpan={2}><Text c="dimmed">无变量</Text></Table.Td></Table.Tr>
+                    )}
+                    {vars.map((v) => (
+                      <Table.Tr key={`run_${v.name}`}>
+                        <Table.Td><Code>{v.name}</Code></Table.Td>
+                        <Table.Td>
+                          {v.type === 'number' ? (
+                            <NumberInput value={(runValues[v.name] as any) ?? (v.default as any) ?? undefined} onChange={(val) => setRunValues((rv) => ({ ...rv, [v.name]: val }))} w={260} />
+                          ) : v.type === 'boolean' ? (
+                            <Switch
+                              checked={!!runValues[v.name]}
+                              onChange={(e) => {
+                                const checked = e.currentTarget.checked
+                                setRunValues((rv) => ({ ...rv, [v.name]: checked }))
+                              }}
+                            />
+                          ) : (
+                            <TextInput
+                              value={String(runValues[v.name] ?? (v.default ?? ''))}
+                              onChange={(e) => {
+                                const val = e.currentTarget.value
+                                setRunValues((rv) => ({ ...rv, [v.name]: val }))
+                              }}
+                              w={360}
+                            />
+                          )}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+                <Group mt="xs">
+                  <Button size="xs" variant="light" onClick={() => setRunValues(Object.fromEntries(vars.map((v) => [v.name, v.default ?? ''])))}>重置为默认值</Button>
+                </Group>
+                <Group mt="sm">
+                  <Button onClick={onPreview} variant="light">预览 SQL</Button>
+                  <Button onClick={onExecute} loading={isExecuting}>执行</Button>
+                </Group>
+              </Paper>
 
-            <Title order={4} mt="md">动态列</Title>
-            <Text c="dimmed" size="sm">每个动态列包含“名称”和一个 JS 函数。函数签名：<Code>(row, vars, helpers) =&gt; any</Code>，在客户端执行。</Text>
-            <Table mt="sm" withTableBorder withColumnBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th w={220}>名称</Table.Th>
-                  <Table.Th>JS 函数</Table.Th>
-                  <Table.Th w={60}>操作</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {dynCols.length === 0 && (
-                  <Table.Tr><Table.Td colSpan={3}><Text c="dimmed">暂无动态列</Text></Table.Td></Table.Tr>
-                )}
-                {dynCols.map((dc, i) => (
-                  <Table.Tr key={dc.name + i}>
-                    <Table.Td>
-                      <TextInput value={dc.name} onChange={(e) => {
-                        const val = e.currentTarget.value
-                        setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, name: val } : x))
-                      }} />
-                    </Table.Td>
-                    <Table.Td>
-                      <Textarea
-                        value={dc.code}
-                        onChange={(e) => {
-                          const val = e.currentTarget.value
-                          setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, code: val } : x))
-                        }}
-                        autosize minRows={3}
-                        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
-                        placeholder="(row, vars, helpers) => row.amount * 1.1"
-                      />
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="light" onClick={() => setDynCols((arr) => arr.filter((_, idx) => idx !== i))}><IconTrash size={14} /></ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            <Group gap="xs" mt="xs">
-              <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={() => setDynCols((arr) => [...arr, { name: `dyn_${arr.length + 1}`, code: '(row, vars) => null' }])}>新增动态列</Button>
-            </Group>
-          </Paper>
+              <Paper withBorder p="sm" style={{ position: 'relative' }} ref={sqlPreviewRef}>
+                <LoadingOverlay visible={isPreviewing} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
+                <Title order={4}>SQL</Title>
+                <Paper withBorder p="sm" mt="xs"><ScrollArea h={180}><Code block>{previewSQL || '（点击“预览 SQL”或“执行”）'}</Code></ScrollArea></Paper>
+              </Paper>
 
-          <Paper withBorder p="md">
-            <Title order={4}>运行</Title>
-            <Group mt="xs" gap="sm" align="center">
-              <Text size="sm" c="dimmed">当前连接：</Text>
-              {userConnId ? <Badge color="green"><Code>{userConnId}</Code></Badge> : <Badge color="gray">未选择</Badge>}
-            </Group>
-            <Title order={5} mt="md">运行参数</Title>
-            <Table mt="xs" withTableBorder withColumnBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>变量</Table.Th>
-                  <Table.Th>运行值</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {vars.length === 0 && (
-                  <Table.Tr><Table.Td colSpan={2}><Text c="dimmed">无变量</Text></Table.Td></Table.Tr>
-                )}
-                {vars.map((v) => (
-                  <Table.Tr key={`run_${v.name}`}>
-                    <Table.Td><Code>{v.name}</Code></Table.Td>
-                    <Table.Td>
-                      {v.type === 'number' ? (
-                        <NumberInput value={(runValues[v.name] as any) ?? (v.default as any) ?? undefined} onChange={(val) => setRunValues((rv) => ({ ...rv, [v.name]: val }))} w={260} />
-                      ) : v.type === 'boolean' ? (
-                        <Switch
-                          checked={!!runValues[v.name]}
-                          onChange={(e) => {
-                            const checked = e.currentTarget.checked
-                            setRunValues((rv) => ({ ...rv, [v.name]: checked }))
-                          }}
-                        />
-                      ) : (
-                        <TextInput
-                          value={String(runValues[v.name] ?? (v.default ?? ''))}
-                          onChange={(e) => {
-                            const val = e.currentTarget.value
-                            setRunValues((rv) => ({ ...rv, [v.name]: val }))
-                          }}
-                          w={360}
-                        />
-                      )}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-            <Group mt="xs">
-              <Button size="xs" variant="light" onClick={() => setRunValues(Object.fromEntries(vars.map((v) => [v.name, v.default ?? ''])))}>重置为默认值</Button>
-            </Group>
-            <Group mt="sm">
-              <Button onClick={onPreview} variant="light">预览 SQL</Button>
-              <Button onClick={onExecute}>执行</Button>
-            </Group>
-            <Title order={5} mt="md">SQL</Title>
-            <Paper withBorder p="sm" mt="xs"><ScrollArea h={180}><Code block>{previewSQL || '（点击“预览 SQL”或“执行”）'}</Code></ScrollArea></Paper>
-          </Paper>
-
-          <Paper withBorder p="xs">
-            <Title order={4}>结果</Title>
-            <div style={{ marginTop: 8 }}>
-              <DataGrid columns={gridCols} rows={rows} />
-            </div>
-          </Paper>
+              <Paper withBorder p="xs" style={{ position: 'relative' }}>
+                <LoadingOverlay visible={isExecuting} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
+                <Title order={4}>结果</Title>
+                <div style={{ marginTop: 8 }}>
+                  <DataGrid columns={gridCols} rows={rows} />
+                </div>
+              </Paper>
+            </>
+          )}
         </Stack>
-      </Group>
+      </div>
     </Stack>
   )
 }
 
-const Tree = React.memo(function Tree({ nodes, expanded, onToggle, onOpenItem, onDeleteItem }: {
+const Tree = React.memo(function Tree({ nodes, expanded, onToggle, onOpenItem, onEditItem, onDeleteItem }: {
   nodes: TreeNode[]
   expanded: Set<string>
   onToggle: (path: string) => void
   onOpenItem: (it: SavedItem) => void
+  onEditItem: (it: SavedItem) => void
   onDeleteItem: (it: SavedItem) => void
 }) {
   return (
     <div>
       {nodes.map((n) => (
-        <TreeRow key={n.type + ':' + n.path} node={n} depth={0} expanded={expanded} onToggle={onToggle} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} />
+        <TreeRow key={n.type + ':' + n.path} node={n} depth={0} expanded={expanded} onToggle={onToggle} onOpenItem={onOpenItem} onEditItem={onEditItem} onDeleteItem={onDeleteItem} />
       ))}
     </div>
   )
 })
 
-const TreeRow = React.memo(function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onDeleteItem }: {
+const TreeRow = React.memo(function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onEditItem, onDeleteItem }: {
   node: TreeNode
   depth: number
   expanded: Set<string>
   onToggle: (path: string) => void
   onOpenItem: (it: SavedItem) => void
+  onEditItem: (it: SavedItem) => void
   onDeleteItem: (it: SavedItem) => void
 }) {
   const pad = 8 + depth * 14
@@ -732,7 +775,16 @@ const TreeRow = React.memo(function TreeRow({ node, depth, expanded, onToggle, o
           <Text>{node.name}</Text>
         </div>
         {isOpen && node.children && node.children.map((c) => (
-          <TreeRow key={c.type + ':' + c.path} node={c} depth={depth + 1} expanded={expanded} onToggle={onToggle} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} />
+          <TreeRow
+            key={c.type + ':' + c.path}
+            node={c}
+            depth={depth + 1}
+            expanded={expanded}
+            onToggle={onToggle}
+            onOpenItem={onOpenItem}
+            onEditItem={onEditItem}
+            onDeleteItem={onDeleteItem}
+          />
         ))}
       </div>
     )
@@ -744,9 +796,14 @@ const TreeRow = React.memo(function TreeRow({ node, depth, expanded, onToggle, o
       <IconFileText size={14} />
       <a onClick={() => node.item && onOpenItem(node.item)} style={{ cursor: 'pointer', flex: 1 }}>{node.name}</a>
       {node.item && (
-        <ActionIcon color="red" variant="light" onClick={() => onDeleteItem(node.item!)}>
-          <IconTrash size={14} />
-        </ActionIcon>
+        <>
+          <ActionIcon variant="light" onClick={(e) => { e.stopPropagation(); onEditItem?.(node.item!) }} title="编辑">
+            <IconPencil size={14} />
+          </ActionIcon>
+          <ActionIcon color="red" variant="light" onClick={(e) => { e.stopPropagation(); onDeleteItem(node.item!) }} title="删除">
+            <IconTrash size={14} />
+          </ActionIcon>
+        </>
       )}
     </div>
   )
