@@ -50,8 +50,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   })
 
   return (
-    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto' }}>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', width: '100%', maxWidth: '100%' }}>
+      <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden' }}>
       <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead style={{ background: '#f9fafb' }}>
           {table.getHeaderGroups().map((hg) => (
