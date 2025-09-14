@@ -3,6 +3,7 @@
 import * as React from 'react'
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table'
 import JsonCell from './JsonCell'
+import RowViewButton from './RowViewButton'
 
 export type DataGridProps = {
   columns: string[]
@@ -11,9 +12,11 @@ export type DataGridProps = {
 }
 
 export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
-  const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(
-    () =>
-      columns.map((key) => ({
+  const hasExternalActions = React.useMemo(() => columns.includes('actions'), [columns])
+  const totalCols = hasExternalActions ? columns.length : columns.length + 1
+
+  const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
+    const defs: ColumnDef<Record<string, unknown>>[] = columns.map((key) => ({
         header: key,
         accessorKey: key,
         cell: (info) => {
@@ -33,9 +36,12 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
           }
           return String(v)
         },
-      })),
-    [columns]
-  )
+      }))
+    if (!hasExternalActions) {
+      defs.push({ id: '__rdv_actions', header: '操作', cell: (info) => <RowViewButton record={info.row.original} /> })
+    }
+    return defs
+  }, [columns, hasExternalActions])
 
   const table = useReactTable({
     data: rows,
@@ -69,7 +75,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length} style={{ padding: 12, color: '#64748b' }}>
+              <td colSpan={totalCols} style={{ padding: 12, color: '#64748b' }}>
                 无数据
               </td>
             </tr>
