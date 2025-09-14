@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton } from '@mantine/core'
+import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton, ActionIcon } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { useCurrentConnId } from '@/lib/current-conn'
 import { useSchemaHide } from '@/lib/schema-hide'
-import { IconEyeOff } from '@tabler/icons-react'
+import { IconEyeOff, IconX } from '@tabler/icons-react'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
@@ -30,6 +30,23 @@ export default function SchemaPage() {
   const [prefixInput, setPrefixInput] = useState('')
   const [search, setSearch] = useState('')
   const [debouncedSearch] = useDebouncedValue(search, 300)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Shortcut: '/' 聚焦搜索，Esc 清空
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (document.activeElement?.tagName || '').toLowerCase()
+      const isTyping = tag === 'input' || tag === 'textarea'
+      if (e.key === '/' && !isTyping) {
+        e.preventDefault()
+        searchRef.current?.focus()
+      } else if (e.key === 'Escape' && document.activeElement === searchRef.current) {
+        setSearch('')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   useEffect(() => {
     const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
@@ -76,19 +93,26 @@ export default function SchemaPage() {
     }
   }
 
-  const filteredTables = selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
+  const filteredTables = useMemo(() => (
+    selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
+  ), [tables, selectedSchema])
   const searchLower = debouncedSearch.trim().toLowerCase()
-  const filteredAndSearched = filteredTables.filter((t) => {
-    if (!searchLower) return true
-    const fq = `${t.schema}.${t.name}`.toLowerCase()
-    return t.name.toLowerCase().includes(searchLower) || fq.includes(searchLower)
-  })
-  const visibleTables = filteredAndSearched.filter((t) => {
-    const fq = `${t.schema}.${t.name}`
-    if (rules.tables.includes(fq)) return false
-    if (rules.prefixes.some((p) => t.name.startsWith(p))) return false
-    return true
-  })
+  const filteredAndSearched = useMemo(() => (
+    !searchLower
+      ? filteredTables
+      : filteredTables.filter((t) => {
+          const fq = `${t.schema}.${t.name}`.toLowerCase()
+          return t.name.toLowerCase().includes(searchLower) || fq.includes(searchLower)
+        })
+  ), [filteredTables, searchLower])
+  const visibleTables = useMemo(() => (
+    filteredAndSearched.filter((t) => {
+      const fq = `${t.schema}.${t.name}`
+      if (rules.tables.includes(fq)) return false
+      if (rules.prefixes.some((p) => t.name.startsWith(p))) return false
+      return true
+    })
+  ), [filteredAndSearched, rules])
 
   const openIndexes = async (schema: string, table: string) => {
     setIdxTarget({ schema, table })
@@ -152,6 +176,13 @@ export default function SchemaPage() {
             placeholder="输入表名或 schema.table"
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
+            ref={searchRef}
+            rightSection={search ? (
+              <ActionIcon size="sm" variant="subtle" onClick={() => setSearch('')} aria-label="清空搜索">
+                <IconX size={14} />
+              </ActionIcon>
+            ) : null}
+            rightSectionPointerEvents={search ? 'auto' : 'none'}
             style={{ width: 320 }}
           />
           <details>
