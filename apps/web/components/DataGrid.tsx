@@ -14,6 +14,7 @@ export type DataGridProps = {
 export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
   const hasExternalActions = React.useMemo(() => columns.includes('actions'), [columns])
   const totalCols = hasExternalActions ? columns.length : columns.length + 1
+  const allColumnIds = React.useMemo(() => (hasExternalActions ? columns : [...columns, '__rdv_actions']), [columns, hasExternalActions])
 
   const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const defs: ColumnDef<Record<string, unknown>>[] = columns.map((key) => ({
@@ -52,7 +53,12 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', width: '100%', maxWidth: '100%', minWidth: 0 }}>
       <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', display: 'block' }}>
-      <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+      <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+        <colgroup>
+          {allColumnIds.map((id) => (
+            <col key={id} style={{ width: id === 'actions' || id === '__rdv_actions' ? 120 : 160 }} />
+          ))}
+        </colgroup>
         <thead style={{ background: '#f9fafb' }}>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
@@ -87,6 +93,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 const innerStyle: React.CSSProperties = {
                   padding: '8px 10px',
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }
                 return (
                   <td key={cell.id} style={tdStyle}>
