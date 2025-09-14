@@ -177,8 +177,8 @@ export default function BrowseTablePage() {
             setGridCols(apiCols)
             setRows((json.rows as Array<Record<string, unknown>>) || [])
           } else {
-            // 失败时保留错误信息，稍后做预览降级
-            setError(String(json?.error || json?.message || '查询失败'))
+            // 失败时优先展示详细 message（如 permission denied），回退到 error 码
+            setError(String(json?.message || json?.error || `查询失败（HTTP ${res.status}）`))
             columns = (json.preview?.columns as string[]) || columns
             setSql(json.preview?.text || '')
             setGridCols(columns)
