@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge } from '@mantine/core'
+import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton } from '@mantine/core'
 import { useCurrentConnId } from '@/lib/current-conn'
+import { useSchemaHide } from '@/lib/schema-hide'
+import { IconEyeOff } from '@tabler/icons-react'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
@@ -23,6 +25,8 @@ export default function SchemaPage() {
   const [idxLoading, setIdxLoading] = useState(false)
   const [idxError, setIdxError] = useState<string | null>(null)
   const [indexes, setIndexes] = useState<Array<any>>([])
+  const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
+  const [prefixInput, setPrefixInput] = useState('')
 
   useEffect(() => {
     const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
@@ -70,6 +74,12 @@ export default function SchemaPage() {
   }
 
   const filteredTables = selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
+  const visibleTables = filteredTables.filter((t) => {
+    const fq = `${t.schema}.${t.name}`
+    if (rules.tables.includes(fq)) return false
+    if (rules.prefixes.some((p) => t.name.startsWith(p))) return false
+    return true
+  })
 
   const openIndexes = async (schema: string, table: string) => {
     setIdxTarget({ schema, table })
@@ -118,7 +128,7 @@ export default function SchemaPage() {
           </Group>
         </Group>
         <Group mt="xs" gap="sm">
-          <Text c="dimmed" size="sm">数据库：{databases.length} 个；Schema：{schemas.length} 个；表：{tables.length} 张</Text>
+          <Text c="dimmed" size="sm">数据库：{databases.length} 个；Schema：{schemas.length} 个；表：{tables.length} 张（可见 {visibleTables.length}）</Text>
           <Text c="dimmed" size="sm">{cachedAt ? `缓存时间：${new Date(cachedAt).toLocaleString()}` : '无缓存（请刷新）'}</Text>
           <Select
             label="筛选 Schema"
@@ -128,20 +138,53 @@ export default function SchemaPage() {
             data={[{ value: '', label: '全部 Schema' }, ...schemas.map((s) => ({ value: s, label: s }))]}
             styles={{ root: { width: 240 } }}
           />
+          <details>
+            <summary>隐藏规则（{rules.prefixes.length + rules.tables.length}）</summary>
+            <div style={{ marginTop: 8 }}>
+              <Group gap="xs">
+                <TextInput label="按前缀隐藏" placeholder="如 tmp_ 或 _shadow" value={prefixInput} onChange={(e) => setPrefixInput(e.currentTarget.value)} style={{ width: 260 }} />
+                <Button size="xs" variant="light" onClick={() => { addPrefix(prefixInput); setPrefixInput('') }}>添加前缀</Button>
+                <Button size="xs" color="gray" variant="subtle" onClick={clear}>清除全部</Button>
+              </Group>
+              {rules.prefixes.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <Text size="sm" c="dimmed">已隐藏的前缀：</Text>
+                  <Group gap={6} mt={4}>
+                    {rules.prefixes.map((p) => (
+                      <Badge key={p} variant="light" rightSection={<CloseButton size="xs" onClick={() => removePrefix(p)} aria-label="remove" />}>{p}</Badge>
+                    ))}
+                  </Group>
+                </div>
+              )}
+              {rules.tables.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <Text size="sm" c="dimmed">已隐藏的表：</Text>
+                  <Group gap={6} mt={4}>
+                    {rules.tables.map((fq) => (
+                      <Badge key={fq} variant="light" rightSection={<CloseButton size="xs" onClick={() => removeTable(fq)} aria-label="remove" />}>{fq}</Badge>
+                    ))}
+                  </Group>
+                </div>
+              )}
+            </div>
+          </details>
         </Group>
       </div>
-      {userConnId && !cachedAt && filteredTables.length === 0 && (
+      {userConnId && !cachedAt && visibleTables.length === 0 && (
         <Paper withBorder p="md">
           <Text>当前连接尚无元数据缓存，请点击右上角“刷新元数据”。</Text>
         </Paper>
       )}
-      {filteredTables.map((t) => (
+      {visibleTables.map((t) => (
         <Paper withBorder p="sm" key={`${t.schema}.${t.name}`}>
           <Group justify="space-between" align="center">
             <Title order={5}>
               {t.schema}.{t.name}
             </Title>
             <Group gap="xs">
+              <Button size="xs" variant="subtle" leftSection={<IconEyeOff size={14} />} onClick={() => addTable(`${t.schema}.${t.name}`)}>
+                隐藏此表
+              </Button>
               <Button size="xs" variant="light" onClick={() => openIndexes(t.schema, t.name)}>查看索引</Button>
               <Button component={Link} href={`/browse/${t.schema}/${t.name}`} size="xs" variant="light">
                 浏览数据
