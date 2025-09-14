@@ -58,13 +58,13 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
             <tr key={hg.id}>
               {hg.headers.map((h) => {
                 const isActions = h.column.id === '__rdv_actions' || h.column.id === 'actions'
-                const base: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' }
-                const sticky: React.CSSProperties = isActions
-                  ? { position: 'sticky', right: 0, zIndex: 2, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#f9fafb', width: 120, minWidth: 120 }
-                  : {}
+                const base: React.CSSProperties = { textAlign: 'left', padding: 0, borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' }
+                const innerBase: React.CSSProperties = { padding: '8px 10px', fontWeight: 600 }
                 return (
-                  <th key={h.id} style={{ ...base, ...sticky }}>
-                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  <th key={h.id} style={{ ...base, width: isActions ? 120 : undefined, minWidth: isActions ? 120 : undefined }}>
+                    <div style={isActions ? { position: 'sticky', right: 0, zIndex: 2, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#f9fafb', ...innerBase } : innerBase}>
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    </div>
                   </th>
                 )
               })}
@@ -76,19 +76,23 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
             <tr key={row.id}>
               {row.getVisibleCells().map((cell) => {
                 const isActions = cell.column.id === '__rdv_actions' || cell.column.id === 'actions'
-                const base: React.CSSProperties = {
-                  padding: '8px 10px',
+                const tdStyle: React.CSSProperties = {
+                  padding: 0,
                   borderBottom: '1px solid #f1f5f9',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
                   background: '#fff',
                   whiteSpace: 'nowrap',
+                  width: isActions ? 120 : undefined,
+                  minWidth: isActions ? 120 : undefined,
                 }
-                const sticky: React.CSSProperties = isActions
-                  ? { position: 'sticky', right: 0, zIndex: 1, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#fff', width: 120, minWidth: 120 }
-                  : {}
+                const innerStyle: React.CSSProperties = {
+                  padding: '8px 10px',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                }
                 return (
-                  <td key={cell.id} style={{ ...base, ...sticky }}>
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  <td key={cell.id} style={tdStyle}>
+                    <div style={isActions ? { position: 'sticky', right: 0, zIndex: 1, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#fff', ...innerStyle } : innerStyle}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </div>
                   </td>
                 )
               })}
