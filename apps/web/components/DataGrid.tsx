@@ -15,6 +15,11 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   const hasExternalActions = React.useMemo(() => columns.includes('actions'), [columns])
   const totalCols = hasExternalActions ? columns.length : columns.length + 1
   const allColumnIds = React.useMemo(() => (hasExternalActions ? columns : [...columns, '__rdv_actions']), [columns, hasExternalActions])
+  const DEFAULT_COL_WIDTH = 160
+  const ACTION_COL_WIDTH = 120
+  const totalWidthPx = React.useMemo(() => (
+    columns.length * DEFAULT_COL_WIDTH + (hasExternalActions ? 0 : ACTION_COL_WIDTH)
+  ), [columns.length, hasExternalActions])
 
   const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const defs: ColumnDef<Record<string, unknown>>[] = columns.map((key) => ({
@@ -53,10 +58,10 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden', width: '100%', maxWidth: '100%', minWidth: 0 }}>
       <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', display: 'block' }}>
-      <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
+      <table style={{ width: totalWidthPx + 'px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
         <colgroup>
           {allColumnIds.map((id) => (
-            <col key={id} style={{ width: id === 'actions' || id === '__rdv_actions' ? 120 : 160 }} />
+            <col key={id} style={{ width: id === 'actions' || id === '__rdv_actions' ? ACTION_COL_WIDTH : DEFAULT_COL_WIDTH }} />
           ))}
         </colgroup>
         <thead style={{ background: '#f9fafb' }}>
