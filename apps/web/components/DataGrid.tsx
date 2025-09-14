@@ -4,6 +4,7 @@ import * as React from 'react'
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table'
 import { Tooltip, CopyButton, ActionIcon } from '@mantine/core'
 import { IconCopy } from '@tabler/icons-react'
+import TextCell from './TextCell'
 import JsonCell from './JsonCell'
 import RowViewButton from './RowViewButton'
 
@@ -67,20 +68,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 return <JsonCell value={parsed} />
               } catch {}
             }
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Tooltip label={v} withArrow withinPortal multiline maw={640} position="top-start">
-                  <span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{v}</span>
-                </Tooltip>
-                <CopyButton value={v} timeout={1200}>
-                  {({ copied, copy }) => (
-                    <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} title={copied ? '已复制' : '复制'}>
-                      <IconCopy size={14} />
-                    </ActionIcon>
-                  )}
-                </CopyButton>
-              </div>
-            )
+            return <TextCell value={v} />
           }
           return String(v)
         },
