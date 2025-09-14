@@ -149,7 +149,7 @@ export default function SavedQueriesPage() {
     return root
   }
 
-  const tree = buildTree(items)
+  const tree = useMemo(() => buildTree(items), [items])
 
   const onDetectVars = () => {
     try {
@@ -696,7 +696,7 @@ export default function SavedQueriesPage() {
   )
 }
 
-function Tree({ nodes, expanded, onToggle, onOpenItem, onDeleteItem }: {
+const Tree = React.memo(function Tree({ nodes, expanded, onToggle, onOpenItem, onDeleteItem }: {
   nodes: TreeNode[]
   expanded: Set<string>
   onToggle: (path: string) => void
@@ -710,9 +710,9 @@ function Tree({ nodes, expanded, onToggle, onOpenItem, onDeleteItem }: {
       ))}
     </div>
   )
-}
+})
 
-function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onDeleteItem }: {
+const TreeRow = React.memo(function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onDeleteItem }: {
   node: TreeNode
   depth: number
   expanded: Set<string>
@@ -750,4 +750,4 @@ function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onDeleteItem }: 
       )}
     </div>
   )
-}
+})

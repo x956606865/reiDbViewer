@@ -9,7 +9,7 @@ export type DataGridProps = {
   height?: number
 }
 
-export function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
+export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
   const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(
     () =>
       columns.map((key) => ({
@@ -73,4 +73,4 @@ export function DataGrid({ columns, rows, height = 360 }: DataGridProps) {
       </table>
     </div>
   )
-}
+})
