@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
           ix.indisunique          AS is_unique,
           ix.indisprimary         AS is_primary,
           ix.indisvalid           AS is_valid,
-          ix.indispartial         AS is_partial,
+          (ix.indpred IS NOT NULL) AS is_partial,
           am.amname               AS method,
           COALESCE(st.idx_scan, 0)      AS idx_scan,
           COALESCE(st.idx_tup_read, 0)  AS idx_tup_read,
@@ -83,4 +83,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'db_query_failed', message: String(e?.message || e) }, { status: 500 })
   }
 }
-
