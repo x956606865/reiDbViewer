@@ -71,6 +71,13 @@ export default function SavedQueriesPage() {
   const [mode, setMode] = useState<'edit' | 'run'>('run')
   const [isExecuting, setIsExecuting] = useState(false)
   const [isPreviewing, setIsPreviewing] = useState(false)
+  // pagination state (runtime only; not saved into query definition)
+  const [pgEnabled, setPgEnabled] = useState(true)
+  const [pgCountLoaded, setPgCountLoaded] = useState(false)
+  const [pgPage, setPgPage] = useState(1)
+  const [pgSize, setPgSize] = useState(20)
+  const [pgTotalRows, setPgTotalRows] = useState<number | null>(null)
+  const [pgTotalPages, setPgTotalPages] = useState<number | null>(null)
   const sqlPreviewRef = React.useRef<HTMLDivElement | null>(null)
   const [connItems, setConnItems] = useState<Array<{ id: string; alias: string; host?: string | null }>>([])
   const [extraFolders, setExtraFolders] = useState<Set<string>>(() => {
@@ -382,7 +389,7 @@ export default function SavedQueriesPage() {
     }
   }
 
-  const onPreview = async () => {
+  const onPreview = async (override?: { page?: number; pageSize?: number }) => {
     setError(null)
     setInfo(null)
     if (!currentId) { setError('请先从列表选择一条或保存新查询后再预览/执行。'); return }
@@ -392,10 +399,20 @@ export default function SavedQueriesPage() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         // 预览无需连接
-        body: JSON.stringify({ savedQueryId: currentId, values: runValues, previewOnly: true }),
+        body: JSON.stringify({
+          savedQueryId: currentId,
+          values: runValues,
+          previewOnly: true,
+          pagination: { enabled: pgEnabled, page: override?.page ?? pgPage, pageSize: override?.pageSize ?? pgSize },
+        }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(j?.error || `预览失败（HTTP ${res.status}）`)
+      if (!res.ok) {
+        if (j?.error === 'vars_missing' && Array.isArray(j?.missing)) {
+          throw new Error(`SQL 中存在未定义的变量：${j.missing.join(', ')}。请在“编辑”页删除对应占位符，或点击“提取变量”重新加入变量定义后再试。`)
+        }
+        throw new Error(j?.error || `预览失败（HTTP ${res.status}）`)
+      }
       setPreviewSQL(j?.previewInline || j?.preview?.text || '')
       setInfo('已生成 SQL 预览')
       // 平滑滚动到 SQL 预览区域
@@ -409,7 +426,7 @@ export default function SavedQueriesPage() {
     }
   }
 
-  const onExecute = async () => {
+  const onExecute = async (override?: { page?: number; pageSize?: number; forceCount?: boolean; countOnly?: boolean }) => {
     setError(null)
     setInfo(null)
     setIsExecuting(true)
@@ -419,11 +436,27 @@ export default function SavedQueriesPage() {
       const res = await fetch('/api/saved-sql/execute', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ savedQueryId: currentId, values: runValues, userConnId }),
+        body: JSON.stringify({
+          savedQueryId: currentId,
+          values: runValues,
+          userConnId,
+          pagination: {
+            enabled: pgEnabled,
+            page: override?.page ?? pgPage,
+            pageSize: override?.pageSize ?? pgSize,
+            withCount: override?.forceCount || (pgEnabled && !pgCountLoaded) || false,
+            countOnly: !!override?.countOnly,
+          },
+        }),
       })
       const j = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(j?.error || `执行失败（HTTP ${res.status}）`)
-      setPreviewSQL(j.sql || '')
+      if (!res.ok) {
+        if (j?.error === 'vars_missing' && Array.isArray(j?.missing)) {
+          throw new Error(`SQL 中存在未定义的变量：${j.missing.join(', ')}。请在“编辑”页删除对应占位符，或点击“提取变量”重新加入变量定义后再试。`)
+        }
+        throw new Error(j?.error || `执行失败（HTTP ${res.status}）`)
+      }
+      if (!override?.countOnly) setPreviewSQL(j.sql || '')
       let cols: string[] = Array.isArray(j.columns) ? j.columns : Object.keys((j.rows?.[0] ?? {}))
       let data: Array<Record<string, unknown>> = j.rows || []
 
@@ -459,8 +492,24 @@ export default function SavedQueriesPage() {
         })
       }
 
-      setGridCols(cols)
-      setRows(data)
+      // 若仅刷新总数，避免触碰数据表格
+      if (!override?.countOnly) {
+        setGridCols(cols)
+        setRows(data)
+      }
+      if (pgEnabled) {
+        const newPage = j.page || 1
+        const newSize = j.pageSize || pgSize
+        const newTotalRows = typeof j.totalRows === 'number' ? j.totalRows : pgTotalRows
+        const newTotalPages = typeof j.totalPages === 'number'
+          ? j.totalPages
+          : (typeof newTotalRows === 'number' ? Math.max(1, Math.ceil(newTotalRows / newSize)) : null)
+        setPgPage(newPage)
+        setPgSize(newSize)
+        setPgTotalRows(typeof j.totalRows === 'number' ? j.totalRows : pgTotalRows)
+        setPgTotalPages(newTotalPages)
+        if (typeof j.totalRows === 'number' || j?.countSkipped) setPgCountLoaded(true)
+      }
     } catch (e: any) {
       setError(String(e?.message || e))
     } finally {
@@ -470,6 +519,9 @@ export default function SavedQueriesPage() {
 
   const onSelectSaved = (id: string) => {
     setCurrentId(id)
+    setPgPage(1)
+    setPgTotalRows(null)
+    setPgTotalPages(null)
     // fetch details
     setError(null)
     fetch(`/api/user/saved-sql/${id}`, { cache: 'no-store' })
@@ -753,6 +805,13 @@ export default function SavedQueriesPage() {
                 <Group mt="xs">
                   <Button size="xs" variant="light" onClick={() => setRunValues(Object.fromEntries(vars.map((v) => [v.name, v.default ?? ''])))}>重置为默认值</Button>
                 </Group>
+                <Title order={5} mt="md">分页</Title>
+                <Group mt="xs" gap="md" align="center">
+                  <Switch checked={pgEnabled} onChange={(e) => { const on = e.currentTarget.checked; setPgEnabled(on); setPgPage(1); setPgTotalRows(null); setPgTotalPages(null); setPgCountLoaded(false) }} label="开启分页" />
+                  <NumberInput disabled={!pgEnabled} label="每页条数" value={pgSize} min={1} onChange={(v) => setPgSize(Number(v || 1))} w={140} />
+                  <NumberInput disabled={!pgEnabled} label="当前页" value={pgPage} min={1} onChange={(v) => setPgPage(Number(v || 1))} w={140} />
+                  {/* 首次执行自动计算一次总数；可在结果上方点击“刷新总数”手动更新 */}
+                </Group>
                 <Group mt="sm">
                   <Button onClick={onPreview} variant="light">预览 SQL</Button>
                   <Button onClick={onExecute} loading={isExecuting}>执行</Button>
@@ -768,9 +827,62 @@ export default function SavedQueriesPage() {
               <Paper withBorder p="xs" style={{ position: 'relative' }}>
                 <LoadingOverlay visible={isExecuting} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
                 <Title order={4}>结果</Title>
+                {pgEnabled && (
+                  <Group mt="xs" gap="xs" align="center">
+                    <Text size="sm" c="dimmed">
+                      {pgTotalRows !== null ? (
+                        <>共 <b>{pgTotalRows}</b> 条（每页 {pgSize} 条）</>
+                      ) : (
+                        <>未计算总数</>
+                      )}
+                    </Text>
+                    <Button size="xs" variant="light" onClick={() => onExecute({ page: pgPage, forceCount: true, countOnly: true })}>
+                      {pgTotalRows !== null ? '刷新总数' : '计算总数'}
+                    </Button>
+                  </Group>
+                )}
                 <div style={{ marginTop: 8 }}>
                   <DataGrid columns={gridCols} rows={rows} />
                 </div>
+                {pgEnabled && (
+                  <Group mt="sm" justify="space-between" align="center">
+                    <Group gap="xs">
+                      <Button
+                        size="xs" variant="default"
+                        disabled={pgPage <= 1}
+                        onClick={() => { setPgPage(1); onExecute({ page: 1 }) }}
+                      >首页</Button>
+                      <Button
+                        size="xs" variant="default"
+                        disabled={pgPage <= 1}
+                        onClick={() => {
+                          const next = Math.max(1, pgPage - 1)
+                          setPgPage(next)
+                          onExecute({ page: next })
+                        }}
+                      >上一页</Button>
+                      <Button
+                        size="xs" variant="default"
+                        disabled={pgTotalPages ? pgPage >= pgTotalPages : false}
+                        onClick={() => {
+                          const next = pgPage + 1
+                          setPgPage(next)
+                          onExecute({ page: next })
+                        }}
+                      >下一页</Button>
+                      <Button
+                        size="xs" variant="default"
+                        disabled={!pgTotalPages || pgPage >= (pgTotalPages || 1)}
+                        onClick={() => { if (pgTotalPages) { setPgPage(pgTotalPages); onExecute({ page: pgTotalPages }) } }}
+                      >末页</Button>
+                    </Group>
+                    <Text size="sm" c="dimmed">
+                      第 <b>{pgPage}</b>
+                      {pgTotalPages ? <> / <b>{pgTotalPages}</b></> : null}
+                      页{pgTotalRows !== null ? <>，共 <b>{pgTotalRows}</b> 条</> : null}
+                    </Text>
+                  </Group>
+                )}
               </Paper>
             </>
           )}
