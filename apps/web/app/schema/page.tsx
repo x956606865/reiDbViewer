@@ -27,6 +27,7 @@ export default function SchemaPage() {
   const [indexes, setIndexes] = useState<Array<any>>([])
   const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
   const [prefixInput, setPrefixInput] = useState('')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
@@ -74,7 +75,13 @@ export default function SchemaPage() {
   }
 
   const filteredTables = selectedSchema ? tables.filter((t) => t.schema === selectedSchema) : tables
-  const visibleTables = filteredTables.filter((t) => {
+  const searchLower = search.trim().toLowerCase()
+  const filteredAndSearched = filteredTables.filter((t) => {
+    if (!searchLower) return true
+    const fq = `${t.schema}.${t.name}`.toLowerCase()
+    return t.name.toLowerCase().includes(searchLower) || fq.includes(searchLower)
+  })
+  const visibleTables = filteredAndSearched.filter((t) => {
     const fq = `${t.schema}.${t.name}`
     if (rules.tables.includes(fq)) return false
     if (rules.prefixes.some((p) => t.name.startsWith(p))) return false
@@ -137,6 +144,13 @@ export default function SchemaPage() {
             onChange={(v) => setSelectedSchema(v || '')}
             data={[{ value: '', label: '全部 Schema' }, ...schemas.map((s) => ({ value: s, label: s }))]}
             styles={{ root: { width: 240 } }}
+          />
+          <TextInput
+            label="搜索表"
+            placeholder="输入表名或 schema.table"
+            value={search}
+            onChange={(e) => setSearch(e.currentTarget.value)}
+            style={{ width: 320 }}
           />
           <details>
             <summary>隐藏规则（{rules.prefixes.length + rules.tables.length}）</summary>
