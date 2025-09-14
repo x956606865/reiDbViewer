@@ -22,6 +22,7 @@ function expectedTableNames(prefix: string) {
     `${prefix}verification_codes`,
     `${prefix}user_connections`,
     `${prefix}schema_cache`,
+    `${prefix}saved_queries`,
   ]
 }
 
@@ -94,6 +95,19 @@ CREATE TABLE IF NOT EXISTS ${t('verification_codes')} (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL
 );`,
+    `-- Saved Queries (per-user, read-only templates)
+CREATE TABLE IF NOT EXISTS ${t('saved_queries')} (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES ${t('users')}(id) ON DELETE CASCADE,
+  name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+  description TEXT,
+  sql TEXT NOT NULL,
+  variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+  is_archived BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ${q(prefix + 'saved_queries_user')} ON ${t('saved_queries')}(user_id);`,
   ].join('\n')
 }
 

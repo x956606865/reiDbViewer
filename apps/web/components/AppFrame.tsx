@@ -42,6 +42,9 @@ export default function AppFrame({ children }: { children: React.ReactNode }) {
             <Anchor component={Link} href="/preview" underline="hover">
               Preview
             </Anchor>
+            <Anchor component={Link} href="/queries" underline="hover">
+              Queries
+            </Anchor>
             <Anchor component={Link} href="/connections" underline="hover">
               Connections
             </Anchor>
