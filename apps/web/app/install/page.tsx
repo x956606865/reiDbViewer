@@ -26,12 +26,15 @@ export default function InstallPage() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
-  const load = async (sch: string, pfx: string = prefix) => {
+  const load = async (sch?: string, pfx?: string, allowStateFromResponse = false) => {
     setLoading(true)
     setErr(null)
     try {
-      const params = new URLSearchParams({ schema: sch, prefix: pfx })
-      const res = await fetch(`/api/appdb/init/status?${params.toString()}`, { cache: 'no-store' })
+      const params = new URLSearchParams()
+      if (sch) params.set('schema', sch)
+      if (pfx) params.set('prefix', pfx)
+      const qs = params.toString()
+      const res = await fetch(`/api/appdb/init/status${qs ? `?${qs}` : ''}`, { cache: 'no-store' })
       const json = (await res.json()) as any
       if (!res.ok) {
         // 后端返回错误时，展示错误并清空状态，避免 undefined 字段
@@ -41,6 +44,11 @@ export default function InstallPage() {
         return
       }
       setStatus(json as Status)
+      // 若未通过 URL 指定 schema/prefix，则用后端返回的默认值覆盖到输入框
+      if (allowStateFromResponse) {
+        if (typeof json?.schema === 'string') setSchema(json.schema)
+        if (typeof json?.prefix === 'string') setPrefix(json.prefix)
+      }
     } catch (e: any) {
       setErr(String(e?.message || e))
     } finally {
@@ -48,7 +56,12 @@ export default function InstallPage() {
     }
   }
 
-  useEffect(() => { load(schema, prefix) }, [])
+  useEffect(() => {
+    const spSchema = sp.get('schema')
+    const spPrefix = sp.get('prefix')
+    if (spSchema || spPrefix) load(spSchema || schema, spPrefix || prefix)
+    else load(undefined, undefined, true)
+  }, [])
 
   const nonAppTables = useMemo(() => {
     if (!status) return [] as string[]
