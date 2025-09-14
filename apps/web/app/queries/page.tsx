@@ -20,7 +20,7 @@ import {
   Title,
 } from '@mantine/core'
 import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText } from '@tabler/icons-react'
-import type { SavedQueryVariableDef } from '@rei-db-view/types'
+import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types'
 import { DataGrid } from '../../components/DataGrid'
 
 type SavedItem = { id: string; name: string; description?: string | null; variables: SavedQueryVariableDef[]; createdAt?: string | null; updatedAt?: string | null }
@@ -65,6 +65,7 @@ export default function SavedQueriesPage() {
   const [previewSQL, setPreviewSQL] = useState('')
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
   const [gridCols, setGridCols] = useState<string[]>([])
+  const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('rdv.savedSql.expanded')
@@ -205,7 +206,7 @@ export default function SavedQueriesPage() {
     try {
       const trimmed = name.trim()
       if (!trimmed) throw new Error('名称不能为空')
-      const body = { name: trimmed, description: description.trim() || undefined, sql, variables: vars }
+      const body = { name: trimmed, description: description.trim() || undefined, sql, variables: vars, dynamicColumns: dynCols }
 
       // 选择目标：优先当前编辑项；若与其他同名则提示“覆盖”并以对方 id 作为目标
       const same = items.find((it) => it.name === trimmed && it.id !== currentId)
@@ -376,9 +377,43 @@ export default function SavedQueriesPage() {
       const j = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(j?.error || `执行失败（HTTP ${res.status}）`)
       setPreviewSQL(j.sql || '')
-      const cols: string[] = Array.isArray(j.columns) ? j.columns : Object.keys((j.rows?.[0] ?? {}))
+      let cols: string[] = Array.isArray(j.columns) ? j.columns : Object.keys((j.rows?.[0] ?? {}))
+      let data: Array<Record<string, unknown>> = j.rows || []
+
+      // apply dynamic columns on client
+      if (dynCols.length > 0 && Array.isArray(data)) {
+        const helpers = {
+          fmtDate: (v: any) => (v ? new Date(v).toISOString() : ''),
+          json: (v: any) => JSON.stringify(v),
+        }
+        const usedNames = new Set(cols)
+        const nameMap = new Map<string, string>() // original->unique
+        for (const dc of dynCols) {
+          let nm = dc.name
+          let k = 1
+          while (usedNames.has(nm)) { nm = `${dc.name}_${++k}` }
+          usedNames.add(nm)
+          nameMap.set(dc.name, nm)
+        }
+        cols = Array.from(usedNames)
+        data = data.map((row: any) => {
+          const out = { ...row }
+          for (const dc of dynCols) {
+            const unique = nameMap.get(dc.name) || dc.name
+            try {
+              // eslint-disable-next-line no-new-func
+              const fn = new Function('row', 'vars', 'helpers', `"use strict"; return ( ${dc.code} )(row, vars, helpers)`) as any
+              out[unique] = fn(row, runValues, helpers)
+            } catch (e: any) {
+              out[unique] = `#ERR: ${String(e?.message || e)}`
+            }
+          }
+          return out
+        })
+      }
+
       setGridCols(cols)
-      setRows(j.rows || [])
+      setRows(data)
     } catch (e: any) {
       setError(String(e?.message || e))
     }
@@ -396,6 +431,7 @@ export default function SavedQueriesPage() {
         setDescription(j.description || '')
         setSql(j.sql || '')
         setVars(Array.isArray(j.variables) ? j.variables : [])
+        setDynCols(Array.isArray(j.dynamicColumns) ? j.dynamicColumns : [])
         const initVals: Record<string, any> = {}
         for (const v of j.variables || []) initVals[v.name] = v.default ?? ''
         setRunValues(initVals) // 载入时用默认值初始化运行值
@@ -544,6 +580,51 @@ export default function SavedQueriesPage() {
                 ))}
               </Table.Tbody>
             </Table>
+
+            <Title order={4} mt="md">动态列</Title>
+            <Text c="dimmed" size="sm">每个动态列包含“名称”和一个 JS 函数。函数签名：<Code>(row, vars, helpers) =&gt; any</Code>，在客户端执行。</Text>
+            <Table mt="sm" withTableBorder withColumnBorders>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w={220}>名称</Table.Th>
+                  <Table.Th>JS 函数</Table.Th>
+                  <Table.Th w={60}>操作</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {dynCols.length === 0 && (
+                  <Table.Tr><Table.Td colSpan={3}><Text c="dimmed">暂无动态列</Text></Table.Td></Table.Tr>
+                )}
+                {dynCols.map((dc, i) => (
+                  <Table.Tr key={dc.name + i}>
+                    <Table.Td>
+                      <TextInput value={dc.name} onChange={(e) => {
+                        const val = e.currentTarget.value
+                        setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, name: val } : x))
+                      }} />
+                    </Table.Td>
+                    <Table.Td>
+                      <Textarea
+                        value={dc.code}
+                        onChange={(e) => {
+                          const val = e.currentTarget.value
+                          setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, code: val } : x))
+                        }}
+                        autosize minRows={3}
+                        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+                        placeholder="(row, vars, helpers) => row.amount * 1.1"
+                      />
+                    </Table.Td>
+                    <Table.Td>
+                      <ActionIcon color="red" variant="light" onClick={() => setDynCols((arr) => arr.filter((_, idx) => idx !== i))}><IconTrash size={14} /></ActionIcon>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+            <Group gap="xs" mt="xs">
+              <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={() => setDynCols((arr) => [...arr, { name: `dyn_${arr.length + 1}`, code: '(row, vars) => null' }])}>新增动态列</Button>
+            </Group>
           </Paper>
 
           <Paper withBorder p="md">

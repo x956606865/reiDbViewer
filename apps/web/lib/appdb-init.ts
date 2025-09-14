@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS ${t('saved_queries')} (
   description TEXT,
   sql TEXT NOT NULL,
   variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+  dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

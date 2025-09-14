@@ -13,11 +13,14 @@ const VarDefSchema = z.object({
   default: z.any().optional(),
 })
 
+const DynColSchema = z.object({ name: z.string().min(1).max(64), code: z.string().min(1) })
+
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
   sql: z.string().min(1).optional(),
   variables: z.array(VarDefSchema).optional(),
+  dynamicColumns: z.array(DynColSchema).optional(),
   isArchived: z.boolean().optional(),
 })
 
@@ -34,10 +37,21 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const id = params.id
   try {
     const pool = getAppDb()
-    const r = await pool.query(
-      `SELECT id, name, description, sql, variables, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
-      [id, userId]
-    )
+    let r
+    try {
+      r = await pool.query(
+        `SELECT id, name, description, sql, variables, dynamic_columns, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
+        [id, userId]
+      )
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
+        r = await pool.query(
+          `SELECT id, name, description, sql, variables, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
+          [id, userId]
+        )
+      } else throw e
+    }
     if (r.rowCount === 0) return NextResponse.json({ error: 'not_found' }, { status: 404 })
     const x = r.rows[0]
     return NextResponse.json({
@@ -46,6 +60,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
       description: x.description ? String(x.description) : null,
       sql: String(x.sql),
       variables: Array.isArray(x.variables) ? x.variables : [],
+      dynamicColumns: Array.isArray(x.dynamic_columns) ? x.dynamic_columns : [],
       isArchived: !!x.is_archived,
       createdAt: x.created_at ? new Date(x.created_at).toISOString() : null,
       updatedAt: x.updated_at ? new Date(x.updated_at).toISOString() : null,
@@ -82,11 +97,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     if (parsed.data.description !== undefined) push('description', parsed.data.description)
     if (parsed.data.sql !== undefined) push('sql', parsed.data.sql)
     if (parsed.data.variables !== undefined) push('variables', JSON.stringify(parsed.data.variables))
+    if (parsed.data.dynamicColumns !== undefined) push('dynamic_columns', JSON.stringify(parsed.data.dynamicColumns))
     if (parsed.data.isArchived !== undefined) push('is_archived', parsed.data.isArchived)
     push('updated_at', new Date())
     values.push(id, userId)
     const q = `UPDATE ${tableName()} SET ${fields.join(', ')} WHERE id = $${idx++} AND user_id = $${idx} RETURNING id`
-    const r = await pool.query(q, values)
+    let r
+    try {
+      r = await pool.query(q, values)
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
+        return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddDynCols() }, { status: 501 })
+      }
+      throw e
+    }
     if (r.rowCount === 0) return NextResponse.json({ error: 'not_found' }, { status: 404 })
     return NextResponse.json({ ok: true })
   } catch (e: any) {

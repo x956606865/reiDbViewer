@@ -37,7 +37,13 @@ export interface SavedQueryRecord {
   description?: string | null
   sql: string
   variables: SavedQueryVariableDef[]
+  dynamicColumns?: DynamicColumnDef[]
   isArchived?: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface DynamicColumnDef {
+  name: string
+  code: string // JavaScript function body. Signature: (row, vars, helpers) => any
 }

@@ -14,11 +14,14 @@ const VarDefSchema = z.object({
   default: z.any().optional(),
 })
 
+const DynColSchema = z.object({ name: z.string().min(1).max(64), code: z.string().min(1) })
+
 const CreateSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   sql: z.string().min(1),
   variables: z.array(VarDefSchema).default([]),
+  dynamicColumns: z.array(DynColSchema).default([]),
 })
 
 function tableName() {
@@ -39,12 +42,21 @@ CREATE TABLE IF NOT EXISTS ${t('saved_queries')} (
   description TEXT,
   sql TEXT NOT NULL,
   variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+  dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ${q(pfx + 'saved_queries_user')} ON ${t('saved_queries')}(user_id);
 `}
+
+function renderAlterAddDynCols(schema?: string, prefix?: string) {
+  const sch = schema || env.APP_DB_SCHEMA || 'public'
+  const pfx = prefix || env.APP_DB_TABLE_PREFIX || 'rdv_'
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const t = (n: string) => `${q(sch)}.${q(pfx + n)}`
+  return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+}
 
 async function ensureTableExists() {
   const pool = getAppDb()
@@ -71,13 +83,24 @@ export async function GET() {
       )
     }
     const pool = getAppDb()
-    const sql = `SELECT id, name, description, variables, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`
-    const r = await pool.query(sql, [userId])
+    let r
+    try {
+      r = await pool.query(`SELECT id, name, description, variables, dynamic_columns, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`, [userId])
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
+        // fallback w/o dynamic columns
+        r = await pool.query(`SELECT id, name, description, variables, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`, [userId])
+      } else {
+        throw e
+      }
+    }
     const items = r.rows.map((x) => ({
       id: String(x.id),
       name: String(x.name),
       description: x.description ? String(x.description) : null,
       variables: Array.isArray(x.variables) ? x.variables : [],
+      dynamicColumns: Array.isArray(x.dynamic_columns) ? x.dynamic_columns : [],
       createdAt: x.created_at ? new Date(x.created_at).toISOString() : null,
       updatedAt: x.updated_at ? new Date(x.updated_at).toISOString() : null,
     }))
@@ -115,9 +138,17 @@ export async function POST(req: Request) {
       }
     } catch {}
     const id = randomUUID()
-    const { name, description, sql, variables } = parsed.data
-    const q = `INSERT INTO ${tableName()} (id, user_id, name, description, sql, variables) VALUES ($1, $2, $3, $4, $5, $6)`
-    await pool.query(q, [id, userId, name, description ?? null, sql, JSON.stringify(variables)])
+    const { name, description, sql, variables, dynamicColumns } = parsed.data
+    try {
+      const q = `INSERT INTO ${tableName()} (id, user_id, name, description, sql, variables, dynamic_columns) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+      await pool.query(q, [id, userId, name, description ?? null, sql, JSON.stringify(variables), JSON.stringify(dynamicColumns)])
+    } catch (e: any) {
+      const msg = String(e?.message || e)
+      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
+        return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddDynCols() }, { status: 501 })
+      }
+      throw e
+    }
     return NextResponse.json({ ok: true, id })
   } catch (e: any) {
     return NextResponse.json({ error: 'create_failed', message: String(e?.message || e) }, { status: 500 })
