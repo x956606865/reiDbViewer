@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const pool = await getUserConnPool(userId, userConnId)
-    const { rows, debugA, debugB } = await withSafeSession(pool, env, async (client) => {
+    const rows = await withSafeSession(pool, env, async (client) => {
       // A) Base via pg_indexes (covers expression/partial indexes)
       const sqlA = `
         SELECT i.schemaname AS schema, i.tablename AS table, i.indexname AS index, i.indexdef AS definition
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
         }
       }
       const merged = Array.from(byName.values()).sort((a, b) => String(a.index).localeCompare(String(b.index)))
-      return { rows: merged, debugA: resA.rows, debugB: resB.rows }
+      return merged as any[]
     })
     // add pretty size client-side
     const toPretty = (n: number) => {
@@ -111,8 +111,7 @@ export async function GET(req: NextRequest) {
       sizeBytes: Number(r.size_bytes || 0),
       sizePretty: toPretty(Number(r.size_bytes || 0)),
     }))
-    const debug = url.searchParams.get('debug') === '1' ? { fromPgIndexes: debugA, fromCatalog: debugB } : undefined
-    return NextResponse.json(debug ? { indexes, debug } : { indexes })
+    return NextResponse.json({ indexes })
   } catch (e: any) {
     return NextResponse.json({ error: 'db_query_failed', message: String(e?.message || e) }, { status: 500 })
   }
