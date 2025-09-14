@@ -19,11 +19,19 @@ import {
   Textarea,
   Title,
 } from '@mantine/core'
-import { IconPlus, IconTrash, IconScan } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText } from '@tabler/icons-react'
 import type { SavedQueryVariableDef } from '@rei-db-view/types'
 import { DataGrid } from '../../components/DataGrid'
 
 type SavedItem = { id: string; name: string; description?: string | null; variables: SavedQueryVariableDef[]; createdAt?: string | null; updatedAt?: string | null }
+
+type TreeNode = {
+  type: 'folder' | 'item'
+  name: string
+  path: string // for folder: folder path; for item: its full name (may include folder path)
+  children?: TreeNode[]
+  item?: SavedItem
+}
 
 const CURRENT_KEY = 'rdv.currentUserConnId'
 
@@ -57,6 +65,15 @@ export default function SavedQueriesPage() {
   const [previewSQL, setPreviewSQL] = useState('')
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
   const [gridCols, setGridCols] = useState<string[]>([])
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('rdv.savedSql.expanded')
+      if (!raw) return new Set<string>(['/'])
+      return new Set<string>(JSON.parse(raw))
+    } catch {
+      return new Set<string>(['/'])
+    }
+  })
 
   const canSave = useMemo(() => name.trim().length > 0 && sql.trim().length > 0, [name, sql])
 
@@ -81,6 +98,58 @@ export default function SavedQueriesPage() {
     refresh()
     setUserConnId(localStorage.getItem(CURRENT_KEY))
   }, [refresh])
+
+  useEffect(() => {
+    try { localStorage.setItem('rdv.savedSql.expanded', JSON.stringify(Array.from(expanded))) } catch {}
+  }, [expanded])
+
+  const toggleFolder = (path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  const buildTree = (list: SavedItem[]): TreeNode => {
+    const root: TreeNode = { type: 'folder', name: '', path: '/', children: [] }
+    const ensureFolder = (segments: string[]): TreeNode => {
+      let node = root
+      let p = ''
+      for (const seg of segments) {
+        p = p ? `${p}/${seg}` : seg
+        let child = node.children!.find((c) => c.type === 'folder' && c.name === seg)
+        if (!child) {
+          child = { type: 'folder', name: seg, path: p, children: [] }
+          node.children!.push(child)
+        }
+        node = child
+      }
+      return node
+    }
+    for (const it of list) {
+      const parts = it.name.split('/').filter(Boolean)
+      if (parts.length <= 1) {
+        root.children!.push({ type: 'item', name: it.name, path: it.name, item: it })
+      } else {
+        const leaf = parts[parts.length - 1]
+        const folder = ensureFolder(parts.slice(0, -1))
+        folder.children!.push({ type: 'item', name: leaf, path: it.name, item: it })
+      }
+    }
+    const sortNodes = (nodes: TreeNode[]) => {
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      for (const n of nodes) if (n.children) sortNodes(n.children)
+    }
+    sortNodes(root.children!)
+    return root
+  }
+
+  const tree = buildTree(items)
 
   const onDetectVars = () => {
     try {
@@ -354,33 +423,25 @@ export default function SavedQueriesPage() {
       <Group align="start" justify="space-between" wrap="nowrap">
         <Paper withBorder p="md" w={420}>
           <Title order={4}>我的查询</Title>
+          <Group mt="xs" gap="xs">
+            <Button size="xs" variant="light" onClick={() => { const p = prompt('新建文件夹路径（用/分隔，如 reports/daily）'); if (p) { setExpanded((s) => new Set([...Array.from(s), p])); setName(`${p}/`) } }}>新建文件夹</Button>
+          </Group>
           {items.length === 0 ? (
             <Text c="dimmed" mt="xs">暂无</Text>
           ) : (
-            <Table mt="sm" striped withTableBorder withColumnBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>名称</Table.Th>
-                  <Table.Th w={120}>最近更新</Table.Th>
-                  <Table.Th w={64}>操作</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {items.map((it) => (
-                  <Table.Tr key={it.id} onClick={() => onSelectSaved(it.id)} style={{ cursor: 'pointer' }}>
-                    <Table.Td>{it.name}</Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{it.updatedAt ? new Date(it.updatedAt).toLocaleString() : '-'}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <ActionIcon color="red" variant="light" onClick={(e) => { e.stopPropagation(); onDeleteById(it.id, it.name) }}>
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+            <div style={{ marginTop: 8 }}>
+              {tree.children && tree.children.length > 0 ? (
+                <Tree
+                  nodes={tree.children}
+                  expanded={expanded}
+                  onToggle={toggleFolder}
+                  onOpenItem={(it) => onSelectSaved(it.id)}
+                  onDeleteItem={(it) => onDeleteById(it.id, it.name)}
+                />
+              ) : (
+                <Text c="dimmed">（空）</Text>
+              )}
+            </div>
           )}
         </Paper>
 
@@ -552,5 +613,61 @@ export default function SavedQueriesPage() {
         </Stack>
       </Group>
     </Stack>
+  )
+}
+
+function Tree({ nodes, expanded, onToggle, onOpenItem, onDeleteItem }: {
+  nodes: TreeNode[]
+  expanded: Set<string>
+  onToggle: (path: string) => void
+  onOpenItem: (it: SavedItem) => void
+  onDeleteItem: (it: SavedItem) => void
+}) {
+  return (
+    <div>
+      {nodes.map((n) => (
+        <TreeRow key={n.type + ':' + n.path} node={n} depth={0} expanded={expanded} onToggle={onToggle} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} />
+      ))}
+    </div>
+  )
+}
+
+function TreeRow({ node, depth, expanded, onToggle, onOpenItem, onDeleteItem }: {
+  node: TreeNode
+  depth: number
+  expanded: Set<string>
+  onToggle: (path: string) => void
+  onOpenItem: (it: SavedItem) => void
+  onDeleteItem: (it: SavedItem) => void
+}) {
+  const pad = 8 + depth * 14
+  if (node.type === 'folder') {
+    const isOpen = expanded.has(node.path)
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px', cursor: 'pointer' }} onClick={() => onToggle(node.path)}>
+          <span style={{ width: pad }} />
+          {isOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <IconFolder size={14} />
+          <Text>{node.name}</Text>
+        </div>
+        {isOpen && node.children && node.children.map((c) => (
+          <TreeRow key={c.type + ':' + c.path} node={c} depth={depth + 1} expanded={expanded} onToggle={onToggle} onOpenItem={onOpenItem} onDeleteItem={onDeleteItem} />
+        ))}
+      </div>
+    )
+  }
+  // item
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px' }}>
+      <span style={{ width: pad }} />
+      <IconFileText size={14} />
+      <a onClick={() => node.item && onOpenItem(node.item)} style={{ cursor: 'pointer', flex: 1 }}>{node.name}</a>
+      {node.item && (
+        <ActionIcon color="red" variant="light" onClick={() => onDeleteItem(node.item!)}>
+          <IconTrash size={14} />
+        </ActionIcon>
+      )}
+    </div>
   )
 }
