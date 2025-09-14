@@ -26,29 +26,38 @@ export async function GET(req: NextRequest) {
   try {
     const pool = await getUserConnPool(userId, userConnId)
     const rows = await withSafeSession(pool, env, async (client) => {
+      // Use pg_indexes as the base to ensure expression and partial indexes are included reliably across versions.
       const sql = `
+        WITH idx AS (
+          SELECT 
+            i.schemaname,
+            i.tablename,
+            i.indexname,
+            i.indexdef,
+            to_regclass(quote_ident(i.schemaname) || '.' || quote_ident(i.indexname)) AS index_oid
+          FROM pg_indexes i
+          WHERE i.schemaname = $1 AND i.tablename = $2
+        )
         SELECT
-          ns.nspname              AS schema,
-          t.relname               AS table,
-          i.relname               AS index,
-          pg_get_indexdef(ix.indexrelid) AS definition,
-          ix.indisunique          AS is_unique,
-          ix.indisprimary         AS is_primary,
-          ix.indisvalid           AS is_valid,
-          (ix.indpred IS NOT NULL) AS is_partial,
-          am.amname               AS method,
-          COALESCE(st.idx_scan, 0)      AS idx_scan,
-          COALESCE(st.idx_tup_read, 0)  AS idx_tup_read,
-          COALESCE(st.idx_tup_fetch, 0) AS idx_tup_fetch,
-          pg_relation_size(i.oid)        AS size_bytes
-        FROM pg_index ix
-        JOIN pg_class t ON ix.indrelid = t.oid
-        JOIN pg_namespace ns ON t.relnamespace = ns.oid
-        JOIN pg_class i ON ix.indexrelid = i.oid
-        LEFT JOIN pg_am am ON i.relam = am.oid
-        LEFT JOIN pg_stat_all_indexes st ON st.indexrelid = i.oid
-        WHERE ns.nspname = $1 AND t.relname = $2
-        ORDER BY i.relname
+          idx.schemaname                 AS schema,
+          idx.tablename                  AS table,
+          idx.indexname                  AS index,
+          idx.indexdef                   AS definition,
+          ix.indisunique                 AS is_unique,
+          ix.indisprimary                AS is_primary,
+          ix.indisvalid                  AS is_valid,
+          (ix.indpred IS NOT NULL)       AS is_partial,
+          am.amname                      AS method,
+          COALESCE(st.idx_scan, 0)       AS idx_scan,
+          COALESCE(st.idx_tup_read, 0)   AS idx_tup_read,
+          COALESCE(st.idx_tup_fetch, 0)  AS idx_tup_fetch,
+          COALESCE(pg_relation_size(idx.index_oid), 0) AS size_bytes
+        FROM idx
+        LEFT JOIN pg_class ic ON ic.oid = idx.index_oid
+        LEFT JOIN pg_index ix ON ix.indexrelid = idx.index_oid
+        LEFT JOIN pg_am am ON ic.relam = am.oid
+        LEFT JOIN pg_stat_all_indexes st ON st.indexrelid = idx.index_oid
+        ORDER BY idx.indexname
       `
       const res = await client.query(sql, [schema, table])
       return res.rows as any[]
