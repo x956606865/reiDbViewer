@@ -1,7 +1,8 @@
-'use client'
+"use client"
 
 import * as React from 'react'
 import { useReactTable, getCoreRowModel, flexRender, type ColumnDef } from '@tanstack/react-table'
+import JsonCell from './JsonCell'
 
 export type DataGridProps = {
   columns: string[]
@@ -19,12 +20,16 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
           const v: any = info.getValue()
           if (React.isValidElement(v)) return v
           if (v == null) return ''
-          if (typeof v === 'object') {
-            try {
-              return JSON.stringify(v)
-            } catch {
-              return String(v)
+          if (typeof v === 'object') return <JsonCell value={v} />
+          if (typeof v === 'string') {
+            const s = v.trim()
+            if ((s.startsWith('{') || s.startsWith('[')) && s.length > 12) {
+              try {
+                const parsed = JSON.parse(s)
+                return <JsonCell value={parsed} />
+              } catch {}
             }
+            return v
           }
           return String(v)
         },
