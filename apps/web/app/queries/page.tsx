@@ -72,6 +72,29 @@ export default function SavedQueriesPage() {
   const [isExecuting, setIsExecuting] = useState(false)
   const [isPreviewing, setIsPreviewing] = useState(false)
   const sqlPreviewRef = React.useRef<HTMLDivElement | null>(null)
+  const [connItems, setConnItems] = useState<Array<{ id: string; alias: string; host?: string | null }>>([])
+  const [extraFolders, setExtraFolders] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem('rdv.savedSql.extraFolders')
+      if (!raw) return new Set<string>()
+      const arr = JSON.parse(raw)
+      return new Set<string>(Array.isArray(arr) ? arr : [])
+    } catch { return new Set<string>() }
+  })
+
+  useEffect(() => {
+    fetch('/api/user/connections', { cache: 'no-store' })
+      .then(async (r) => (r.ok ? r.json() : { items: [] }))
+      .then((j) => setConnItems(Array.isArray(j.items) ? j.items : []))
+      .catch(() => {})
+  }, [])
+
+  const currentConnLabel = useMemo(() => {
+    if (!userConnId) return ''
+    const it = connItems.find((x) => x.id === userConnId)
+    if (!it) return userConnId
+    return it.host ? `${it.alias} (${it.host})` : it.alias
+  }, [connItems, userConnId])
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem('rdv.savedSql.expanded')
@@ -108,6 +131,9 @@ export default function SavedQueriesPage() {
   useEffect(() => {
     try { localStorage.setItem('rdv.savedSql.expanded', JSON.stringify(Array.from(expanded))) } catch {}
   }, [expanded])
+  useEffect(() => {
+    try { localStorage.setItem('rdv.savedSql.extraFolders', JSON.stringify(Array.from(extraFolders))) } catch {}
+  }, [extraFolders])
 
   const toggleFolder = (path: string) => {
     setExpanded((prev) => {
@@ -143,6 +169,11 @@ export default function SavedQueriesPage() {
         const folder = ensureFolder(parts.slice(0, -1))
         folder.children!.push({ type: 'item', name: leaf, path: it.name, item: it })
       }
+    }
+    // inject extra (virtual) folders so they appear even when empty
+    for (const f of Array.from(extraFolders)) {
+      const segs = f.split('/').filter(Boolean)
+      if (segs.length > 0) ensureFolder(segs)
     }
     const sortNodes = (nodes: TreeNode[]) => {
       nodes.sort((a, b) => {
@@ -479,7 +510,19 @@ export default function SavedQueriesPage() {
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <LeftDrawer title="我的查询">
           <Group mt="xs" gap="xs">
-            <Button size="xs" variant="light" onClick={() => { const p = prompt('新建文件夹路径（用/分隔，如 reports/daily）'); if (p) { setExpanded((s) => new Set([...Array.from(s), p])); setName(`${p}/`) } }}>新建文件夹</Button>
+            <Button size="xs" variant="light" onClick={() => {
+              const p = prompt('新建文件夹路径（用/分隔，如 reports/daily）')
+              if (p) {
+                const norm = p.split('/').filter(Boolean).join('/')
+                if (!norm) return
+                setExpanded((s) => new Set([...Array.from(s), norm]))
+                setExtraFolders((prev) => new Set([...Array.from(prev), norm]))
+                setInfo(`已创建文件夹：${norm}（本地）`)
+                setMode('edit')
+                setName(`${norm}/`)
+              }
+            }}>新建文件夹</Button>
+            <Button size="xs" variant="default" onClick={() => { setMode('edit'); onNew() }}>新建查询</Button>
           </Group>
           {items.length === 0 ? (
             <Text c="dimmed" mt="xs">暂无</Text>
@@ -664,7 +707,7 @@ export default function SavedQueriesPage() {
                 <Title order={4}>运行</Title>
                 <Group mt="xs" gap="sm" align="center">
                   <Text size="sm" c="dimmed">当前连接：</Text>
-                  {userConnId ? <Badge color="green"><Code>{userConnId}</Code></Badge> : <Badge color="gray">未选择</Badge>}
+                  {userConnId ? <Badge color="green"><Code>{currentConnLabel}</Code></Badge> : <Badge color="gray">未选择</Badge>}
                 </Group>
                 <Title order={5} mt="md">运行参数</Title>
                 <Table mt="xs" withTableBorder withColumnBorders>

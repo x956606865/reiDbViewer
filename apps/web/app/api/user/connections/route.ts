@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { validatePostgresDsn } from '@/lib/validate-dsn'
-import { encryptToBase64 } from '@/lib/crypto'
+import { encryptToBase64, decryptFromBase64 } from '@/lib/crypto'
 import { getAppDb } from '@/lib/appdb'
 import { env } from '@/lib/env'
 import { headers } from 'next/headers'
@@ -25,17 +25,29 @@ export async function GET() {
   const userId = session.user.id
   try {
     const pool = getAppDb()
-    const sql = `SELECT id, alias, created_at, last_used_at FROM ${tableName()} WHERE user_id = $1 ORDER BY created_at ASC`
+    const sql = `SELECT id, alias, dsn_cipher, created_at, last_used_at FROM ${tableName()} WHERE user_id = $1 ORDER BY created_at ASC`
     const res = await pool.query(sql, [userId])
     const items = res.rows.map((r) => ({
       id: String(r.id),
       alias: String(r.alias),
+      host: safeParseHost(String(r.dsn_cipher || '')),
       createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
       lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
     }))
     return NextResponse.json({ items })
   } catch (e: any) {
     return NextResponse.json({ error: 'list_failed', message: String(e?.message || e) }, { status: 500 })
+  }
+}
+
+function safeParseHost(cipher: string): string | null {
+  try {
+    if (!cipher) return null
+    const dsn = decryptFromBase64(cipher)
+    const u = new URL(dsn)
+    return u.hostname || null
+  } catch {
+    return null
   }
 }
 
