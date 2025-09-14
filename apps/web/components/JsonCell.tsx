@@ -36,7 +36,7 @@ function safeStringify(v: unknown, space?: number) {
   }
 }
 
-export default function JsonCell({ value, previewMax = 120 }: JsonCellProps) {
+export default function JsonCell({ value, previewMax = 20 }: JsonCellProps) {
   const [opened, setOpened] = useState(false)
   const pretty = useMemo(() => safeStringify(value, 2), [value])
   const parsed = useMemo(() => {
