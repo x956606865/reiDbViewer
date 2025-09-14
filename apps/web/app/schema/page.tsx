@@ -110,6 +110,7 @@ export default function SchemaPage() {
     )
 
   return (
+    <>
     <Stack gap="md">
       <div>
         <Group justify="space-between">
@@ -238,5 +239,6 @@ export default function SchemaPage() {
           </Paper>
         )}
       </Modal>
+    </>
   )
 }
