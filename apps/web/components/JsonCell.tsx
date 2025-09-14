@@ -1,9 +1,13 @@
 "use client"
 
 import { useMemo, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { ActionIcon, Code, Drawer, Group, ScrollArea, Tooltip } from '@mantine/core'
 import { CopyButton } from '@mantine/core'
 import { IconCopy, IconEye } from '@tabler/icons-react'
+
+// Dynamically load a tree JSON viewer to keep bundle slim and avoid SSR issues
+const ReactJson = dynamic(() => import('react-json-view').then((m) => m.default), { ssr: false })
 
 type JsonCellProps = {
   value: unknown
@@ -35,6 +39,12 @@ function safeStringify(v: unknown, space?: number) {
 export default function JsonCell({ value, previewMax = 120 }: JsonCellProps) {
   const [opened, setOpened] = useState(false)
   const pretty = useMemo(() => safeStringify(value, 2), [value])
+  const parsed = useMemo(() => {
+    if (typeof value === 'string') {
+      try { return JSON.parse(value) } catch { /* fallthrough */ }
+    }
+    return value
+  }, [value])
   const preview = useMemo(() => {
     const s = safeStringify(value)
     if (s.length <= previewMax) return s
@@ -78,10 +88,23 @@ export default function JsonCell({ value, previewMax = 120 }: JsonCellProps) {
       </div>
       <Drawer opened={opened} onClose={() => setOpened(false)} title="JSON 详情" size="lg" position="right">
         <ScrollArea h={520} type="auto">
-          <Code block>{pretty}</Code>
+          {/* Prefer tree view when value is object/array; otherwise fallback to pretty text */}
+          {parsed && typeof parsed === 'object' ? (
+            // @ts-ignore react-json-view types are loose
+            <ReactJson
+              name={null}
+              src={parsed as any}
+              collapsed={1}
+              enableClipboard={false}
+              displayDataTypes={false}
+              displayObjectSize={false}
+              style={{ background: 'transparent', fontFamily: 'var(--mantine-font-family-monospace)' }}
+            />
+          ) : (
+            <Code block>{pretty}</Code>
+          )}
         </ScrollArea>
       </Drawer>
     </>
   )
 }
-
