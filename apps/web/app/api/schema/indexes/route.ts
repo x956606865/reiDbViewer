@@ -25,42 +25,66 @@ export async function GET(req: NextRequest) {
 
   try {
     const pool = await getUserConnPool(userId, userConnId)
-    const rows = await withSafeSession(pool, env, async (client) => {
-      // Use pg_indexes as the base to ensure expression and partial indexes are included reliably across versions.
-      const sql = `
-        WITH idx AS (
-          SELECT 
-            i.schemaname,
-            i.tablename,
-            i.indexname,
-            i.indexdef,
-            to_regclass(quote_ident(i.schemaname) || '.' || quote_ident(i.indexname)) AS index_oid
-          FROM pg_indexes i
-          WHERE i.schemaname = $1 AND i.tablename = $2
-        )
-        SELECT
-          idx.schemaname                 AS schema,
-          idx.tablename                  AS table,
-          idx.indexname                  AS index,
-          idx.indexdef                   AS definition,
-          ix.indisunique                 AS is_unique,
-          ix.indisprimary                AS is_primary,
-          ix.indisvalid                  AS is_valid,
-          (ix.indpred IS NOT NULL)       AS is_partial,
-          am.amname                      AS method,
-          COALESCE(st.idx_scan, 0)       AS idx_scan,
-          COALESCE(st.idx_tup_read, 0)   AS idx_tup_read,
-          COALESCE(st.idx_tup_fetch, 0)  AS idx_tup_fetch,
-          COALESCE(pg_relation_size(idx.index_oid), 0) AS size_bytes
-        FROM idx
-        LEFT JOIN pg_class ic ON ic.oid = idx.index_oid
-        LEFT JOIN pg_index ix ON ix.indexrelid = idx.index_oid
-        LEFT JOIN pg_am am ON ic.relam = am.oid
-        LEFT JOIN pg_stat_all_indexes st ON st.indexrelid = idx.index_oid
-        ORDER BY idx.indexname
+    const { rows, debugA, debugB } = await withSafeSession(pool, env, async (client) => {
+      // A) Base via pg_indexes (covers expression/partial indexes)
+      const sqlA = `
+        SELECT i.schemaname AS schema, i.tablename AS table, i.indexname AS index, i.indexdef AS definition
+        FROM pg_indexes i
+        WHERE i.schemaname = $1 AND i.tablename = $2
       `
-      const res = await client.query(sql, [schema, table])
-      return res.rows as any[]
+      const resA = await client.query(sqlA, [schema, table])
+
+      // B) Catalog join via pg_index/pg_class (for flags + method)
+      const sqlB = `
+        SELECT
+          ns.nspname              AS schema,
+          t.relname               AS table,
+          i.relname               AS index,
+          pg_get_indexdef(ix.indexrelid) AS definition,
+          ix.indisunique          AS is_unique,
+          ix.indisprimary         AS is_primary,
+          ix.indisvalid           AS is_valid,
+          (ix.indpred IS NOT NULL) AS is_partial,
+          am.amname               AS method,
+          COALESCE(st.idx_scan, 0)      AS idx_scan,
+          COALESCE(st.idx_tup_read, 0)  AS idx_tup_read,
+          COALESCE(st.idx_tup_fetch, 0) AS idx_tup_fetch,
+          pg_relation_size(i.oid)        AS size_bytes
+        FROM pg_index ix
+        JOIN pg_class t ON ix.indrelid = t.oid
+        JOIN pg_namespace ns ON t.relnamespace = ns.oid
+        JOIN pg_class i ON ix.indexrelid = i.oid
+        LEFT JOIN pg_am am ON i.relam = am.oid
+        LEFT JOIN pg_stat_all_indexes st ON st.indexrelid = i.oid
+        WHERE ns.nspname = $1 AND t.relname = $2
+      `
+      const resB = await client.query(sqlB, [schema, table])
+
+      // Merge: prefer B's rich fields; fill any missing names from A.
+      const byName = new Map<string, any>()
+      for (const r of resB.rows as any[]) byName.set(String(r.index), r)
+      for (const r of resA.rows as any[]) {
+        const name = String(r.index)
+        if (!byName.has(name)) {
+          byName.set(name, {
+            schema: String(r.schema),
+            table: String(r.table),
+            index: name,
+            definition: String(r.definition),
+            is_unique: null,
+            is_primary: null,
+            is_valid: null,
+            is_partial: null,
+            method: null,
+            idx_scan: 0,
+            idx_tup_read: 0,
+            idx_tup_fetch: 0,
+            size_bytes: 0,
+          })
+        }
+      }
+      const merged = Array.from(byName.values()).sort((a, b) => String(a.index).localeCompare(String(b.index)))
+      return { rows: merged, debugA: resA.rows, debugB: resB.rows }
     })
     // add pretty size client-side
     const toPretty = (n: number) => {
@@ -71,23 +95,24 @@ export async function GET(req: NextRequest) {
       while (v >= 1024 && i < units.length - 1) { v /= 1024; i++ }
       return `${v.toFixed(1)} ${units[i]}`
     }
-    const indexes = rows.map((r) => ({
+    const indexes = rows.map((r: any) => ({
       schema: String(r.schema),
       table: String(r.table),
       name: String(r.index),
       definition: String(r.definition),
-      method: r.method ? String(r.method) : null,
-      isUnique: !!r.is_unique,
+      method: r.method ? String(r.method) : (String(r.definition).match(/USING\s+(\w+)/i)?.[1] ?? null),
+      isUnique: r.is_unique == null ? /CREATE\s+UNIQUE\s+INDEX/i.test(String(r.definition)) : !!r.is_unique,
       isPrimary: !!r.is_primary,
-      isValid: !!r.is_valid,
-      isPartial: !!r.is_partial,
+      isValid: r.is_valid == null ? true : !!r.is_valid,
+      isPartial: r.is_partial == null ? /\sWHERE\s/i.test(String(r.definition)) : !!r.is_partial,
       idxScan: Number(r.idx_scan || 0),
       idxTupRead: Number(r.idx_tup_read || 0),
       idxTupFetch: Number(r.idx_tup_fetch || 0),
       sizeBytes: Number(r.size_bytes || 0),
       sizePretty: toPretty(Number(r.size_bytes || 0)),
     }))
-    return NextResponse.json({ indexes })
+    const debug = url.searchParams.get('debug') === '1' ? { fromPgIndexes: debugA, fromCatalog: debugB } : undefined
+    return NextResponse.json(debug ? { indexes, debug } : { indexes })
   } catch (e: any) {
     return NextResponse.json({ error: 'db_query_failed', message: String(e?.message || e) }, { status: 500 })
   }
