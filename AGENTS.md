@@ -79,6 +79,13 @@
   - 检测接口：`GET /api/appdb/init/status?schema=...&prefix=...` 返回 `{ initialized, schemaExists, existingTables, expectedTables, suggestedSQL, warnings }`。
   - 初始化页面：`/install` 展示 SQL、支持切换 schema 与“表前缀”并“复制 SQL / 我已执行，重新检测”。
   - 永不在应用内执行 DDL；所有变更均由用户在 DB 客户端手工执行。
+  - 规则（重要）：凡新增 APP_DB 表或对现有表做结构调整（新增列/索引等），必须同步更新安装检测：
+    1) `apps/web/lib/appdb-init.ts`：
+       - 将新表加入 `expectedTableNames()`；
+       - 在 `renderInitSql()` 中加入完整建表 SQL；
+       - 若为“对已有表的新增列/索引”，在 `checkInitStatus()` 中增加存在性检测，并在 `suggestedSQL` 里追加相应 `ALTER` 语句，同时把说明写入 `warnings`；
+    2) `/install` 页面需展示 `warnings` 并提供复制包含 `ALTER` 的 `suggestedSQL`；
+    3) 相关 API 发现缺列/缺表时返回 `501 feature_not_initialized` 并附 `suggestedSQL` 兜底。
 - 代码参考：
   - `apps/web/lib/validate-dsn.ts`：DSN 校验与 SSRF 防护
   - `apps/web/lib/crypto.ts`：AES-256-GCM 加/解密

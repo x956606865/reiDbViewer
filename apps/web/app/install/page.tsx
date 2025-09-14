@@ -99,6 +99,16 @@ export default function InstallPage() {
                   <p>影响：初始化不会覆盖现有对象；如同名表结构不匹配，后续业务可能异常，请自行调整。</p>
                 </div>
               )}
+              {status.warnings && status.warnings.length > 0 && (
+                <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', padding: 12, borderRadius: 6, marginTop: 12 }}>
+                  <p>额外提示：</p>
+                  <ul style={{ marginTop: 4 }}>
+                    {status.warnings.map((w, i) => (
+                      <li key={i} style={{ color: '#92400e' }}>{w}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {!status.initialized && (
                 <>
                   <h3 style={{ marginTop: 16 }}>建议执行的 SQL（请在数据库中手工执行）</h3>

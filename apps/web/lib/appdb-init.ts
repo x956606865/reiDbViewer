@@ -132,6 +132,27 @@ export async function checkInitStatus(appPool: Pool, schema?: string, prefix?: s
   const nonAppTables = existingTables.filter((t) => !exp.includes(t))
   if (nonAppTables.length > 0) warnings.push(`Schema ${sch} 非空，其他表：` + nonAppTables.slice(0, 10).join(', '))
 
+  // Column-level checks for existing tables
+  const alterSQLs: string[] = []
+  const savedTbl = `${pfx}saved_queries`
+  if (existingTables.includes(savedTbl)) {
+    // dynamic_columns column (added in Sep 2025)
+    const colRes = await appPool.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = $2 AND column_name = 'dynamic_columns'
+       ) AS exists`,
+      [sch, savedTbl]
+    )
+    const hasDyn = Boolean(colRes.rows[0]?.exists)
+    if (!hasDyn) {
+      warnings.push(`${savedTbl} 缺少列 dynamic_columns；建议执行 ALTER 语句新增（见下方 SQL）。`)
+      alterSQLs.push(
+        `ALTER TABLE ${q(sch)}.${q(savedTbl)} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+      )
+    }
+  }
+
   return {
     configured: true,
     schema: sch,
@@ -141,6 +162,8 @@ export async function checkInitStatus(appPool: Pool, schema?: string, prefix?: s
     existingTables,
     expectedTables: exp,
     warnings,
-    suggestedSQL: renderInitSql(sch, pfx),
+    suggestedSQL: [renderInitSql(sch, pfx), alterSQLs.length ? `-- Upgrades (apply only if missing)\n${alterSQLs.join('\n')}` : '']
+      .filter(Boolean)
+      .join('\n'),
   }
 }
