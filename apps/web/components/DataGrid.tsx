@@ -52,7 +52,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
       <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+      <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead style={{ background: '#f9fafb' }}>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
