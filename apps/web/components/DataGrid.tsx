@@ -51,26 +51,46 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
 
   return (
     <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
         <thead style={{ background: '#f9fafb' }}>
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
-              {hg.headers.map((h) => (
-                <th key={h.id} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid #e5e7eb' }}>
-                  {flexRender(h.column.columnDef.header, h.getContext())}
-                </th>
-              ))}
+              {hg.headers.map((h) => {
+                const isActions = h.column.id === '__rdv_actions' || h.column.id === 'actions'
+                const base: React.CSSProperties = { textAlign: 'left', padding: '8px 10px', fontWeight: 600, borderBottom: '1px solid #e5e7eb', background: '#f9fafb' }
+                const sticky: React.CSSProperties = isActions
+                  ? { position: 'sticky', right: 0, zIndex: 2, boxShadow: 'inset 1px 0 0 #e5e7eb' }
+                  : {}
+                return (
+                  <th key={h.id} style={{ ...base, ...sticky }}>
+                    {flexRender(h.column.columnDef.header, h.getContext())}
+                  </th>
+                )
+              })}
             </tr>
           ))}
         </thead>
-        <tbody style={{ maxHeight: height, overflowY: 'auto' }}>
+        <tbody style={{ maxHeight: height, overflowY: 'auto', display: 'block' }}>
           {table.getRowModel().rows.map((row) => (
-            <tr key={row.id}>
-              {row.getVisibleCells().map((cell) => (
-                <td key={cell.id} style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace' }}>
-                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                </td>
-              ))}
+            <tr key={row.id} style={{ display: 'table', tableLayout: 'fixed', width: '100%' }}>
+              {row.getVisibleCells().map((cell) => {
+                const isActions = cell.column.id === '__rdv_actions' || cell.column.id === 'actions'
+                const base: React.CSSProperties = {
+                  padding: '8px 10px',
+                  borderBottom: '1px solid #f1f5f9',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                  background: '#fff',
+                }
+                const sticky: React.CSSProperties = isActions
+                  ? { position: 'sticky', right: 0, zIndex: 1, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#fff' }
+                  : {}
+                return (
+                  <td key={cell.id} style={{ ...base, ...sticky }}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </td>
+                )
+              })}
             </tr>
           ))}
           {rows.length === 0 && (
@@ -82,6 +102,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
           )}
         </tbody>
       </table>
+      </div>
     </div>
   )
 })
