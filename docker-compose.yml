@@ -1,0 +1,40 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Forward build-time secret from your shell: BETTER_AUTH_SECRET=... docker compose up --build
+        BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+    env_file:
+      - apps/web/.env.local
+    ports:
+      - '3000:3000'
+    environment:
+      # Minimal runtime defaults; everything else comes from env_file above
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: ${PORT:-3000}
+
+    # In production you likely want restarts; disable if not needed
+    restart: unless-stopped
+
+    # No volumes by default to keep the image immutable. For live-dev, create a dev compose file.
+
+    # Security: do not bake secrets into the image; pass env at runtime.
+
+    # Healthcheck is defined in Dockerfile.
+
+    # Uncomment to set a container name
+    # container_name: rei-db-view
+
+    # Note: env_file above injects runtime env only. For build-arg substitution,
+    # run with: `docker compose --env-file apps/web/.env.local up --build`
+
+    # networks:
+    #   - default
+
+networks:
+  default:
+    name: rei-db-view-net
+    driver: bridge

@@ -3,7 +3,7 @@ import { getAppDb } from './appdb'
 import { env } from './env'
 import { decryptFromBase64 } from './crypto'
 
-const pools = new Map<string, Pool>()
+const pools = new Map<string, any>()
 
 function parseSslFromUrl(cs: string | undefined): boolean | { rejectUnauthorized: boolean } | undefined {
   if (!cs) return undefined
@@ -34,8 +34,8 @@ async function fetchDsnCipher(userId: string, id: string): Promise<string | null
   return String(r.rows[0].dsn_cipher)
 }
 
-export async function getUserConnPool(userId: string, id: string): Promise<Pool> {
-  if (pools.has(id)) return pools.get(id) as Pool
+export async function getUserConnPool(userId: string, id: string): Promise<any> {
+  if (pools.has(id)) return pools.get(id) as any
   const cipher = await fetchDsnCipher(userId, id)
   if (!cipher) throw new Error('connection_not_found')
   const dsn = decryptFromBase64(cipher)
@@ -45,4 +45,3 @@ export async function getUserConnPool(userId: string, id: string): Promise<Pool>
 }
 
 export const __test__ = { parseSslFromUrl, tableName }
-

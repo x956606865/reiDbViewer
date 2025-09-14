@@ -1,0 +1,30 @@
+# Dependency directories
+node_modules
+**/node_modules
+
+# Next.js build output (we copy traced files explicitly in Dockerfile)
+.next
+apps/web/.next/cache
+
+# VCS & editor
+.git
+.gitignore
+.gitattributes
+.DS_Store
+.idea
+.vscode
+
+# Testing & misc
+coverage
+*.log
+*.swp
+
+# Local env files – never bake secrets into images
+.env
+.env.*
+apps/web/.env.local
+apps/web/.env.*
+
+# PNPM local store (if any)
+.pnpm-store
+

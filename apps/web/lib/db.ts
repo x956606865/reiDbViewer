@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from 'pg'
+// Avoid strict type coupling to 'pg' in build-time check
 
 type Env = {
   QUERY_TIMEOUT_DEFAULT_MS: number
@@ -6,9 +6,9 @@ type Env = {
 }
 
 export async function withSafeSession<T>(
-  pool: Pool,
+  pool: any,
   env: Env,
-  run: (client: PoolClient) => Promise<T>,
+  run: (client: any) => Promise<T>,
   opts?: { requestTimeoutMs?: number }
 ): Promise<T> {
   const client = await (pool as any).connect()

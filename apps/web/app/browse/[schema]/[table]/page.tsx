@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Badge, Button, Code, Group, NumberInput, Paper, Stack, Text, Title, CloseButton } from '@mantine/core'
-import type { ColumnFiltersState, SortingState } from 'mantine-react-table'
+import type { MRT_ColumnFiltersState as ColumnFiltersState, MRT_SortingState as SortingState } from 'mantine-react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import SmartGrid from '../../../../components/SmartGrid'
@@ -109,13 +109,13 @@ export default function BrowseTablePage() {
         const m = v.match(/^([<>]=?|=)\s*(.+)$/)
         const range = v.match(/^(.*)\.\.(.*)$/)
         if (range) {
-          const a = range[1].trim(), b = range[2].trim()
+          const a = (range?.[1] ?? '').trim(), b = (range?.[2] ?? '').trim()
           if (a) wh.push({ kind: 'gte', left, right: { kind: 'param', value: a } })
           if (b) wh.push({ kind: 'lte', left, right: { kind: 'param', value: b } })
           continue
         }
         if (m) {
-          const op = m[1]
+          const op = String(m[1] ?? '')
           const val = m[2]
           const map: any = { '>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte', '=': 'eq' }
           const k = map[op]

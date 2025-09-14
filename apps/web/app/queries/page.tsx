@@ -21,7 +21,7 @@ import {
   Title,
 } from '@mantine/core'
 import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText, IconPencil } from '@tabler/icons-react'
-import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types'
+import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types/appdb'
 import { DataGrid } from '../../components/DataGrid'
 import { LeftDrawer } from '../../components/LeftDrawer'
 import { useCurrentConnId } from '@/lib/current-conn'
@@ -172,7 +172,7 @@ export default function SavedQueriesPage() {
       if (parts.length <= 1) {
         root.children!.push({ type: 'item', name: it.name, path: it.name, item: it })
       } else {
-        const leaf = parts[parts.length - 1]
+        const leaf = parts[parts.length - 1]!
         const folder = ensureFolder(parts.slice(0, -1))
         folder.children!.push({ type: 'item', name: leaf, path: it.name, item: it })
       }
@@ -200,7 +200,7 @@ export default function SavedQueriesPage() {
       const re = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g
       const found = new Set<string>()
       let m: RegExpExecArray | null
-      while ((m = re.exec(sql))) found.add(m[1])
+      while ((m = re.exec(sql))) { if (m[1]) found.add(m[1]!) }
       const newVars: SavedQueryVariableDef[] = [...found].map((name) => {
         const exists = vars.find((v) => v.name === name)
         return exists || { name, type: 'text', required: false }
@@ -813,8 +813,8 @@ export default function SavedQueriesPage() {
                   {/* 首次执行自动计算一次总数；可在结果上方点击“刷新总数”手动更新 */}
                 </Group>
                 <Group mt="sm">
-                  <Button onClick={onPreview} variant="light">预览 SQL</Button>
-                  <Button onClick={onExecute} loading={isExecuting}>执行</Button>
+                  <Button onClick={() => onPreview()} variant="light">预览 SQL</Button>
+                  <Button onClick={() => onExecute()} loading={isExecuting}>执行</Button>
                 </Group>
               </Paper>
 

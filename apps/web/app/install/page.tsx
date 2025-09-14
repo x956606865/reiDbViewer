@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type Status = {
@@ -17,7 +17,7 @@ type Status = {
   message?: string
 }
 
-export default function InstallPage() {
+function InstallPageInner() {
   const router = useRouter()
   const sp = useSearchParams()
   const [schema, setSchema] = useState(sp.get('schema') || 'public')
@@ -165,5 +165,19 @@ export default function InstallPage() {
         </section>
       )}
     </main>
+  )
+}
+
+export default function InstallPage() {
+  return (
+    <Suspense
+      fallback={
+        <main style={{ padding: 24, maxWidth: 960 }}>
+          <p>加载中…</p>
+        </main>
+      }
+    >
+      <InstallPageInner />
+    </Suspense>
   )
 }

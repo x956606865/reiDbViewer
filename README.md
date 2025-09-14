@@ -42,6 +42,35 @@ pnpm typecheck
 pnpm test
 ```
 
+## Docker / Compose 一键运行
+
+在构建与运行阶段同时注入 `BETTER_AUTH_SECRET`（强烈建议使用稳定值；临时值会让已有会话全部失效）：
+
+```bash
+BETTER_AUTH_SECRET="$(openssl rand -base64 32)" docker compose up --build -d
+```
+
+说明：
+- `docker-compose.yml` 会将 `BETTER_AUTH_SECRET` 作为 build arg 传入构建阶段，并作为运行时环境变量传入容器。
+- 为了让构建阶段的 Node 进程真的能读到该变量，Dockerfile 的 builder 阶段需要声明并导入：
+
+  ```dockerfile
+  # 在 FROM base AS builder 之后添加：
+  ARG BETTER_AUTH_SECRET=dev-build-secret-do-not-use
+  ENV BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET
+  ```
+
+  如需我直接为 Dockerfile 加上上述两行，请告知确认。
+
+生产环境建议：
+- 使用固定且足够随机的 `BETTER_AUTH_SECRET`，不要在每次部署时更换，否则会话会被全部踢下线，需要重新登录。
+- 可改用持久化的 env 文件：
+
+  ```bash
+  printf "BETTER_AUTH_SECRET=%s\n" "$(openssl rand -base64 32)" > .env.secrets
+  # 然后在 docker-compose.yml 使用 env_file 或外部导入该变量
+  ```
+
 ## 环境变量（apps/web/.env.local）
 
 - `APP_DB_URL`：应用数据库（保存用户/连接等元数据）。例如：`postgres://user:pass@host:5432/app?sslmode=require`
@@ -141,4 +170,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS "rdv_saved_queries_user_name_ci"
 - 动态列沙箱（Web Worker + 超时终止）。
 - 更丰富的 JSON 过滤器与 UI。
 - Saved SQL 的标签/分享/审计记录。
-

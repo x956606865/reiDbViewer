@@ -95,14 +95,15 @@ export async function GET() {
         throw e
       }
     }
-    const items = r.rows.map((x) => ({
+    const rows = r.rows as Array<{ id: unknown; name: unknown; description?: unknown; variables?: unknown; dynamic_columns?: unknown; created_at?: unknown; updated_at?: unknown }>
+    const items = rows.map((x) => ({
       id: String(x.id),
       name: String(x.name),
       description: x.description ? String(x.description) : null,
       variables: Array.isArray(x.variables) ? x.variables : [],
       dynamicColumns: Array.isArray(x.dynamic_columns) ? x.dynamic_columns : [],
-      createdAt: x.created_at ? new Date(x.created_at).toISOString() : null,
-      updatedAt: x.updated_at ? new Date(x.updated_at).toISOString() : null,
+      createdAt: x.created_at ? new Date(String(x.created_at)).toISOString() : null,
+      updatedAt: x.updated_at ? new Date(String(x.updated_at)).toISOString() : null,
     }))
     return NextResponse.json({ items })
   } catch (e: any) {

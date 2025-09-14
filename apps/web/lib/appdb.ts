@@ -1,9 +1,9 @@
 import { Pool } from 'pg'
 import { env } from './env'
 
-let appPool: Pool | null = null
+let appPool: any | null = null
 
-export function getAppDb(): Pool {
+export function getAppDb(): any {
   if (!process.env.APP_DB_URL) throw new Error('APP_DB_URL not configured')
   if (!appPool) {
     const cs = process.env.APP_DB_URL
@@ -11,7 +11,7 @@ export function getAppDb(): Pool {
     appPool = new Pool({ connectionString: cs, ssl })
     // Ensure unqualified identifiers resolve to the configured schema
     const schema = env.APP_DB_SCHEMA || 'public'
-    appPool.on('connect', (client) => {
+    appPool.on('connect', (client: any) => {
       // pg_catalog first, then our application schema
       client.query(`SET search_path = pg_catalog, ${quoteIdent(schema)}`).catch(() => {})
     })

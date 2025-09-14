@@ -29,12 +29,20 @@ function tableName() {
   return `${prefix}saved_queries`
 }
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+function renderAlterAddDynCols(schema?: string, prefix?: string) {
+  const sch = schema || env.APP_DB_SCHEMA || 'public'
+  const pfx = prefix || env.APP_DB_TABLE_PREFIX || 'rdv_'
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const t = (n: string) => `${q(sch)}.${q(pfx + n)}`
+  return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+}
+
+export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   if (!process.env.APP_DB_URL) return NextResponse.json({ error: 'app_db_not_configured' }, { status: 501 })
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user?.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
-  const id = params.id
   try {
     const pool = getAppDb()
     let r
@@ -70,12 +78,12 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   }
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   if (!process.env.APP_DB_URL) return NextResponse.json({ error: 'app_db_not_configured' }, { status: 501 })
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user?.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const userId = session.user.id
-  const id = params.id
   const json = await req.json().catch(() => null)
   const parsed = UpdateSchema.safeParse(json)
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body', detail: parsed.error.format() }, { status: 400 })

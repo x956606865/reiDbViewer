@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
     const pool = await getUserConnPool(session.user.id, userConnId)
     const rows = await withSafeSession(pool, env, async (client) => {
       const fn = mode === 'cancel' ? 'pg_cancel_backend' : 'pg_terminate_backend'
-      const res = await client.query<{ [k: string]: boolean }>(`SELECT ${fn}($1) AS ok`, [pid])
-      return res.rows
+      const res = await client.query(`SELECT ${fn}($1) AS ok`, [pid]) as any
+      return res.rows as Array<{ ok: boolean }>
     })
     const ok = Boolean(rows?.[0]?.ok)
     return NextResponse.json({ ok })
@@ -41,4 +41,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'signal_failed', message: String(e?.message || e) }, { status: 500 })
   }
 }
-

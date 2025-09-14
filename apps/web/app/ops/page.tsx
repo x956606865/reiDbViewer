@@ -158,8 +158,24 @@ export default function OpsPage() {
       <Text c="dimmed">预设只读脚本，便于排障（例如查看长时间运行中的查询）。</Text>
       <Group>
         <Select label="连接" placeholder="未选择" data={userConns} value={userConnId} onChange={setUserConnId} searchable clearable />
-        <NumberInput label=">= 运行分钟数" value={minMinutes} onChange={setMinMinutes} min={1} max={7 * 24 * 60} step={1} style={{ width: 200 }} />
-        <NumberInput label="返回上限" value={limit} onChange={setLimit} min={1} max={1000} step={50} style={{ width: 180 }} />
+        <NumberInput
+          label=">= 运行分钟数"
+          value={minMinutes}
+          onChange={(v) => setMinMinutes(typeof v === 'number' ? v : v === '' ? '' : Number(v))}
+          min={1}
+          max={7 * 24 * 60}
+          step={1}
+          style={{ width: 200 }}
+        />
+        <NumberInput
+          label="返回上限"
+          value={limit}
+          onChange={(v) => setLimit(typeof v === 'number' ? v : v === '' ? '' : Number(v))}
+          min={1}
+          max={1000}
+          step={50}
+          style={{ width: 180 }}
+        />
         <Button onClick={runLongRunning} disabled={!userConnId}>长跑查询（pg_stat_activity）</Button>
         <Button variant="light" onClick={() => callApi('blocking_activity', { minMinutes: (minMinutes || 5), limit: (limit || 200) })} disabled={!userConnId}>
           阻塞链（blocking）

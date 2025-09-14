@@ -29,12 +29,20 @@ const schema = env.APP_DB_SCHEMA || 'public'
 // Ensure better-auth uses the configured schema when it generates unqualified table names
 if (pool) {
   const quoted = '"' + schema.replace(/"/g, '""') + '"'
-  pool.on('connect', (client) => {
+  pool.on('connect', (client: any) => {
     client.query(`SET search_path = pg_catalog, ${quoted}`).catch(() => {})
   })
 }
 
 export const auth = betterAuth({
+  // Base URL and CORS/trust for Better Auth
+  // Prefer explicit BETTER_AUTH_URL; fall back to common local dev origins
+  baseURL: process.env.BETTER_AUTH_URL || undefined,
+  trustedOrigins: [
+    (process.env.BETTER_AUTH_URL || '').replace(/\/$/, ''),
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ].filter(Boolean) as string[],
   // 指向应用数据库（仅在配置时启用）
   // better-auth 将使用现有表；我们不在应用内执行迁移
   ...(pool

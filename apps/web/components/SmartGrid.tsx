@@ -1,8 +1,12 @@
-"use client"
+'use client';
 
-import * as React from 'react'
-import { MantineReactTable, useMantineReactTable, type MRT_ColumnDef, type MRT_Icons } from 'mantine-react-table'
-import { Group, TextInput, Button } from '@mantine/core'
+import * as React from 'react';
+import {
+  MantineReactTable,
+  useMantineReactTable,
+  type MRT_ColumnDef,
+} from 'mantine-react-table';
+import { Group, TextInput, Button } from '@mantine/core';
 import {
   IconArrowsSort,
   IconArrowNarrowDown,
@@ -16,67 +20,84 @@ import {
   IconEyeOff,
   IconPinned,
   IconPinnedOff,
-} from '@tabler/icons-react'
+} from '@tabler/icons-react';
 
 export type SmartGridProps = {
-  columns: string[]
-  rows: Array<Record<string, unknown>>
-  height?: number
-  sorting?: any
-  onSortingChange?: (updater: any) => void
-  columnFilters?: any
-  onColumnFiltersChange?: (updater: any) => void
-  onApplyFilters?: () => void
-}
+  columns: string[];
+  rows: Array<Record<string, unknown>>;
+  height?: number;
+  sorting?: any;
+  onSortingChange?: (updater: any) => void;
+  columnFilters?: any;
+  onColumnFiltersChange?: (updater: any) => void;
+  onApplyFilters?: () => void;
+};
 
-export default function SmartGrid({ columns, rows, height = 420, sorting, onSortingChange, columnFilters, onColumnFiltersChange, onApplyFilters }: SmartGridProps) {
-  const colDefs = React.useMemo<MRT_ColumnDef<Record<string, unknown>>[]>(
-    () =>
-      columns.map((key) => ({
-        header: key,
-        accessorKey: key,
-        enableSorting: true,
-        enableColumnFilter: true,
-        filterVariant: 'text',
-        // 对象/数组转字符串以便排序/筛选
-        accessorFn: (row) => {
-          const v: any = row[key]
-          if (v == null) return ''
-          if (typeof v === 'object') {
-            try {
-              return JSON.stringify(v)
-            } catch {
-              return String(v)
-            }
+export default function SmartGrid({
+  columns,
+  rows,
+  height = 420,
+  sorting,
+  onSortingChange,
+  columnFilters,
+  onColumnFiltersChange,
+  onApplyFilters,
+}: SmartGridProps) {
+  const colDefs = React.useMemo<
+    MRT_ColumnDef<Record<string, unknown>>[]
+  >(() => {
+    return columns.map((key) => ({
+      header: key,
+      accessorKey: key,
+      enableSorting: true,
+      enableColumnFilter: true,
+      filterVariant: 'text',
+      // 对象/数组转字符串以便排序/筛选
+      accessorFn: (row) => {
+        const v: any = row[key];
+        if (v == null) return '';
+        if (typeof v === 'object') {
+          try {
+            return JSON.stringify(v);
+          } catch {
+            return String(v);
           }
-          return String(v)
-        },
-        mantineTableHeadCellProps: { style: { whiteSpace: 'nowrap' } },
-        mantineTableBodyCellProps: { style: { fontFamily: 'var(--mantine-font-family-monospace)' } },
-      })),
-    [columns]
-  )
+        }
+        return String(v);
+      },
+      mantineTableHeadCellProps: { style: { whiteSpace: 'nowrap' } },
+      mantineTableBodyCellProps: {
+        style: { fontFamily: 'var(--mantine-font-family-monospace)' },
+      },
+    }));
+  }, [columns]);
 
   // 统一化的轻量中性色图标：固定在 16x16 盒内，垂直居中，避免不同 glyph 视盒差异造成的错位
-  const gray = 'var(--mantine-color-dimmed)'
-  const BOX = 16
-  const GLYPH = 14 // 内部图标尺寸略小，留 1px 内边距，视觉居中更稳
-  const wrapIcon = (C: any, dy = 0) => (props: any) => (
-    <span
-      style={{
-        display: 'inline-flex',
-        width: BOX,
-        height: BOX,
-        alignItems: 'center',
-        justifyContent: 'center',
-        verticalAlign: 'middle',
-        transform: dy ? `translateY(${dy}px)` : undefined,
-      }}
-    >
-      <C stroke={1.75} color={gray} size={GLYPH} {...props} />
-    </span>
-  )
-  const icons: Partial<MRT_Icons> = {
+  const gray = 'var(--mantine-color-dimmed)';
+  const BOX = 16;
+  const GLYPH = 14; // 内部图标尺寸略小，留 1px 内边距，视觉居中更稳
+  const wrapIcon = (C: any, dy = 0) => {
+    const WrappedIcon = (props: any) => (
+      <span
+        style={{
+          display: 'inline-flex',
+          width: BOX,
+          height: BOX,
+          alignItems: 'center',
+          justifyContent: 'center',
+          verticalAlign: 'middle',
+          transform: dy ? `translateY(${dy}px)` : undefined,
+        }}
+      >
+        <C stroke={1.75} color={gray} size={GLYPH} {...props} />
+      </span>
+    );
+    // Give the inner component a display name for lint/devtools.
+    const baseName = C?.displayName || C?.name || 'Icon';
+    (WrappedIcon as any).displayName = `WrapIcon(${baseName})`;
+    return WrappedIcon;
+  };
+  const icons: any = {
     IconArrowsSort: wrapIcon(IconArrowsSort),
     IconArrowDown: wrapIcon(IconArrowNarrowDown),
     IconArrowUp: wrapIcon(IconArrowNarrowUp),
@@ -90,7 +111,7 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
     IconEyeOff: wrapIcon(IconEyeOff),
     IconPinned: wrapIcon(IconPinned),
     IconPinnedOff: wrapIcon(IconPinnedOff),
-  }
+  };
 
   const table = useMantineReactTable({
     columns: colDefs,
@@ -122,7 +143,7 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
       maxSize: 480,
       // 自定义筛选 UI：输入框 + 应用按钮（只更新草稿，点击“应用”才提交）
       Filter: ({ column, table }) => {
-        const val = (column.getFilterValue() as string) ?? ''
+        const val = (column.getFilterValue() as string) ?? '';
         return (
           <Group gap="xs" wrap="nowrap">
             <TextInput
@@ -133,9 +154,15 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
               placeholder={`Filter by ${String(column.id)}`}
               style={{ flex: 1, minWidth: 140 }}
             />
-            <Button size="xs" variant="default" onClick={() => onApplyFilters?.()}>应用</Button>
+            <Button
+              size="xs"
+              variant="default"
+              onClick={() => onApplyFilters?.()}
+            >
+              应用
+            </Button>
           </Group>
-        )
+        );
       },
     },
     mantinePaperProps: { withBorder: true },
@@ -181,7 +208,7 @@ export default function SmartGrid({ columns, rows, height = 420, sorting, onSort
     icons,
     // 将“应用筛选”传入内部，用于自定义 Filter 中调用
     meta: { applyFilters: onApplyFilters },
-  })
+  });
 
-  return <MantineReactTable table={table} />
+  return <MantineReactTable table={table} />;
 }

@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@rei-db-view/introspect": "workspace:*",
     "@rei-db-view/query-engine": "workspace:*",
     "@rei-db-view/types": "workspace:*",
     "@tanstack/react-query": "^5.50.0",
@@ -28,6 +29,8 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/react": "19.1.12",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.3",
     "typescript": "^5.5.4"
   }
 }

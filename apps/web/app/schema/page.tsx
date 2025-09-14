@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
+import type { Route } from 'next'
 import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton, ActionIcon } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { useCurrentConnId } from '@/lib/current-conn'
@@ -233,7 +234,7 @@ export default function SchemaPage() {
                 隐藏此表
               </Button>
               <Button size="xs" variant="light" onClick={() => openIndexes(t.schema, t.name)}>查看索引</Button>
-              <Button component={Link} href={`/browse/${t.schema}/${t.name}`} size="xs" variant="light">
+              <Button component={Link} href={`/browse/${t.schema}/${t.name}` as any} size="xs" variant="light">
                 浏览数据
               </Button>
             </Group>

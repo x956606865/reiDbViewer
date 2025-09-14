@@ -2,7 +2,7 @@
 // This compiles to parameterized SQL ($1, $2, ...) and returns a values array.
 
 import { z } from 'zod'
-import type { SavedQueryVariableDef } from '@rei-db-view/types'
+import type { SavedQueryVariableDef } from '@rei-db-view/types/appdb'
 
 export const VarValueSchema = z.union([
   z.string(),
@@ -56,7 +56,7 @@ export function extractVarNames(sql: string): string[] {
   const names = new Set<string>()
   let m: RegExpExecArray | null
   while ((m = varNameRe.exec(cleaned))) {
-    names.add(m[1])
+    if (m[1]) names.add(m[1]!)
   }
   return Array.from(names)
 }

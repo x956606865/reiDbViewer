@@ -78,20 +78,20 @@ async function introspectPostgres(connectionString: string): Promise<{
     await client.query(`SET TRANSACTION READ ONLY`)
 
     // databases
-    const dbRes = await client.query<{ datname: string }>(
+    const dbRes = (await client.query(
       `SELECT datname FROM pg_catalog.pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname`
-    )
-    const databases = dbRes.rows.map((r) => r.datname)
+    )) as any
+    const databases = (dbRes.rows as Array<{ datname: string }>).map((r) => r.datname)
 
     // schemas (user visible)
-    const schRes = await client.query<{ nspname: string }>(
+    const schRes = (await client.query(
       `SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema' ORDER BY nspname`
-    )
-    const schemas = schRes.rows.map((r) => r.nspname)
+    )) as any
+    const schemas = (schRes.rows as Array<{ nspname: string }>).map((r) => r.nspname)
 
     // columns
     type ColRow = { schema: string; table: string; column: string; data_type: string; nullable: boolean }
-    const colRes = await client.query<ColRow>(
+    const colRes = (await client.query(
       `SELECT
          n.nspname AS schema,
          c.relname AS table,
@@ -104,11 +104,11 @@ async function introspectPostgres(connectionString: string): Promise<{
        WHERE a.attnum > 0 AND NOT a.attisdropped
          AND n.nspname NOT LIKE 'pg_%' AND n.nspname <> 'information_schema'
        ORDER BY n.nspname, c.relname, a.attnum`
-    )
+    )) as any
 
     // primary keys
     type PkRow = { schema: string; table: string; column: string }
-    const pkRes = await client.query<PkRow>(
+    const pkRes = (await client.query(
       `SELECT n.nspname AS schema, c.relname AS table, a.attname AS column
        FROM pg_catalog.pg_constraint con
        JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
@@ -116,11 +116,11 @@ async function introspectPostgres(connectionString: string): Promise<{
        JOIN unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
        WHERE con.contype = 'p'`
-    )
+    )) as any
 
     // foreign keys (one-to-one mapping by ordinal position)
     type FkRow = { schema: string; table: string; column: string; ref_schema: string; ref_table: string; ref_column: string }
-    const fkRes = await client.query<FkRow>(
+    const fkRes = (await client.query(
       `SELECT
          n.nspname AS schema,
          c.relname AS table,
@@ -138,13 +138,14 @@ async function introspectPostgres(connectionString: string): Promise<{
        JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
        JOIN pg_catalog.pg_attribute a2 ON a2.attrelid = c2.oid AND a2.attnum = fk.attnum
        WHERE con.contype = 'f'`
-    )
+    )) as any
 
     // Build table map
     const key = (s: string, t: string) => `${s}.${t}`
-    const pkSet = new Set(pkRes.rows.map((r) => `${key(r.schema, r.table)}::${r.column}`))
+    const pkRows = pkRes.rows as Array<PkRow>
+    const pkSet = new Set(pkRows.map((r) => `${key(r.schema, r.table)}::${r.column}`))
     const fkMap = new Map<string, { column: string; ref_schema: string; ref_table: string; ref_column: string }[]>()
-    for (const r of fkRes.rows) {
+    for (const r of (fkRes.rows as Array<FkRow>)) {
       const k = key(r.schema, r.table)
       const arr = fkMap.get(k) || []
       arr.push({ column: r.column, ref_schema: r.ref_schema, ref_table: r.ref_table, ref_column: r.ref_column })
@@ -152,7 +153,7 @@ async function introspectPostgres(connectionString: string): Promise<{
     }
 
     const tableCols = new Map<string, ColumnMeta[]>()
-    for (const r of colRes.rows) {
+    for (const r of (colRes.rows as Array<ColRow>)) {
       const tkey = key(r.schema, r.table)
       const arr = tableCols.get(tkey) || []
       const isPk = pkSet.has(`${tkey}::${r.column}`)
@@ -172,7 +173,7 @@ async function introspectPostgres(connectionString: string): Promise<{
 
     const tables: TableMeta[] = []
     for (const [tkey, cols] of tableCols) {
-      const [schema, name] = tkey.split('.')
+      const [schema, name] = tkey.split('.') as [string, string]
       tables.push({ schema, name, columns: cols })
     }
 

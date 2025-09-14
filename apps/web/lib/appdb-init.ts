@@ -112,7 +112,7 @@ CREATE INDEX IF NOT EXISTS ${q(prefix + 'saved_queries_user')} ON ${t('saved_que
   ].join('\n')
 }
 
-export async function checkInitStatus(appPool: Pool, schema?: string, prefix?: string): Promise<InitStatus> {
+export async function checkInitStatus(appPool: any, schema?: string, prefix?: string): Promise<InitStatus> {
   const sch = schema || env.APP_DB_SCHEMA || 'public'
   const pfx = prefix ?? env.APP_DB_TABLE_PREFIX ?? 'rdv_'
   const warnings: string[] = []
