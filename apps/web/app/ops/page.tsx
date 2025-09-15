@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-import { Button, Group, NumberInput, Paper, Stack, Text, Title, Code, Select, ActionIcon, Tooltip } from '@mantine/core'
+import { Button, Group, NumberInput, Paper, Stack, Text, Title, Code, Select, ActionIcon, Tooltip, LoadingOverlay } from '@mantine/core'
 import { IconPlayerPause, IconPlayerStop } from '@tabler/icons-react'
 import { DataGrid } from '../../components/DataGrid'
 import { useCurrentConnId } from '@/lib/current-conn'
@@ -18,6 +18,7 @@ export default function OpsPage() {
   const [limit, setLimit] = useState<number | ''>(200)
   const [userConnId, setUserConnId] = useCurrentConnId()
   const [userConns, setUserConns] = useState<Array<{ value: string; label: string }>>([])
+  const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     fetch('/api/user/connections', { cache: 'no-store' })
@@ -36,12 +37,14 @@ export default function OpsPage() {
     setSql('')
     setErr(null)
     setInfo(null)
+    setLoading(false)
   }, [userConnId])
 
   const runLongRunning = async () => {
     setErr(null)
     setRows([])
     setCols([])
+    setLoading(true)
     try {
       const body = {
         actionId: 'long_running_activity',
@@ -82,6 +85,8 @@ export default function OpsPage() {
       setRows(withActions)
     } catch (e: any) {
       setErr(String(e?.message || e))
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -89,6 +94,7 @@ export default function OpsPage() {
     setErr(null)
     setRows([])
     setCols([])
+    setLoading(true)
     try {
       const body = { actionId, params, userConnId: userConnId || '' }
       const res = await fetch('/api/ops/queries', {
@@ -129,6 +135,8 @@ export default function OpsPage() {
       setRows(withActions)
     } catch (e: any) {
       setErr(String(e?.message || e))
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -176,17 +184,17 @@ export default function OpsPage() {
           step={50}
           style={{ width: 180 }}
         />
-        <Button onClick={runLongRunning} disabled={!userConnId}>长跑查询（pg_stat_activity）</Button>
-        <Button variant="light" onClick={() => callApi('blocking_activity', { minMinutes: (minMinutes || 5), limit: (limit || 200) })} disabled={!userConnId}>
+        <Button onClick={runLongRunning} disabled={!userConnId || loading}>长跑查询（pg_stat_activity）</Button>
+        <Button variant="light" onClick={() => callApi('blocking_activity', { minMinutes: (minMinutes || 5), limit: (limit || 200) })} disabled={!userConnId || loading}>
           阻塞链（blocking）
         </Button>
-        <Button variant="light" onClick={() => callApi('long_transactions', { minMinutes: (minMinutes || 5), limit: (limit || 200) })} disabled={!userConnId}>
+        <Button variant="light" onClick={() => callApi('long_transactions', { minMinutes: (minMinutes || 5), limit: (limit || 200) })} disabled={!userConnId || loading}>
           长事务
         </Button>
-        <Button variant="light" onClick={() => callApi('waiting_locks', { limit: (limit || 200) })} disabled={!userConnId}>
+        <Button variant="light" onClick={() => callApi('waiting_locks', { limit: (limit || 200) })} disabled={!userConnId || loading}>
           等待锁
         </Button>
-        <Button variant="light" onClick={() => callApi('connections_overview', { limit: (limit || 200) })} disabled={!userConnId}>
+        <Button variant="light" onClick={() => callApi('connections_overview', { limit: (limit || 200) })} disabled={!userConnId || loading}>
           连接概览
         </Button>
       </Group>
@@ -203,7 +211,8 @@ export default function OpsPage() {
 
       <div>
         <Title order={4}>结果</Title>
-        <Paper withBorder p="xs" mt="xs">
+        <Paper withBorder p="xs" mt="xs" pos="relative">
+          <LoadingOverlay visible={loading} zIndex={10} />
           <DataGrid columns={cols} rows={rows} />
         </Paper>
       </div>
