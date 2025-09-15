@@ -1,0 +1,39 @@
+{
+  "name": "@rei-db-view/desktop",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev:ui": "vite",
+    "build:ui": "vite build",
+    "preview": "vite preview",
+    "dev:tauri": "tauri dev",
+    "build:tauri": "tauri build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rei-db-view/introspect": "workspace:*",
+    "@rei-db-view/query-engine": "workspace:*",
+    "@rei-db-view/types": "workspace:*",
+    "@tanstack/react-query": "^5.50.0",
+    "mantine-react-table": "2.0.0-beta.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-json-view": "^1.21.3",
+    "@mantine/core": "^7.13.2",
+    "@mantine/hooks": "^7.13.2",
+    "@mantine/notifications": "^7.13.2",
+    "@mantine/form": "^7.13.2",
+    "@emotion/react": "^11.13.0",
+    "@tabler/icons-react": "^3.20.0",
+    "@tauri-apps/plugin-sql": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "19.1.12",
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
