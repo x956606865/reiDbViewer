@@ -49,6 +49,7 @@ import type {
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
 import type { SavedItem, TreeNode } from '../../components/queries/types';
+import { DataGrid } from '../../components/DataGrid';
 import { SqlEditor } from '../../components/queries/SqlEditor';
 import { VariablesEditor } from '../../components/queries/VariablesEditor';
 import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
@@ -69,6 +70,21 @@ import {
 } from '@/lib/saved-sql-import-export';
 
 // Types moved to components/queries/types
+
+const VAR_TYPES: Array<{
+  value: SavedQueryVariableDef['type'];
+  label: string;
+}> = [
+  { value: 'text', label: 'text' },
+  { value: 'number', label: 'number' },
+  { value: 'boolean', label: 'boolean' },
+  { value: 'date', label: 'date' },
+  { value: 'timestamp', label: 'timestamp' },
+  { value: 'json', label: 'json' },
+  { value: 'uuid', label: 'uuid' },
+  { value: 'raw', label: 'raw' },
+  { value: 'enum', label: 'enum' },
+];
 
 export default function SavedQueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -122,10 +138,15 @@ export default function SavedQueriesPage() {
   const [pgTotalRows, setPgTotalRows] = useState<number | null>(null);
   const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
   const runtimeCalcItems = useMemo(() => {
-    const items: CalcItemDef[] = []
-    if (pgEnabled) items.push({ name: '__total_count__', type: 'sql', code: 'select count(*)::bigint as total from ({{_sql}}) t' })
-    return [...items, ...calcItems]
-  }, [calcItems, pgEnabled])
+    const items: CalcItemDef[] = [];
+    if (pgEnabled)
+      items.push({
+        name: '__total_count__',
+        type: 'sql',
+        code: 'select count(*)::bigint as total from ({{_sql}}) t',
+      });
+    return [...items, ...calcItems];
+  }, [calcItems, pgEnabled]);
   const sqlPreviewRef = React.useRef<HTMLDivElement | null>(null);
   const [connItems, setConnItems] = useState<
     Array<{ id: string; alias: string; host?: string | null }>
@@ -428,7 +449,10 @@ export default function SavedQueriesPage() {
     [refresh]
   );
 
-  const tree = useMemo(() => buildSavedTree(items, extraFolders), [items, extraFolders]);
+  const tree = useMemo(
+    () => buildSavedTree(items, extraFolders),
+    [items, extraFolders]
+  );
 
   const onDetectVars = () => {
     try {
@@ -530,8 +554,13 @@ export default function SavedQueriesPage() {
       const j = await res.json().catch(() => ({}));
       if (res.status === 501 && j?.suggestedSQL) {
         setSuggestedSQL(j.suggestedSQL);
-        const msg = '功能未初始化：请先在 APP_DB 执行建表 SQL。'
-        notifications.show({ color: 'red', title: '保存失败', message: msg, icon: <IconX size={16} /> })
+        const msg = '功能未初始化：请先在 APP_DB 执行建表 SQL。';
+        notifications.show({
+          color: 'red',
+          title: '保存失败',
+          message: msg,
+          icon: <IconX size={16} />,
+        });
         throw new Error(msg);
       }
       if (res.status === 409 && j?.error === 'name_exists' && j?.existingId) {
@@ -545,8 +574,13 @@ export default function SavedQueriesPage() {
         });
         const j2 = await res2.json().catch(() => ({}));
         if (!res2.ok) {
-          const em = j2?.error || `保存失败（HTTP ${res2.status}）`
-          notifications.show({ color: 'red', title: '保存失败', message: em, icon: <IconX size={16} /> })
+          const em = j2?.error || `保存失败（HTTP ${res2.status}）`;
+          notifications.show({
+            color: 'red',
+            title: '保存失败',
+            message: em,
+            icon: <IconX size={16} />,
+          });
           throw new Error(em);
         }
         // 若本次原本在编辑另一条（targetId）且与 existingId 不同，则将原条目标记为归档，避免重名重复
@@ -558,35 +592,60 @@ export default function SavedQueriesPage() {
           }).catch(() => {});
         }
         setInfo('已覆盖保存。');
-        notifications.show({ color: 'teal', title: '保存成功', message: '已覆盖保存。', icon: <IconCheck size={16} /> })
+        notifications.show({
+          color: 'teal',
+          title: '保存成功',
+          message: '已覆盖保存。',
+          icon: <IconCheck size={16} />,
+        });
         setCurrentId(j.existingId);
         refresh();
         onSelectSaved(j.existingId);
         return;
       }
       if (!res.ok) {
-        const em = j?.error || `保存失败（HTTP ${res.status}）`
-        notifications.show({ color: 'red', title: '保存失败', message: em, icon: <IconX size={16} /> })
+        const em = j?.error || `保存失败（HTTP ${res.status}）`;
+        notifications.show({
+          color: 'red',
+          title: '保存失败',
+          message: em,
+          icon: <IconX size={16} />,
+        });
         throw new Error(em);
       }
 
       if (j?.id) {
         setCurrentId(j.id);
         setInfo('已保存。');
-        notifications.show({ color: 'teal', title: '保存成功', message: `已创建：${trimmed}`, icon: <IconCheck size={16} /> })
+        notifications.show({
+          color: 'teal',
+          title: '保存成功',
+          message: `已创建：${trimmed}`,
+          icon: <IconCheck size={16} />,
+        });
         refresh();
         onSelectSaved(j.id);
       } else {
         setInfo('已保存。');
-        notifications.show({ color: 'teal', title: '保存成功', message: `已更新：${trimmed}`, icon: <IconCheck size={16} /> })
+        notifications.show({
+          color: 'teal',
+          title: '保存成功',
+          message: `已更新：${trimmed}`,
+          icon: <IconCheck size={16} />,
+        });
         refresh();
       }
     } catch (e: any) {
-      const msg = String(e?.message || e)
+      const msg = String(e?.message || e);
       setError(msg);
       if (!/保存失败/.test(msg) && !/功能未初始化/.test(msg)) {
         // 若上面分支尚未弹过，则这里兜底弹一次
-        notifications.show({ color: 'red', title: '保存失败', message: msg, icon: <IconX size={16} /> })
+        notifications.show({
+          color: 'red',
+          title: '保存失败',
+          message: msg,
+          icon: <IconX size={16} />,
+        });
       }
     }
   };
@@ -1087,536 +1146,137 @@ export default function SavedQueriesPage() {
                 setRunValues={setRunValues}
               />
 
-              {/** 编辑模式不显示分页与执行工具条 */}
-
-              {/* legacy inline editor removed */}
-              {/*
-              <Paper withBorder p="md">
-                <Title order={4}>变量定义</Title>
-                {/** 当存在 enum 类型变量时，增加“枚举选项”列 */}
-                {/** 计算开关用于渲染列 */}
-                {/** 注意：保持服务端 schema 校验，保存时会验证 options 非空与默认值合法 */}
-
-                <Table mt="sm" withTableBorder withColumnBorders>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>名称</Table.Th>
-                      <Table.Th>类型</Table.Th>
-                      {vars.some((v) => v.type === 'enum') && (
-                        <Table.Th>枚举选项</Table.Th>
-                      )}
-                      <Table.Th>必填</Table.Th>
-                      <Table.Th>默认值</Table.Th>
-                      <Table.Th w={60}>操作</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {vars.length === 0 && (
+              {false && (
+                <Paper withBorder p="md">
+                  <Title order={4}>计算数据</Title>
+                  <Text c="dimmed" size="sm">
+                    配置在“运行”时可点击手动计算的指标。支持两种方式：
+                  </Text>
+                  <Text c="dimmed" size="sm">
+                    1) SQL：可使用所有变量，另提供{' '}
+                    <Code>
+                      {`{{`}_sql{`}}`}
+                    </Code>{' '}
+                    为当前查询未包裹分页的原始 SQL（将被作为 CTE 注入）。
+                  </Text>
+                  <Text c="dimmed" size="sm">
+                    2) JS：函数签名 <Code>(vars, rows, helpers) =&gt; any</Code>
+                    ，其中 rows 为当前页数据。
+                  </Text>
+                  <Table mt="sm" withTableBorder withColumnBorders>
+                    <Table.Thead>
                       <Table.Tr>
-                        <Table.Td colSpan={vars.some((v) => v.type === 'enum') ? 6 : 5}>
-                          <Text c="dimmed">无变量</Text>
-                        </Table.Td>
+                        <Table.Th w={220}>名称</Table.Th>
+                        <Table.Th w={120}>类型</Table.Th>
+                        <Table.Th>代码</Table.Th>
+                        <Table.Th w={60}>操作</Table.Th>
                       </Table.Tr>
-                    )}
-                    {vars.map((v, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td>
-                          <TextInput
-                            value={v.name}
-                            onChange={(e) => {
-                              const nextName = e.currentTarget.value;
-                              setVars((vs) =>
-                                vs.map((x, idx) =>
-                                  idx === i ? { ...x, name: nextName } : x
-                                )
-                              );
-                              setRunValues((rv) => {
-                                const copy = { ...rv };
-                                const oldName = v.name;
-                                if (
-                                  oldName !== nextName &&
-                                  Object.prototype.hasOwnProperty.call(
-                                    copy,
-                                    oldName
-                                  )
-                                ) {
-                                  copy[nextName] = copy[oldName];
-                                  delete copy[oldName];
-                                }
-                                return copy;
-                              });
-                            }}
-                            w={220}
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <Select
-                            data={VAR_TYPES}
-                            value={v.type}
-                            onChange={(val) =>
-                              setVars((vs) =>
-                                vs.map((x, idx) =>
-                                  idx === i
-                                    ? {
-                                        ...x,
-                                        type: (val as any) || 'text',
-                                        // 切换到 enum 时，初始化空数组；切走时清空 options
-                                        options:
-                                          (val as any) === 'enum'
-                                            ? (Array.isArray(x.options)
-                                                ? x.options
-                                                : [])
-                                            : undefined,
-                                      }
-                                    : x
-                                )
-                              )
-                            }
-                            w={140}
-                          />
-                        </Table.Td>
-                        {vars.some((vv) => vv.type === 'enum') && (
-                          <Table.Td>
-                            {v.type === 'enum' ? (
-                              <Stack gap={6}>
-                                <TagsInput
-                                  value={(v.options as string[] | undefined) || []}
-                                  onChange={(vals) =>
-                                    setVars((vs) =>
-                                      vs.map((x, idx) =>
-                                        idx === i
-                                          ? {
-                                              ...x,
-                                              options: vals,
-                                              // 若默认值不在新集合中，清空默认值
-                                              default:
-                                                x.default !== undefined &&
-                                                x.default !== null &&
-                                                !vals.includes(String(x.default))
-                                                  ? undefined
-                                                  : x.default,
-                                            }
-                                          : x
-                                      )
-                                    )
-                                  }
-                                  placeholder="输入后回车添加选项"
-                                  w={260}
-                                />
-                                <Textarea
-                                  placeholder="可选：输入 SQL 拉取选项（只读 SELECT/WITH，取第一列）"
-                                  value={String(v.optionsSql ?? '')}
-                                  onChange={(e) => {
-                                    const val = e.currentTarget.value
-                                    setVars((vs) =>
-                                      vs.map((x, idx) =>
-                                        idx === i ? { ...x, optionsSql: val } : x
-                                      )
-                                    )
-                                  }}
-                                  autosize
-                                  minRows={2}
-                                  w={360}
-                                  styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
-                                />
-                                <Group gap="xs">
-                                  <Button
-                                    size="xs"
-                                    variant="light"
-                                    leftSection={<IconRefresh size={14} />}
-                                    onClick={async () => {
-                                      const sqlText = (v.optionsSql || '').trim()
-                                      if (!sqlText) {
-                                        notifications.show({ color: 'gray', title: '缺少 SQL', message: '请先填写用于拉取的 SQL', icon: <IconX size={14} /> })
-                                        return
-                                      }
-                                      if (!userConnId) {
-                                        notifications.show({ color: 'gray', title: '未选择连接', message: '请先选择当前连接后再拉取', icon: <IconX size={14} /> })
-                                        return
-                                      }
-                                      try {
-                                        const res = await fetch('/api/saved-sql/enum-options', {
-                                          method: 'POST',
-                                          headers: { 'content-type': 'application/json' },
-                                          body: JSON.stringify({ userConnId, sql: sqlText }),
-                                        })
-                                        const j = await res.json().catch(() => ({}))
-                                        if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`)
-                                        const opts: string[] = Array.isArray(j.options) ? j.options : []
-                                        setVars((vs) =>
-                                          vs.map((x, idx) =>
-                                            idx === i
-                                              ? {
-                                                  ...x,
-                                                  options: opts,
-                                                  default:
-                                                    x.default !== undefined &&
-                                                    x.default !== null &&
-                                                    !opts.includes(String(x.default))
-                                                      ? undefined
-                                                      : x.default,
-                                                }
-                                              : x
-                                          )
-                                        )
-                                        notifications.show({ color: 'teal', title: '拉取成功', message: `获得 ${opts.length} 项`, icon: <IconCheck size={14} /> })
-                                      } catch (e: any) {
-                                        notifications.show({ color: 'red', title: '拉取失败', message: String(e?.message || e), icon: <IconX size={14} /> })
-                                      }
-                                    }}
-                                  >
-                                    拉取
-                                  </Button>
-                                </Group>
-                              </Stack>
-                            ) : (
-                              <Text c="dimmed">—</Text>
-                            )}
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {calcItems.length === 0 && (
+                        <Table.Tr>
+                          <Table.Td colSpan={4}>
+                            <Text c="dimmed">暂无计算数据</Text>
                           </Table.Td>
-                        )}
-                        <Table.Td>
-                          <Switch
-                            checked={!!v.required}
-                            onChange={(e) => {
-                              const checked = e.currentTarget.checked;
-                              setVars((vs) =>
-                                vs.map((x, idx) =>
-                                  idx === i ? { ...x, required: checked } : x
-                                )
-                              );
-                            }}
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          {v.type === 'number' ? (
-                            <NumberInput
-                              value={(v.default as any) ?? undefined}
-                              onChange={(val) =>
-                                setVars((vs) =>
-                                  vs.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, default: val as any }
-                                      : x
-                                  )
-                                )
-                              }
-                              w={180}
-                            />
-                          ) : v.type === 'boolean' ? (
-                            <Switch
-                              checked={!!v.default}
-                              onChange={(e) => {
-                                const checked = e.currentTarget.checked;
-                                setVars((vs) =>
-                                  vs.map((x, idx) =>
-                                    idx === i ? { ...x, default: checked } : x
-                                  )
-                                );
-                              }}
-                            />
-                          ) : v.type === 'enum' ? (
-                            <Select
-                              data={(v.options || []).map((o) => ({
-                                value: o,
-                                label: o,
-                              }))}
-                              value={
-                                typeof v.default === 'string'
-                                  ? (v.default as string)
-                                  : undefined
-                              }
-                              onChange={(val) =>
-                                setVars((vs) =>
-                                  vs.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, default: (val as any) ?? undefined }
-                                      : x
-                                  )
-                                )
-                              }
-                              w={220}
-                              placeholder={
-                                (v.options || []).length > 0
-                                  ? '选择默认值'
-                                  : '先填写枚举选项'
-                              }
-                            />
-                          ) : (
+                        </Table.Tr>
+                      )}
+                      {calcItems.map((ci, i) => (
+                        <Table.Tr key={ci.name + i}>
+                          <Table.Td>
                             <TextInput
-                              value={String(v.default ?? '')}
+                              value={ci.name}
                               onChange={(e) => {
                                 const val = e.currentTarget.value;
-                                setVars((vs) =>
-                                  vs.map((x, idx) =>
-                                    idx === i ? { ...x, default: val } : x
+                                setCalcItems((arr) =>
+                                  arr.map((x, idx) =>
+                                    idx === i ? { ...x, name: val } : x
                                   )
                                 );
                               }}
-                              w={240}
                             />
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="light"
-                            onClick={() => onRemoveVar(v.name)}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-
-                <Title order={4} mt="md">
-                  动态列
-                </Title>
-                <Text c="dimmed" size="sm">
-                  每个动态列包含“名称”和一个 JS 函数。函数签名：
-                  <Code>(row, vars, helpers) =&gt; any</Code>
-                </Text>
-                <Table mt="sm" withTableBorder withColumnBorders>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th w={220}>名称</Table.Th>
-                      <Table.Th>JS 函数</Table.Th>
-                      <Table.Th w={120}>手动触发</Table.Th>
-                      <Table.Th w={60}>操作</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {dynCols.length === 0 && (
-                      <Table.Tr>
-                        <Table.Td colSpan={4}>
-                          <Text c="dimmed">暂无动态列</Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    )}
-                    {dynCols.map((dc, i) => (
-                      <Table.Tr key={dc.name + i}>
-                        <Table.Td>
-                          <TextInput
-                            value={dc.name}
-                            onChange={(e) => {
-                              const val = e.currentTarget.value;
-                              setDynCols((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i ? { ...x, name: val } : x
+                          </Table.Td>
+                          <Table.Td>
+                            <Select
+                              data={[
+                                { value: 'sql', label: 'SQL' },
+                                { value: 'js', label: 'JS' },
+                              ]}
+                              value={ci.type}
+                              onChange={(v) =>
+                                setCalcItems((arr) =>
+                                  arr.map((x, idx) =>
+                                    idx === i
+                                      ? { ...x, type: (v as any) || 'sql' }
+                                      : x
+                                  )
                                 )
-                              );
-                            }}
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <Textarea
-                            value={dc.code}
-                            onChange={(e) => {
-                              const val = e.currentTarget.value;
-                              setDynCols((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i ? { ...x, code: val } : x
+                              }
+                            />
+                          </Table.Td>
+                          <Table.Td>
+                            <Textarea
+                              value={ci.code}
+                              onChange={(e) => {
+                                const val = e.currentTarget.value;
+                                setCalcItems((arr) =>
+                                  arr.map((x, idx) =>
+                                    idx === i ? { ...x, code: val } : x
+                                  )
+                                );
+                              }}
+                              autosize
+                              minRows={3}
+                              styles={{
+                                input: {
+                                  fontFamily:
+                                    'var(--mantine-font-family-monospace)',
+                                },
+                              }}
+                              placeholder={
+                                ci.type === 'sql'
+                                  ? 'select count(*) from ({{_sql}}) t'
+                                  : '(vars, rows) => rows.length'
+                              }
+                            />
+                          </Table.Td>
+                          <Table.Td>
+                            <ActionIcon
+                              color="red"
+                              variant="light"
+                              onClick={() =>
+                                setCalcItems((arr) =>
+                                  arr.filter((_, idx) => idx !== i)
                                 )
-                              );
-                            }}
-                            autosize
-                            minRows={3}
-                            styles={{
-                              input: {
-                                fontFamily:
-                                  'var(--mantine-font-family-monospace)',
-                              },
-                            }}
-                            placeholder="(row, vars, helpers) => row.amount * 1.1"
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <Switch
-                            checked={!!dc.manualTrigger}
-                            onChange={(e) => {
-                              const checked = e.currentTarget.checked;
-                              setDynCols((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i
-                                    ? { ...x, manualTrigger: checked }
-                                    : x
-                                )
-                              );
-                            }}
-                            label={
-                              dc.manualTrigger ? '点击按钮计算' : '自动计算'
-                            }
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="light"
-                            onClick={() =>
-                              setDynCols((arr) =>
-                                arr.filter((_, idx) => idx !== i)
-                              )
-                            }
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-                <Group gap="xs" mt="xs">
-                  <Button
-                    size="xs"
-                    leftSection={<IconPlus size={14} />}
-                    variant="light"
-                    onClick={() =>
-                      setDynCols((arr) => [
-                        ...arr,
-                        {
-                          name: `dyn_${arr.length + 1}`,
-                          code: '(row, vars) => null',
-                          manualTrigger: false,
-                        },
-                      ])
-                    }
-                  >
-                    新增动态列
-                  </Button>
-                </Group>
-              </Paper>
-              */}
-
-              <Paper withBorder p="md">
-                <Title order={4}>计算数据</Title>
-                <Text c="dimmed" size="sm">
-                  配置在“运行”时可点击手动计算的指标。支持两种方式：
-                </Text>
-                <Text c="dimmed" size="sm">
-                  1) SQL：可使用所有变量，另提供{' '}
-                  <Code>
-                    {`{{`}_sql{`}}`}
-                  </Code>{' '}
-                  为当前查询未包裹分页的原始 SQL（将被作为 CTE 注入）。
-                </Text>
-                <Text c="dimmed" size="sm">
-                  2) JS：函数签名 <Code>(vars, rows, helpers) =&gt; any</Code>
-                  ，其中 rows 为当前页数据。
-                </Text>
-                <Table mt="sm" withTableBorder withColumnBorders>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th w={220}>名称</Table.Th>
-                      <Table.Th w={120}>类型</Table.Th>
-                      <Table.Th>代码</Table.Th>
-                      <Table.Th w={60}>操作</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {calcItems.length === 0 && (
-                      <Table.Tr>
-                        <Table.Td colSpan={4}>
-                          <Text c="dimmed">暂无计算数据</Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    )}
-                    {calcItems.map((ci, i) => (
-                      <Table.Tr key={ci.name + i}>
-                        <Table.Td>
-                          <TextInput
-                            value={ci.name}
-                            onChange={(e) => {
-                              const val = e.currentTarget.value;
-                              setCalcItems((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i ? { ...x, name: val } : x
-                                )
-                              );
-                            }}
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <Select
-                            data={[
-                              { value: 'sql', label: 'SQL' },
-                              { value: 'js', label: 'JS' },
-                            ]}
-                            value={ci.type}
-                            onChange={(v) =>
-                              setCalcItems((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i
-                                    ? { ...x, type: (v as any) || 'sql' }
-                                    : x
-                                )
-                              )
-                            }
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <Textarea
-                            value={ci.code}
-                            onChange={(e) => {
-                              const val = e.currentTarget.value;
-                              setCalcItems((arr) =>
-                                arr.map((x, idx) =>
-                                  idx === i ? { ...x, code: val } : x
-                                )
-                              );
-                            }}
-                            autosize
-                            minRows={3}
-                            styles={{
-                              input: {
-                                fontFamily:
-                                  'var(--mantine-font-family-monospace)',
-                              },
-                            }}
-                            placeholder={
-                              ci.type === 'sql'
-                                ? 'select count(*) from ({{_sql}}) t'
-                                : '(vars, rows) => rows.length'
-                            }
-                          />
-                        </Table.Td>
-                        <Table.Td>
-                          <ActionIcon
-                            color="red"
-                            variant="light"
-                            onClick={() =>
-                              setCalcItems((arr) =>
-                                arr.filter((_, idx) => idx !== i)
-                              )
-                            }
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-                <Group gap="xs" mt="xs">
-                  <Button
-                    size="xs"
-                    leftSection={<IconPlus size={14} />}
-                    variant="light"
-                    onClick={() =>
-                      setCalcItems((arr) => [
-                        ...arr,
-                        {
-                          name: `calc_${arr.length + 1}`,
-                          type: 'sql',
-                          code: 'select count(*) as total from ({{_sql}}) t',
-                        },
-                      ])
-                    }
-                  >
-                    新增计算
-                  </Button>
-                </Group>
-              </Paper>
+                              }
+                            >
+                              <IconTrash size={14} />
+                            </ActionIcon>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                  <Group gap="xs" mt="xs">
+                    <Button
+                      size="xs"
+                      leftSection={<IconPlus size={14} />}
+                      variant="light"
+                      onClick={() =>
+                        setCalcItems((arr) => [
+                          ...arr,
+                          {
+                            name: `calc_${arr.length + 1}`,
+                            type: 'sql',
+                            code: 'select count(*) as total from ({{_sql}}) t',
+                          },
+                        ])
+                      }
+                    >
+                      新增计算
+                    </Button>
+                  </Group>
+                </Paper>
+              )}
             </>
           ) : (
             <>
@@ -1651,7 +1311,11 @@ export default function SavedQueriesPage() {
                 setExplainAnalyze={setExplainAnalyze}
               />
 
-              <SqlPreviewPanel ref={sqlPreviewRef} isPreviewing={isPreviewing} previewSQL={previewSQL} />
+              <SqlPreviewPanel
+                ref={sqlPreviewRef}
+                isPreviewing={isPreviewing}
+                previewSQL={previewSQL}
+              />
 
               <ResultsPanel
                 isExecuting={isExecuting}
@@ -1680,10 +1344,26 @@ export default function SavedQueriesPage() {
                     page={pgPage}
                     totalPages={pgTotalPages}
                     totalRows={pgTotalRows}
-                    onFirst={() => { setPgPage(1); onExecute({ page: 1 }); }}
-                    onPrev={() => { const next = Math.max(1, pgPage - 1); setPgPage(next); onExecute({ page: next }); }}
-                    onNext={() => { const next = pgPage + 1; setPgPage(next); onExecute({ page: next }); }}
-                    onLast={() => { if (pgTotalPages) { setPgPage(pgTotalPages); onExecute({ page: pgTotalPages }); } }}
+                    onFirst={() => {
+                      setPgPage(1);
+                      onExecute({ page: 1 });
+                    }}
+                    onPrev={() => {
+                      const next = Math.max(1, pgPage - 1);
+                      setPgPage(next);
+                      onExecute({ page: next });
+                    }}
+                    onNext={() => {
+                      const next = pgPage + 1;
+                      setPgPage(next);
+                      onExecute({ page: next });
+                    }}
+                    onLast={() => {
+                      if (pgTotalPages) {
+                        setPgPage(pgTotalPages);
+                        onExecute({ page: pgTotalPages });
+                      }
+                    }}
                   />
                 }
               />

@@ -14,7 +14,7 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
-import { IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { CalcItemDef, SavedQueryVariableDef } from "@rei-db-view/types/appdb";
 
 export function CalcItemsEditor({
@@ -103,7 +103,24 @@ export function CalcItemsEditor({
           ))}
         </Table.Tbody>
       </Table>
-      <Group mt="xs">
+      <Group mt="xs" gap="xs">
+        <Button
+          size="xs"
+          leftSection={<IconPlus size={14} />}
+          variant="light"
+          onClick={() =>
+            setCalcItems((arr) => [
+              ...arr,
+              {
+                name: `calc_${arr.length + 1}`,
+                type: "sql",
+                code: "select count(*) as total from ({{_sql}}) t",
+              },
+            ])
+          }
+        >
+          新增计算
+        </Button>
         <Button
           size="xs"
           variant="light"
@@ -116,4 +133,3 @@ export function CalcItemsEditor({
     </Paper>
   );
 }
-
