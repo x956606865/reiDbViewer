@@ -161,7 +161,8 @@ export default function OpsPage() {
   }
 
   return (
-    <Stack gap="md">
+    // 防止结果表/代码等宽内容导致整页横向滚动
+    <Stack gap="md" style={{ minWidth: 0 }}>
       <Title order={2}>运维快速按钮（只读）</Title>
       <Text c="dimmed">预设只读脚本，便于排障（例如查看长时间运行中的查询）。</Text>
       <Group>
