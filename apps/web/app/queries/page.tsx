@@ -61,6 +61,8 @@ import { RunActionsBar } from '../../components/queries/RunActionsBar';
 import { SqlPreviewPanel } from '../../components/queries/SqlPreviewPanel';
 import { RuntimeCalcCards } from '../../components/queries/RuntimeCalcCards';
 import { PaginationBar } from '../../components/queries/PaginationBar';
+import { ResultsPanel } from '../../components/queries/ResultsPanel';
+import { RunParamsPanel } from '../../components/queries/RunParamsPanel';
 import { useCurrentConnId } from '@/lib/current-conn';
 import {
   parseSavedQueriesExport,
@@ -1752,232 +1754,73 @@ export default function SavedQueriesPage() {
             </>
           ) : (
             <>
-              <Paper withBorder p="md">
-                <Title order={4}>运行</Title>
-                <Group mt="xs" gap="sm" align="center">
-                  <Text size="sm" c="dimmed">
-                    当前连接：
-                  </Text>
-                  {userConnId ? (
-                    <Badge color="green">
-                      <Code>
-                        {currentConn?.alias || userConnId}
-                        {currentConn?.host ? (
-                          <>
-                            {' '}
-                            <span
-                              style={{ color: 'var(--mantine-color-dimmed)' }}
-                            >
-                              ({currentConn.host})
-                            </span>
-                          </>
-                        ) : null}
-                      </Code>
-                    </Badge>
-                  ) : (
-                    <Badge color="gray">未选择</Badge>
-                  )}
-                </Group>
-                <Title order={5} mt="md">
-                  运行参数
-                </Title>
-                <Table mt="xs" withTableBorder withColumnBorders>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>变量</Table.Th>
-                      <Table.Th>运行值</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {vars.length === 0 && (
-                      <Table.Tr>
-                        <Table.Td colSpan={2}>
-                          <Text c="dimmed">无变量</Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    )}
-                    {vars.map((v) => (
-                      <Table.Tr key={`run_${v.name}`}>
-                        <Table.Td>
-                          <Code>{v.name}</Code>
-                        </Table.Td>
-                        <Table.Td>
-                          {v.type === 'number' ? (
-                            <NumberInput
-                              value={
-                                (runValues[v.name] as any) ??
-                                (v.default as any) ??
-                                undefined
-                              }
-                              onChange={(val) =>
-                                setRunValues((rv) => ({ ...rv, [v.name]: val }))
-                              }
-                              w={260}
-                            />
-                          ) : v.type === 'boolean' ? (
-                            <Switch
-                              checked={!!runValues[v.name]}
-                              onChange={(e) => {
-                                const checked = e.currentTarget.checked;
-                                setRunValues((rv) => ({
-                                  ...rv,
-                                  [v.name]: checked,
-                                }));
-                              }}
-                            />
-                          ) : v.type === 'enum' ? (
-                            <Select
-                              data={(v.options || []).map((o) => ({
-                                value: o,
-                                label: o,
-                              }))}
-                              value={
-                                typeof runValues[v.name] === 'string'
-                                  ? (runValues[v.name] as string)
-                                  : (typeof v.default === 'string'
-                                      ? (v.default as string)
-                                      : undefined)
-                              }
-                              onChange={(val) =>
-                                setRunValues((rv) => ({
-                                  ...rv,
-                                  [v.name]: val ?? undefined,
-                                }))
-                              }
-                              w={260}
-                              placeholder={
-                                (v.options || []).length > 0
-                                  ? '选择值'
-                                  : '先填写枚举选项'
-                              }
-                            />
-                          ) : (
-                            <TextInput
-                              value={String(
-                                runValues[v.name] ?? v.default ?? ''
-                              )}
-                              onChange={(e) => {
-                                const val = e.currentTarget.value;
-                                setRunValues((rv) => ({
-                                  ...rv,
-                                  [v.name]: val,
-                                }));
-                              }}
-                              w={360}
-                            />
-                          )}
-                        </Table.Td>
-                      </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
-                <Group mt="xs">
-                  <Button
-                    size="xs"
-                    variant="light"
-                    onClick={() =>
-                      setRunValues(
-                        Object.fromEntries(
-                          vars.map((v) => [v.name, v.default ?? ''])
-                        )
-                      )
-                    }
-                  >
-                    重置为默认值
-                  </Button>
-                </Group>
-                <Title order={5} mt="md">
-                  分页
-                </Title>
-                <Group mt="xs" gap="md" align="center">
-                  <Switch
-                    checked={pgEnabled}
-                    onChange={(e) => {
-                      const on = e.currentTarget.checked;
-                      setPgEnabled(on);
-                      setPgPage(1);
-                      setPgTotalRows(null);
-                      setPgTotalPages(null);
-                      setPgCountLoaded(false);
-                    }}
-                    label="开启分页"
-                  />
-                  <NumberInput
-                    disabled={!pgEnabled}
-                    label="每页条数"
-                    value={pgSize}
-                    min={1}
-                    onChange={(v) => setPgSize(Number(v || 1))}
-                    w={140}
-                  />
-                  <NumberInput
-                    disabled={!pgEnabled}
-                    label="当前页"
-                    value={pgPage}
-                    min={1}
-                    onChange={(v) => setPgPage(Number(v || 1))}
-                    w={140}
-                  />
-                  {/* 首次执行自动计算一次总数；可在结果上方点击“刷新总数”手动更新 */}
-                </Group>
-                <RunActionsBar
-                  onPreview={() => onPreview()}
-                  onExecute={() => onExecute()}
-                  onExplain={() => onExplain()}
-                  isExecuting={isExecuting}
-                  explainFormat={explainFormat}
-                  setExplainFormat={setExplainFormat}
-                  explainAnalyze={explainAnalyze}
-                  setExplainAnalyze={setExplainAnalyze}
-                />
-              </Paper>
+              <RunParamsPanel
+                userConnId={userConnId}
+                currentConn={currentConn}
+                vars={vars}
+                runValues={runValues}
+                setRunValues={setRunValues}
+              />
+              <PaginationSettings
+                pgEnabled={pgEnabled}
+                setPgEnabled={setPgEnabled}
+                pgSize={pgSize}
+                setPgSize={(n) => setPgSize(n)}
+                pgPage={pgPage}
+                setPgPage={(n) => setPgPage(n)}
+                resetCounters={() => {
+                  setPgTotalRows(null);
+                  setPgTotalPages(null);
+                  setPgCountLoaded(false);
+                }}
+              />
+              <RunActionsBar
+                onPreview={() => onPreview()}
+                onExecute={() => onExecute()}
+                onExplain={() => onExplain()}
+                isExecuting={isExecuting}
+                explainFormat={explainFormat}
+                setExplainFormat={setExplainFormat}
+                explainAnalyze={explainAnalyze}
+                setExplainAnalyze={setExplainAnalyze}
+              />
 
               <SqlPreviewPanel ref={sqlPreviewRef} isPreviewing={isPreviewing} previewSQL={previewSQL} />
 
-              <Paper withBorder p="xs" style={{ position: 'relative' }}>
-                <LoadingOverlay
-                  visible={isExecuting}
-                  zIndex={1000}
-                  overlayProps={{ radius: 'sm', blur: 2 }}
-                />
-                <Title order={4}>结果</Title>
-                <RuntimeCalcCards
-                  items={runtimeCalcItems}
-                  calcResults={calcResults}
-                  setCalcResults={setCalcResults}
-                  currentId={currentId}
-                  userConnId={userConnId}
-                  runValues={runValues}
-                  rows={rows}
-                  onUpdateCount={(total) => {
-                    setPgTotalRows(total);
-                    setPgTotalPages(Math.max(1, Math.ceil(total / pgSize)));
-                    setPgCountLoaded(true);
-                  }}
-                />
-                {/* 总数按钮已并入“计算数据”卡片 */}
-                <div style={{ marginTop: 8 }}>
-                  {textResult ? (
-                    <Paper withBorder p="sm">
-                      <ScrollArea h={320}>
-                        <Code block>{textResult || '（无返回）'}</Code>
-                      </ScrollArea>
-                    </Paper>
-                  ) : (
-                    <DataGrid columns={gridCols} rows={rows} />
-                  )}
-                </div>
-                <PaginationBar
-                  visible={pgEnabled && !textResult}
-                  page={pgPage}
-                  totalPages={pgTotalPages}
-                  totalRows={pgTotalRows}
-                  onFirst={() => { setPgPage(1); onExecute({ page: 1 }); }}
-                  onPrev={() => { const next = Math.max(1, pgPage - 1); setPgPage(next); onExecute({ page: next }); }}
-                  onNext={() => { const next = pgPage + 1; setPgPage(next); onExecute({ page: next }); }}
-                  onLast={() => { if (pgTotalPages) { setPgPage(pgTotalPages); onExecute({ page: pgTotalPages }); } }}
-                />
-              </Paper>
+              <ResultsPanel
+                isExecuting={isExecuting}
+                top={
+                  <RuntimeCalcCards
+                    items={runtimeCalcItems}
+                    calcResults={calcResults}
+                    setCalcResults={setCalcResults}
+                    currentId={currentId}
+                    userConnId={userConnId}
+                    runValues={runValues}
+                    rows={rows}
+                    onUpdateCount={(total) => {
+                      setPgTotalRows(total);
+                      setPgTotalPages(Math.max(1, Math.ceil(total / pgSize)));
+                      setPgCountLoaded(true);
+                    }}
+                  />
+                }
+                textResult={textResult}
+                gridCols={gridCols}
+                rows={rows}
+                footer={
+                  <PaginationBar
+                    visible={pgEnabled && !textResult}
+                    page={pgPage}
+                    totalPages={pgTotalPages}
+                    totalRows={pgTotalRows}
+                    onFirst={() => { setPgPage(1); onExecute({ page: 1 }); }}
+                    onPrev={() => { const next = Math.max(1, pgPage - 1); setPgPage(next); onExecute({ page: next }); }}
+                    onNext={() => { const next = pgPage + 1; setPgPage(next); onExecute({ page: next }); }}
+                    onLast={() => { if (pgTotalPages) { setPgPage(pgTotalPages); onExecute({ page: pgTotalPages }); } }}
+                  />
+                }
+              />
             </>
           )}
         </Stack>
