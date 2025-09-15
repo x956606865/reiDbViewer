@@ -47,4 +47,5 @@ export interface SavedQueryRecord {
 export interface DynamicColumnDef {
   name: string
   code: string // JavaScript function body. Signature: (row, vars, helpers) => any
+  manualTrigger?: boolean
 }

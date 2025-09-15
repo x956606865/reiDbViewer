@@ -23,7 +23,11 @@ export const SavedQueriesExportSchema = z.object({
         .default([]),
       dynamicColumns: z
         .array(
-          z.object({ name: z.string().min(1).max(64), code: z.string().min(1) })
+          z.object({
+            name: z.string().min(1).max(64),
+            code: z.string().min(1),
+            manualTrigger: z.boolean().optional(),
+          })
         )
         .default([])
         .optional(),

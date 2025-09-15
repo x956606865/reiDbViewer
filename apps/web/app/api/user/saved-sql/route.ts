@@ -14,7 +14,11 @@ const VarDefSchema = z.object({
   default: z.any().optional(),
 })
 
-const DynColSchema = z.object({ name: z.string().min(1).max(64), code: z.string().min(1) })
+const DynColSchema = z.object({
+  name: z.string().min(1).max(64),
+  code: z.string().min(1),
+  manualTrigger: z.boolean().optional(),
+})
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(100),

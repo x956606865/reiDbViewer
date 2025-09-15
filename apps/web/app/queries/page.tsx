@@ -606,7 +606,7 @@ export default function SavedQueriesPage() {
       let cols: string[] = Array.isArray(j.columns) ? j.columns : Object.keys((j.rows?.[0] ?? {}))
       let data: Array<Record<string, unknown>> = j.rows || []
 
-      // apply dynamic columns on client
+      // apply dynamic columns on client (supports manual trigger)
       if (dynCols.length > 0 && Array.isArray(data)) {
         const helpers = {
           fmtDate: (v: any) => (v ? new Date(v).toISOString() : ''),
@@ -614,24 +614,53 @@ export default function SavedQueriesPage() {
         }
         const usedNames = new Set(cols)
         const nameMap = new Map<string, string>() // original->unique
+        const compiledAutoFns = new Map<string, Function>()
         for (const dc of dynCols) {
           let nm = dc.name
           let k = 1
           while (usedNames.has(nm)) { nm = `${dc.name}_${++k}` }
           usedNames.add(nm)
           nameMap.set(dc.name, nm)
-        }
-        cols = Array.from(usedNames)
-        data = data.map((row: any) => {
-          const out = { ...row }
-          for (const dc of dynCols) {
-            const unique = nameMap.get(dc.name) || dc.name
+          if (!dc.manualTrigger) {
             try {
               // eslint-disable-next-line no-new-func
               const fn = new Function('row', 'vars', 'helpers', `"use strict"; return ( ${dc.code} )(row, vars, helpers)`) as any
-              out[unique] = fn(row, runValues, helpers)
-            } catch (e: any) {
-              out[unique] = `#ERR: ${String(e?.message || e)}`
+              compiledAutoFns.set(dc.name, fn)
+            } catch (e) {
+              compiledAutoFns.set(dc.name, () => `#ERR: ${String((e as any)?.message || e)}`)
+            }
+          }
+        }
+        cols = Array.from(usedNames)
+        data = data.map((row: any, rowIdx: number) => {
+          const out: Record<string, any> = { ...row }
+          for (const dc of dynCols) {
+            const unique = nameMap.get(dc.name) || dc.name
+            if (dc.manualTrigger) {
+              out[unique] = (
+                <Button size="xs" variant="light" onClick={() => {
+                  setRows((prev) => {
+                    const next = [...prev]
+                    const curr = { ...(next[rowIdx] || {}) } as any
+                    try {
+                      // eslint-disable-next-line no-new-func
+                      const fn = new Function('row', 'vars', 'helpers', `"use strict"; return ( ${dc.code} )(row, vars, helpers)`) as any
+                      curr[unique] = fn(curr, runValues, helpers)
+                    } catch (e: any) {
+                      curr[unique] = `#ERR: ${String(e?.message || e)}`
+                    }
+                    next[rowIdx] = curr
+                    return next
+                  })
+                }}>计算</Button>
+              )
+            } else {
+              try {
+                const fn = compiledAutoFns.get(dc.name)
+                out[unique] = fn ? fn(row, runValues, helpers) : undefined
+              } catch (e: any) {
+                out[unique] = `#ERR: ${String(e?.message || e)}`
+              }
             }
           }
           return out
@@ -878,12 +907,13 @@ export default function SavedQueriesPage() {
                     <Table.Tr>
                       <Table.Th w={220}>名称</Table.Th>
                       <Table.Th>JS 函数</Table.Th>
+                      <Table.Th w={120}>手动触发</Table.Th>
                       <Table.Th w={60}>操作</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {dynCols.length === 0 && (
-                      <Table.Tr><Table.Td colSpan={3}><Text c="dimmed">暂无动态列</Text></Table.Td></Table.Tr>
+                      <Table.Tr><Table.Td colSpan={4}><Text c="dimmed">暂无动态列</Text></Table.Td></Table.Tr>
                     )}
                     {dynCols.map((dc, i) => (
                       <Table.Tr key={dc.name + i}>
@@ -906,6 +936,16 @@ export default function SavedQueriesPage() {
                           />
                         </Table.Td>
                         <Table.Td>
+                          <Switch
+                            checked={!!dc.manualTrigger}
+                            onChange={(e) => {
+                              const checked = e.currentTarget.checked
+                              setDynCols((arr) => arr.map((x, idx) => idx === i ? { ...x, manualTrigger: checked } : x))
+                            }}
+                            label={dc.manualTrigger ? '点击按钮计算' : '自动计算'}
+                          />
+                        </Table.Td>
+                        <Table.Td>
                           <ActionIcon color="red" variant="light" onClick={() => setDynCols((arr) => arr.filter((_, idx) => idx !== i))}><IconTrash size={14} /></ActionIcon>
                         </Table.Td>
                       </Table.Tr>
@@ -913,7 +953,7 @@ export default function SavedQueriesPage() {
                   </Table.Tbody>
                 </Table>
                 <Group gap="xs" mt="xs">
-                  <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={() => setDynCols((arr) => [...arr, { name: `dyn_${arr.length + 1}`, code: '(row, vars) => null' }])}>新增动态列</Button>
+                  <Button size="xs" leftSection={<IconPlus size={14} />} variant="light" onClick={() => setDynCols((arr) => [...arr, { name: `dyn_${arr.length + 1}`, code: '(row, vars) => null', manualTrigger: false }])}>新增动态列</Button>
                 </Group>
               </Paper>
             </>
