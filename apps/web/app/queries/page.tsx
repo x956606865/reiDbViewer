@@ -18,6 +18,7 @@ import {
   Paper,
   ScrollArea,
   Select,
+  TagsInput,
   Tooltip,
   Stack,
   Switch,
@@ -37,7 +38,11 @@ import {
   IconFileText,
   IconPencil,
   IconHelpCircle,
+  IconCheck,
+  IconX,
+  IconRefresh,
 } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
@@ -80,6 +85,7 @@ const VAR_TYPES: Array<{
   { value: 'json', label: 'json' },
   { value: 'uuid', label: 'uuid' },
   { value: 'raw', label: 'raw' },
+  { value: 'enum', label: 'enum' },
 ];
 
 export default function SavedQueriesPage() {
@@ -604,7 +610,9 @@ export default function SavedQueriesPage() {
       const j = await res.json().catch(() => ({}));
       if (res.status === 501 && j?.suggestedSQL) {
         setSuggestedSQL(j.suggestedSQL);
-        throw new Error('功能未初始化：请先在 APP_DB 执行建表 SQL。');
+        const msg = '功能未初始化：请先在 APP_DB 执行建表 SQL。'
+        notifications.show({ color: 'red', title: '保存失败', message: msg, icon: <IconX size={16} /> })
+        throw new Error(msg);
       }
       if (res.status === 409 && j?.error === 'name_exists' && j?.existingId) {
         const ok2 = window.confirm('同名查询已存在。是否覆盖该查询？');
@@ -616,8 +624,11 @@ export default function SavedQueriesPage() {
           body: JSON.stringify(body),
         });
         const j2 = await res2.json().catch(() => ({}));
-        if (!res2.ok)
-          throw new Error(j2?.error || `保存失败（HTTP ${res2.status}）`);
+        if (!res2.ok) {
+          const em = j2?.error || `保存失败（HTTP ${res2.status}）`
+          notifications.show({ color: 'red', title: '保存失败', message: em, icon: <IconX size={16} /> })
+          throw new Error(em);
+        }
         // 若本次原本在编辑另一条（targetId）且与 existingId 不同，则将原条目标记为归档，避免重名重复
         if (targetId && targetId !== j.existingId) {
           await fetch(`/api/user/saved-sql/${targetId}`, {
@@ -627,25 +638,36 @@ export default function SavedQueriesPage() {
           }).catch(() => {});
         }
         setInfo('已覆盖保存。');
+        notifications.show({ color: 'teal', title: '保存成功', message: '已覆盖保存。', icon: <IconCheck size={16} /> })
         setCurrentId(j.existingId);
         refresh();
         onSelectSaved(j.existingId);
         return;
       }
-      if (!res.ok)
-        throw new Error(j?.error || `保存失败（HTTP ${res.status}）`);
+      if (!res.ok) {
+        const em = j?.error || `保存失败（HTTP ${res.status}）`
+        notifications.show({ color: 'red', title: '保存失败', message: em, icon: <IconX size={16} /> })
+        throw new Error(em);
+      }
 
       if (j?.id) {
         setCurrentId(j.id);
         setInfo('已保存。');
+        notifications.show({ color: 'teal', title: '保存成功', message: `已创建：${trimmed}`, icon: <IconCheck size={16} /> })
         refresh();
         onSelectSaved(j.id);
       } else {
         setInfo('已保存。');
+        notifications.show({ color: 'teal', title: '保存成功', message: `已更新：${trimmed}`, icon: <IconCheck size={16} /> })
         refresh();
       }
     } catch (e: any) {
-      setError(String(e?.message || e));
+      const msg = String(e?.message || e)
+      setError(msg);
+      if (!/保存失败/.test(msg) && !/功能未初始化/.test(msg)) {
+        // 若上面分支尚未弹过，则这里兜底弹一次
+        notifications.show({ color: 'red', title: '保存失败', message: msg, icon: <IconX size={16} /> })
+      }
     }
   };
 
@@ -1212,11 +1234,18 @@ export default function SavedQueriesPage() {
 
               <Paper withBorder p="md">
                 <Title order={4}>变量定义</Title>
+                {/** 当存在 enum 类型变量时，增加“枚举选项”列 */}
+                {/** 计算开关用于渲染列 */}
+                {/** 注意：保持服务端 schema 校验，保存时会验证 options 非空与默认值合法 */}
+
                 <Table mt="sm" withTableBorder withColumnBorders>
                   <Table.Thead>
                     <Table.Tr>
                       <Table.Th>名称</Table.Th>
                       <Table.Th>类型</Table.Th>
+                      {vars.some((v) => v.type === 'enum') && (
+                        <Table.Th>枚举选项</Table.Th>
+                      )}
                       <Table.Th>必填</Table.Th>
                       <Table.Th>默认值</Table.Th>
                       <Table.Th w={60}>操作</Table.Th>
@@ -1225,13 +1254,13 @@ export default function SavedQueriesPage() {
                   <Table.Tbody>
                     {vars.length === 0 && (
                       <Table.Tr>
-                        <Table.Td colSpan={5}>
+                        <Table.Td colSpan={vars.some((v) => v.type === 'enum') ? 6 : 5}>
                           <Text c="dimmed">无变量</Text>
                         </Table.Td>
                       </Table.Tr>
                     )}
                     {vars.map((v, i) => (
-                      <Table.Tr key={v.name + i}>
+                      <Table.Tr key={i}>
                         <Table.Td>
                           <TextInput
                             value={v.name}
@@ -1269,7 +1298,17 @@ export default function SavedQueriesPage() {
                               setVars((vs) =>
                                 vs.map((x, idx) =>
                                   idx === i
-                                    ? { ...x, type: (val as any) || 'text' }
+                                    ? {
+                                        ...x,
+                                        type: (val as any) || 'text',
+                                        // 切换到 enum 时，初始化空数组；切走时清空 options
+                                        options:
+                                          (val as any) === 'enum'
+                                            ? (Array.isArray(x.options)
+                                                ? x.options
+                                                : [])
+                                            : undefined,
+                                      }
                                     : x
                                 )
                               )
@@ -1277,6 +1316,105 @@ export default function SavedQueriesPage() {
                             w={140}
                           />
                         </Table.Td>
+                        {vars.some((vv) => vv.type === 'enum') && (
+                          <Table.Td>
+                            {v.type === 'enum' ? (
+                              <Stack gap={6}>
+                                <TagsInput
+                                  value={(v.options as string[] | undefined) || []}
+                                  onChange={(vals) =>
+                                    setVars((vs) =>
+                                      vs.map((x, idx) =>
+                                        idx === i
+                                          ? {
+                                              ...x,
+                                              options: vals,
+                                              // 若默认值不在新集合中，清空默认值
+                                              default:
+                                                x.default !== undefined &&
+                                                x.default !== null &&
+                                                !vals.includes(String(x.default))
+                                                  ? undefined
+                                                  : x.default,
+                                            }
+                                          : x
+                                      )
+                                    )
+                                  }
+                                  placeholder="输入后回车添加选项"
+                                  w={260}
+                                />
+                                <Textarea
+                                  placeholder="可选：输入 SQL 拉取选项（只读 SELECT/WITH，取第一列）"
+                                  value={String(v.optionsSql ?? '')}
+                                  onChange={(e) => {
+                                    const val = e.currentTarget.value
+                                    setVars((vs) =>
+                                      vs.map((x, idx) =>
+                                        idx === i ? { ...x, optionsSql: val } : x
+                                      )
+                                    )
+                                  }}
+                                  autosize
+                                  minRows={2}
+                                  w={360}
+                                  styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+                                />
+                                <Group gap="xs">
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    leftSection={<IconRefresh size={14} />}
+                                    onClick={async () => {
+                                      const sqlText = (v.optionsSql || '').trim()
+                                      if (!sqlText) {
+                                        notifications.show({ color: 'gray', title: '缺少 SQL', message: '请先填写用于拉取的 SQL', icon: <IconX size={14} /> })
+                                        return
+                                      }
+                                      if (!userConnId) {
+                                        notifications.show({ color: 'gray', title: '未选择连接', message: '请先选择当前连接后再拉取', icon: <IconX size={14} /> })
+                                        return
+                                      }
+                                      try {
+                                        const res = await fetch('/api/saved-sql/enum-options', {
+                                          method: 'POST',
+                                          headers: { 'content-type': 'application/json' },
+                                          body: JSON.stringify({ userConnId, sql: sqlText }),
+                                        })
+                                        const j = await res.json().catch(() => ({}))
+                                        if (!res.ok) throw new Error(j?.message || j?.error || `HTTP ${res.status}`)
+                                        const opts: string[] = Array.isArray(j.options) ? j.options : []
+                                        setVars((vs) =>
+                                          vs.map((x, idx) =>
+                                            idx === i
+                                              ? {
+                                                  ...x,
+                                                  options: opts,
+                                                  default:
+                                                    x.default !== undefined &&
+                                                    x.default !== null &&
+                                                    !opts.includes(String(x.default))
+                                                      ? undefined
+                                                      : x.default,
+                                                }
+                                              : x
+                                          )
+                                        )
+                                        notifications.show({ color: 'teal', title: '拉取成功', message: `获得 ${opts.length} 项`, icon: <IconCheck size={14} /> })
+                                      } catch (e: any) {
+                                        notifications.show({ color: 'red', title: '拉取失败', message: String(e?.message || e), icon: <IconX size={14} /> })
+                                      }
+                                    }}
+                                  >
+                                    拉取
+                                  </Button>
+                                </Group>
+                              </Stack>
+                            ) : (
+                              <Text c="dimmed">—</Text>
+                            )}
+                          </Table.Td>
+                        )}
                         <Table.Td>
                           <Switch
                             checked={!!v.required}
@@ -1316,6 +1454,33 @@ export default function SavedQueriesPage() {
                                   )
                                 );
                               }}
+                            />
+                          ) : v.type === 'enum' ? (
+                            <Select
+                              data={(v.options || []).map((o) => ({
+                                value: o,
+                                label: o,
+                              }))}
+                              value={
+                                typeof v.default === 'string'
+                                  ? (v.default as string)
+                                  : undefined
+                              }
+                              onChange={(val) =>
+                                setVars((vs) =>
+                                  vs.map((x, idx) =>
+                                    idx === i
+                                      ? { ...x, default: (val as any) ?? undefined }
+                                      : x
+                                  )
+                                )
+                              }
+                              w={220}
+                              placeholder={
+                                (v.options || []).length > 0
+                                  ? '选择默认值'
+                                  : '先填写枚举选项'
+                              }
                             />
                           ) : (
                             <TextInput
@@ -1668,6 +1833,32 @@ export default function SavedQueriesPage() {
                                 }));
                               }}
                             />
+                          ) : v.type === 'enum' ? (
+                            <Select
+                              data={(v.options || []).map((o) => ({
+                                value: o,
+                                label: o,
+                              }))}
+                              value={
+                                typeof runValues[v.name] === 'string'
+                                  ? (runValues[v.name] as string)
+                                  : (typeof v.default === 'string'
+                                      ? (v.default as string)
+                                      : undefined)
+                              }
+                              onChange={(val) =>
+                                setRunValues((rv) => ({
+                                  ...rv,
+                                  [v.name]: val ?? undefined,
+                                }))
+                              }
+                              w={260}
+                              placeholder={
+                                (v.options || []).length > 0
+                                  ? '选择值'
+                                  : '先填写枚举选项'
+                              }
+                            />
                           ) : (
                             <TextInput
                               value={String(
@@ -1842,7 +2033,7 @@ export default function SavedQueriesPage() {
                             style={{ minWidth: 240 }}
                           >
                             <Group justify="space-between" align="center">
-                              <Text size="sm">
+                              <Text size="sm" component="div">
                                 <b>{ci.name === '__total_count__' ? '总数' : ci.name}</b>{' '}
                                 <Badge size="xs" variant="light">
                                   {ci.type.toUpperCase()}

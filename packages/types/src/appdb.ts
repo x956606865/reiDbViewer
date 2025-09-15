@@ -22,6 +22,7 @@ export type SavedQueryVarType =
   | 'json'
   | 'uuid'
   | 'raw'
+  | 'enum'
 
 export interface SavedQueryVariableDef {
   name: string
@@ -29,6 +30,10 @@ export interface SavedQueryVariableDef {
   type: SavedQueryVarType
   required?: boolean
   default?: unknown
+  // Only for type === 'enum'
+  options?: string[]
+  // Optional SQL used to fetch enum options (first column as string)
+  optionsSql?: string
 }
 
 export interface SavedQueryRecord {

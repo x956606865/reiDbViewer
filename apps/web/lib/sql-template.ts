@@ -135,6 +135,8 @@ export function renderSqlPreview(compiled: CompiledSql, vars: SavedQueryVariable
         const json = typeof val === 'string' ? val : JSON.stringify(val)
         return `'${esc(json)}'::jsonb`
       }
+      case 'enum':
+        return `'${esc(String(val))}'`
       case 'uuid':
       case 'text':
       default:
@@ -162,6 +164,15 @@ function normalizeValue(name: string, def: SavedQueryVariableDef, raw: unknown):
       return String(raw)
     case 'uuid':
       return String(raw)
+    case 'enum': {
+      const v = String(raw)
+      if (Array.isArray(def.options) && def.options.length > 0) {
+        if (!def.options.includes(v)) {
+          throw new Error(`Variable ${name} must be one of: ${def.options.join(', ')}`)
+        }
+      }
+      return v
+    }
     case 'number': {
       const n = typeof raw === 'number' ? raw : Number(raw)
       if (!Number.isFinite(n)) throw new Error(`Variable ${name} must be a number`)

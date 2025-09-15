@@ -51,4 +51,45 @@ describe('saved-sql import/export schema', () => {
     const parsed = parseSavedQueriesExport(JSON.stringify(bad))
     expect(parsed.ok).toBe(false)
   })
+
+  it('supports enum variable with options', () => {
+    const sample = {
+      version: 'rdv.saved-sql.v1',
+      exportedAt: new Date().toISOString(),
+      items: [
+        {
+          name: 'reports/by_status',
+          sql: 'select * from orders where status = {{status}}',
+          variables: [
+            { name: 'status', type: 'enum', options: ['new', 'paid', 'shipped'], default: 'new' },
+          ],
+        },
+      ],
+    }
+    const parsed = parseSavedQueriesExport(JSON.stringify(sample))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      const items = normalizeImportItems(parsed.data)
+      expect(items[0].variables[0].type).toBe('enum')
+      expect((items[0].variables[0] as any).options?.length).toBe(3)
+    }
+  })
+
+  it('allows enum with optionsSql only', () => {
+    const sample = {
+      version: 'rdv.saved-sql.v1',
+      exportedAt: new Date().toISOString(),
+      items: [
+        {
+          name: 'reports/by_status_sql',
+          sql: 'select 1',
+          variables: [
+            { name: 'status', type: 'enum', optionsSql: 'select distinct status from orders' },
+          ],
+        },
+      ],
+    }
+    const parsed = parseSavedQueriesExport(JSON.stringify(sample))
+    expect(parsed.ok).toBe(true)
+  })
 })

@@ -28,3 +28,20 @@ describe('sql-template: raw variables', () => {
   })
 })
 
+describe('sql-template: enum variables', () => {
+  const vars: SavedQueryVariableDef[] = [
+    { name: 'status', type: 'enum', options: ['new', 'paid', 'shipped'], default: 'new' },
+  ]
+
+  it('parameterizes enum and validates options', () => {
+    const sql = 'select * from t where status = {{status}}'
+    const compiled = compileSql(sql, vars, { status: 'paid' })
+    expect(compiled.text).toMatch(/\$1/)
+    expect(compiled.values[0]).toBe('paid')
+  })
+
+  it('throws when enum value not in options', () => {
+    const sql = 'select * from t where status = {{status}}'
+    expect(() => compileSql(sql, vars, { status: 'canceled' })).toThrow()
+  })
+})

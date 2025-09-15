@@ -5,13 +5,47 @@ import { auth } from '@/lib/auth'
 import { getAppDb } from '@/lib/appdb'
 import { env } from '@/lib/env'
 
-const VarDefSchema = z.object({
-  name: z.string().min(1).max(64).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
-  label: z.string().max(100).optional(),
-  type: z.enum(['text', 'number', 'boolean', 'date', 'timestamp', 'json', 'uuid', 'raw']),
-  required: z.boolean().optional(),
-  default: z.any().optional(),
-})
+const VarDefSchema = z
+  .object({
+    name: z.string().min(1).max(64).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+    label: z.string().max(100).optional(),
+    type: z.enum([
+      'text',
+      'number',
+      'boolean',
+      'date',
+      'timestamp',
+      'json',
+      'uuid',
+      'raw',
+      'enum',
+    ]),
+    required: z.boolean().optional(),
+    default: z.any().optional(),
+    options: z.array(z.string()).min(1).optional(),
+    optionsSql: z.string().min(1).optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.type === 'enum') {
+      const hasOptions = Array.isArray(val.options) && val.options.length > 0
+      const hasSql = typeof val.optionsSql === 'string' && val.optionsSql.trim().length > 0
+      if (!hasOptions && !hasSql) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'enum 需要提供 options 或 optionsSql 之一', path: ['options'] })
+      }
+      if (val.default !== undefined && val.default !== null) {
+        const def = String(val.default)
+        if (hasOptions && !val.options!.includes(def)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'enum 默认值必须在 options 中',
+            path: ['default'],
+          })
+        }
+      }
+    } else if (val.optionsSql) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'optionsSql 仅适用于 enum 类型', path: ['optionsSql'] })
+    }
+  })
 
 const DynColSchema = z.object({
   name: z.string().min(1).max(64),
