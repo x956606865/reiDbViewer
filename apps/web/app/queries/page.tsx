@@ -12,6 +12,7 @@ import {
   Paper,
   ScrollArea,
   Select,
+  Tooltip,
   Stack,
   Switch,
   Table,
@@ -20,7 +21,7 @@ import {
   Textarea,
   Title,
 } from '@mantine/core'
-import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText, IconPencil } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconScan, IconChevronRight, IconChevronDown, IconFolder, IconFileText, IconPencil, IconHelpCircle } from '@tabler/icons-react'
 import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types/appdb'
 import { DataGrid } from '../../components/DataGrid'
 import { LeftDrawer } from '../../components/LeftDrawer'
@@ -71,10 +72,14 @@ export default function SavedQueriesPage() {
   const [previewSQL, setPreviewSQL] = useState('')
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([])
   const [gridCols, setGridCols] = useState<string[]>([])
+  const [textResult, setTextResult] = useState<string | null>(null)
   const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([])
   const [mode, setMode] = useState<'edit' | 'run'>('run')
   const [isExecuting, setIsExecuting] = useState(false)
   const [isPreviewing, setIsPreviewing] = useState(false)
+  // explain options
+  const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text')
+  const [explainAnalyze, setExplainAnalyze] = useState<boolean>(false)
   // pagination state (runtime only; not saved into query definition)
   const [pgEnabled, setPgEnabled] = useState(true)
   const [pgCountLoaded, setPgCountLoaded] = useState(false)
@@ -105,6 +110,10 @@ export default function SavedQueriesPage() {
     const it = connItems.find((x) => x.id === userConnId)
     if (!it) return userConnId
     return it.host ? `${it.alias} (${it.host})` : it.alias
+  }, [connItems, userConnId])
+  const currentConn = useMemo(() => {
+    if (!userConnId) return null as null | { id: string; alias: string; host?: string | null }
+    return connItems.find((x) => x.id === userConnId) || null
   }, [connItems, userConnId])
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
@@ -137,7 +146,7 @@ export default function SavedQueriesPage() {
 
   useEffect(() => { refresh() }, [refresh])
   // 连接切换后，清空预览与结果，避免误会
-  useEffect(() => { setPreviewSQL(''); setRows([]); setGridCols([]) }, [userConnId])
+  useEffect(() => { setPreviewSQL(''); setRows([]); setGridCols([]); setTextResult(null) }, [userConnId])
 
   useEffect(() => {
     try { localStorage.setItem('rdv.savedSql.expanded', JSON.stringify(Array.from(expanded))) } catch {}
@@ -153,6 +162,44 @@ export default function SavedQueriesPage() {
       else next.add(path)
       return next
     })
+  }
+
+  const onExplain = async () => {
+    setError(null)
+    setInfo(null)
+    setIsExecuting(true)
+    try {
+      if (!currentId) throw new Error('请先从列表选择一条或保存新查询后再执行。')
+      if (!userConnId) throw new Error('未设置当前连接，请先到 Connections 选择。')
+      const res = await fetch('/api/saved-sql/explain', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ savedQueryId: currentId, values: runValues, userConnId, format: explainFormat, analyze: !!explainAnalyze }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        if (j?.error === 'analyze_requires_readonly') {
+          throw new Error('ANALYZE 需要只读 SQL。当前 SQL 可能包含写操作。')
+        }
+        if (j?.error === 'vars_missing' && Array.isArray(j?.missing)) {
+          throw new Error(`SQL 中存在未定义的变量：${j.missing.join(', ')}。请在“编辑”页删除对应占位符，或点击“提取变量”重新加入变量定义后再试。`)
+        }
+        throw new Error(j?.error || `Explain 失败（HTTP ${res.status}）`)
+      }
+      setPreviewSQL(j?.previewInline || '')
+      if (explainFormat === 'json') setTextResult(JSON.stringify(j?.rows ?? j, null, 2))
+      else setTextResult(typeof j?.text === 'string' ? j.text : '')
+      setRows([])
+      setGridCols([])
+      setPgTotalRows(null)
+      setPgTotalPages(null)
+      setPgCountLoaded(false)
+      setInfo('Explain 完成')
+    } catch (e: any) {
+      setError(String(e?.message || e))
+    } finally {
+      setIsExecuting(false)
+    }
   }
 
   // ---------- 导出 / 导入 ----------
@@ -528,14 +575,34 @@ export default function SavedQueriesPage() {
           },
         }),
       })
-      const j = await res.json().catch(() => ({}))
+      let j = await res.json().catch(() => ({}))
       if (!res.ok) {
-        if (j?.error === 'vars_missing' && Array.isArray(j?.missing)) {
+        if (j?.error === 'write_requires_confirmation') {
+          if (j?.previewInline) setPreviewSQL(j.previewInline)
+          const ok = window.confirm('该 SQL 可能会修改数据库中的数据。\n是否确认继续执行？')
+          if (!ok) throw new Error('已取消执行。')
+          const res2 = await fetch('/api/saved-sql/execute', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              savedQueryId: currentId,
+              values: runValues,
+              userConnId,
+              allowWrite: true,
+              pagination: { enabled: pgEnabled, page: override?.page ?? pgPage, pageSize: override?.pageSize ?? pgSize, withCount: false, countOnly: false },
+            }),
+          })
+          j = await res2.json().catch(() => ({}))
+          if (!res2.ok) throw new Error(j?.error || `执行失败（HTTP ${res2.status}）`)
+        } else if (j?.error === 'vars_missing' && Array.isArray(j?.missing)) {
           throw new Error(`SQL 中存在未定义的变量：${j.missing.join(', ')}。请在“编辑”页删除对应占位符，或点击“提取变量”重新加入变量定义后再试。`)
+        } else {
+          throw new Error(j?.error || `执行失败（HTTP ${res.status}）`)
         }
-        throw new Error(j?.error || `执行失败（HTTP ${res.status}）`)
       }
       if (!override?.countOnly) setPreviewSQL(j.sql || '')
+      // 默认清空文本结果；若随后判定为文本，将再设置
+      setTextResult(null)
       let cols: string[] = Array.isArray(j.columns) ? j.columns : Object.keys((j.rows?.[0] ?? {}))
       let data: Array<Record<string, unknown>> = j.rows || []
 
@@ -573,8 +640,21 @@ export default function SavedQueriesPage() {
 
       // 若仅刷新总数，避免触碰数据表格
       if (!override?.countOnly) {
-        setGridCols(cols)
-        setRows(data)
+        if (Array.isArray(data) && data.length > 0) {
+          setGridCols(cols)
+          setRows(data)
+          setTextResult(null)
+        } else {
+          const msg = typeof j?.message === 'string' ? j.message : (j?.command ? `${j.command}${typeof j?.rowCount === 'number' ? ' ' + j.rowCount : ''}` : '')
+          if (msg) {
+            setTextResult(msg)
+            setGridCols([])
+            setRows([])
+          } else {
+            setGridCols(cols)
+            setRows(data)
+          }
+        }
       }
       if (pgEnabled) {
         const newPage = j.page || 1
@@ -601,6 +681,7 @@ export default function SavedQueriesPage() {
     setPgPage(1)
     setPgTotalRows(null)
     setPgTotalPages(null)
+    setTextResult(null)
     // fetch details
     setError(null)
     fetch(`/api/user/saved-sql/${id}`, { cache: 'no-store' })
@@ -842,7 +923,18 @@ export default function SavedQueriesPage() {
                 <Title order={4}>运行</Title>
                 <Group mt="xs" gap="sm" align="center">
                   <Text size="sm" c="dimmed">当前连接：</Text>
-                  {userConnId ? <Badge color="green"><Code>{currentConnLabel}</Code></Badge> : <Badge color="gray">未选择</Badge>}
+                  {userConnId ? (
+                    <Badge color="green">
+                      <Code>
+                        {currentConn?.alias || userConnId}
+                        {currentConn?.host ? (
+                          <> <span style={{ color: 'var(--mantine-color-dimmed)' }}>({currentConn.host})</span></>
+                        ) : null}
+                      </Code>
+                    </Badge>
+                  ) : (
+                    <Badge color="gray">未选择</Badge>
+                  )}
                 </Group>
                 <Title order={5} mt="md">运行参数</Title>
                 <Table mt="xs" withTableBorder withColumnBorders>
@@ -898,6 +990,28 @@ export default function SavedQueriesPage() {
                 <Group mt="sm">
                   <Button onClick={() => onPreview()} variant="light">预览 SQL</Button>
                   <Button onClick={() => onExecute()} loading={isExecuting}>执行</Button>
+                  <Button onClick={() => onExplain()} variant="default" loading={isExecuting}>Explain</Button>
+                  <Select
+                    data={[{ value: 'text', label: 'TEXT' }, { value: 'json', label: 'JSON' }]} value={explainFormat}
+                    onChange={(v) => setExplainFormat((v as any) || 'text')} w={120}
+                  />
+                  <Group gap="xs" align="center">
+                    <Switch checked={explainAnalyze} onChange={(e) => setExplainAnalyze(e.currentTarget.checked)} label="ANALYZE" />
+                    <Tooltip
+                      label={
+                        <div>
+                          <div><b>EXPLAIN</b>：仅显示计划（估算的 cost/rows）。</div>
+                          <div><b>EXPLAIN ANALYZE</b>：真实执行并返回实际行数/耗时等。</div>
+                          <div style={{ marginTop: 6 }}>本应用仅允许在只读 SQL 上使用 ANALYZE；写语句将被拒绝。</div>
+                        </div>
+                      }
+                      withArrow multiline w={360} position="bottom"
+                    >
+                      <ActionIcon variant="subtle" color="gray" aria-label="Explain Analyze 帮助">
+                        <IconHelpCircle size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
                 </Group>
               </Paper>
 
@@ -910,7 +1024,7 @@ export default function SavedQueriesPage() {
               <Paper withBorder p="xs" style={{ position: 'relative' }}>
                 <LoadingOverlay visible={isExecuting} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
                 <Title order={4}>结果</Title>
-                {pgEnabled && (
+                {pgEnabled && !textResult && (
                   <Group mt="xs" gap="xs" align="center">
                     <Text size="sm" c="dimmed">
                       {pgTotalRows !== null ? (
@@ -925,9 +1039,13 @@ export default function SavedQueriesPage() {
                   </Group>
                 )}
                 <div style={{ marginTop: 8 }}>
-                  <DataGrid columns={gridCols} rows={rows} />
+                  {textResult ? (
+                    <Paper withBorder p="sm"><ScrollArea h={320}><Code block>{textResult || '（无返回）'}</Code></ScrollArea></Paper>
+                  ) : (
+                    <DataGrid columns={gridCols} rows={rows} />
+                  )}
                 </div>
-                {pgEnabled && (
+                {pgEnabled && !textResult && (
                   <Group mt="sm" justify="space-between" align="center">
                     <Group gap="xs">
                       <Button

@@ -33,6 +33,8 @@ const ExecSchema = z.object({
   // 预览无需连接：仅执行时才需要非空
   userConnId: z.string().optional(),
   previewOnly: z.boolean().optional(),
+  // 明确用户已确认写操作（仅当 SQL 非只读时生效）
+  allowWrite: z.boolean().optional(),
   pagination: z
     .object({
       enabled: z.boolean().default(false),
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
   const parsed = ExecSchema.safeParse(json)
   if (!parsed.success) return NextResponse.json({ error: 'invalid_body', detail: parsed.error.format() }, { status: 400 })
 
-  const { savedQueryId, values: inputValues, userConnId, previewOnly } = parsed.data
+  const { savedQueryId, values: inputValues, userConnId, previewOnly, allowWrite } = parsed.data
   const pagination = parsed.data.pagination ?? { enabled: false, page: 1, pageSize: 50, withCount: false }
   // Always return compiled SQL (preview) even if not executed
 
@@ -77,9 +79,7 @@ export async function POST(req: NextRequest) {
     const sql: string = String(row.sql)
     const vars: any[] = Array.isArray(row.variables) ? row.variables : []
 
-    if (!isReadOnlySelect(sql)) {
-      return NextResponse.json({ error: 'only_select_allowed' }, { status: 400 })
-    }
+    // 保留到下方分支进行处理：只读与可写分流
 
     // Early validation: missing variable definitions compared to placeholders in SQL
     try {
@@ -93,12 +93,13 @@ export async function POST(req: NextRequest) {
 
     const compiled = compileSql(sql, vars, inputValues)
 
-    // Build final exec SQL (optionally wrapped with LIMIT/OFFSET)
+    // 如果只读查询：允许分页与计数；若非只读：不做任何分页包裹
     const limitCapped = Math.max(1, Math.min(pagination.pageSize ?? 50, env.MAX_ROW_LIMIT))
     const page = Math.max(1, pagination.page ?? 1)
     const offset = (page - 1) * limitCapped
 
-    const exec = pagination.enabled
+    const isSelect = isReadOnlySelect(sql)
+    const exec = isSelect && pagination.enabled
       ? {
           text: `select * from ( ${compiled.text} ) as _rdv_sub limit $${compiled.values.length + 1} offset $${compiled.values.length + 2}`,
           values: [...compiled.values, limitCapped, offset],
@@ -106,8 +107,7 @@ export async function POST(req: NextRequest) {
         }
       : compiled
 
-    // Optionally build count SQL for total rows/pages
-    const needCount = !!pagination.enabled && !!pagination.withCount
+    const needCount = isSelect && !!pagination.enabled && !!pagination.withCount
     const canCount = needCount && !hasLimitOrOffset(compiled.text)
     const countSql = canCount
       ? { text: `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`, values: compiled.values, placeholders: compiled.placeholders }
@@ -127,6 +127,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'user_conn_required' }, { status: 400 })
     }
     const pool = await getUserConnPool(userId, userConnId)
+
+    // 非只读：需要确认后执行；不包裹分页
+    if (!isSelect) {
+      if (!allowWrite) {
+        const previewInline = renderSqlPreview(compiled, vars)
+        return NextResponse.json({ error: 'write_requires_confirmation', previewInline }, { status: 400 })
+      }
+      // 执行写语句：允许返回 rows（如 RETURNING），或仅返回 command/rowCount
+      // 手动管理可提交会话，避免 withSafeSession 的 ROLLBACK
+      const client = await (pool as any).connect()
+      let data: any
+      try {
+        await client.query('BEGIN')
+        const timeout = Math.min(Math.max(env.QUERY_TIMEOUT_DEFAULT_MS, 1), env.QUERY_TIMEOUT_MAX_MS)
+        await client.query(`SET LOCAL statement_timeout = ${timeout}` )
+        await client.query(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`)
+        await client.query(`SET LOCAL search_path = pg_catalog, "$user"`)
+        data = await client.query({ text: compiled.text, values: compiled.values })
+        await client.query('COMMIT')
+      } catch (e) {
+        try { await client.query('ROLLBACK') } catch {}
+        client.release()
+        throw e
+      }
+      client.release()
+      const columns = Array.isArray(data.rows) && data.rows[0] ? Object.keys(data.rows[0]) : []
+      const message = [data.command || 'OK', typeof data.rowCount === 'number' ? String(data.rowCount) : undefined].filter(Boolean).join(' ')
+      return NextResponse.json({
+        sql: compiled.text,
+        params: compiled.values,
+        command: data.command,
+        rowCount: data.rowCount,
+        message,
+        rows: data.rows || [],
+        columns,
+      })
+    }
     let totalRows: number | undefined
     // If only counting is requested and possible, skip data query
     if (needCount && pagination.countOnly) {
