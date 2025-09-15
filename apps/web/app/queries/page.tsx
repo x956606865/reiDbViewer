@@ -60,6 +60,7 @@ import { PaginationSettings } from '../../components/queries/PaginationSettings'
 import { RunActionsBar } from '../../components/queries/RunActionsBar';
 import { SqlPreviewPanel } from '../../components/queries/SqlPreviewPanel';
 import { RuntimeCalcCards } from '../../components/queries/RuntimeCalcCards';
+import { PaginationBar } from '../../components/queries/PaginationBar';
 import { useCurrentConnId } from '@/lib/current-conn';
 import {
   parseSavedQueriesExport,
@@ -2031,77 +2032,16 @@ export default function SavedQueriesPage() {
                     <DataGrid columns={gridCols} rows={rows} />
                   )}
                 </div>
-                {pgEnabled && !textResult && (
-                  <Group mt="sm" justify="space-between" align="center">
-                    <Group gap="xs">
-                      <Button
-                        size="xs"
-                        variant="default"
-                        disabled={pgPage <= 1}
-                        onClick={() => {
-                          setPgPage(1);
-                          onExecute({ page: 1 });
-                        }}
-                      >
-                        首页
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="default"
-                        disabled={pgPage <= 1}
-                        onClick={() => {
-                          const next = Math.max(1, pgPage - 1);
-                          setPgPage(next);
-                          onExecute({ page: next });
-                        }}
-                      >
-                        上一页
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="default"
-                        disabled={pgTotalPages ? pgPage >= pgTotalPages : false}
-                        onClick={() => {
-                          const next = pgPage + 1;
-                          setPgPage(next);
-                          onExecute({ page: next });
-                        }}
-                      >
-                        下一页
-                      </Button>
-                      <Button
-                        size="xs"
-                        variant="default"
-                        disabled={
-                          !pgTotalPages || pgPage >= (pgTotalPages || 1)
-                        }
-                        onClick={() => {
-                          if (pgTotalPages) {
-                            setPgPage(pgTotalPages);
-                            onExecute({ page: pgTotalPages });
-                          }
-                        }}
-                      >
-                        末页
-                      </Button>
-                    </Group>
-                    <Text size="sm" c="dimmed">
-                      第 <b>{pgPage}</b>
-                      {pgTotalPages ? (
-                        <>
-                          {' '}
-                          / <b>{pgTotalPages}</b>
-                        </>
-                      ) : null}
-                      页
-                      {pgTotalRows !== null ? (
-                        <>
-                          ，共 <b>{pgTotalRows}</b> 条
-                        </>
-                      ) : null}
-                    </Text>
-                  </Group>
-                )}
+                <PaginationBar
+                  visible={pgEnabled && !textResult}
+                  page={pgPage}
+                  totalPages={pgTotalPages}
+                  totalRows={pgTotalRows}
+                  onFirst={() => { setPgPage(1); onExecute({ page: 1 }); }}
+                  onPrev={() => { const next = Math.max(1, pgPage - 1); setPgPage(next); onExecute({ page: next }); }}
+                  onNext={() => { const next = pgPage + 1; setPgPage(next); onExecute({ page: next }); }}
+                  onLast={() => { if (pgTotalPages) { setPgPage(pgTotalPages); onExecute({ page: pgTotalPages }); } }}
+                />
               </Paper>
             </>
           )}
