@@ -149,7 +149,8 @@ export default function SchemaPage() {
 
   return (
     <>
-    <Stack gap="md">
+    {/* 防止内部表格/代码块导致整页横向滚动 */}
+    <Stack gap="md" style={{ minWidth: 0 }}>
       <div>
         <Group justify="space-between">
           <div>

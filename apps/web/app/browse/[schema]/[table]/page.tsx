@@ -220,7 +220,8 @@ export default function BrowseTablePage() {
   if (!schema || !table) return <Text c="red">非法路径</Text>
 
   return (
-    <Stack gap="md">
+    // 防止内部表格/代码块导致整页横向滚动
+    <Stack gap="md" style={{ minWidth: 0 }}>
       <Group justify="space-between" align="center">
         <div>
           <Title order={3}>{schema}.{table}</Title>

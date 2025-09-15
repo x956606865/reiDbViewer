@@ -198,6 +198,10 @@ export default function SmartGrid({
       density: 'xs',
       columnOrder: columns,
       showColumnFilters: false,
+      // 若存在名为 actions 的列，默认固定到右侧
+      columnPinning: columns.includes('actions')
+        ? { right: ['actions'] }
+        : { right: [] },
     },
     state: {
       sorting,
