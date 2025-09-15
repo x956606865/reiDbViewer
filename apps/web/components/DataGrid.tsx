@@ -42,6 +42,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
     const m = new Map<string, number>()
     for (const c of columns) m.set(c, guessWidth(c))
     if (!hasExternalActions) m.set('__rdv_actions', ACTION_COL_WIDTH)
+    else m.set('actions', ACTION_COL_WIDTH)
     return m
   }, [columns, guessWidth, hasExternalActions, ACTION_COL_WIDTH])
 
@@ -102,8 +103,24 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 const base: React.CSSProperties = { textAlign: 'left', padding: 0, borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' }
                 const innerBase: React.CSSProperties = { padding: '8px 10px', fontWeight: 600 }
                 return (
-                  <th key={h.id} style={{ ...base, width: isActions ? 120 : undefined, minWidth: isActions ? 120 : undefined }}>
-                    <div style={isActions ? { position: 'sticky', right: 0, zIndex: 2, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#f9fafb', ...innerBase } : innerBase}>
+                  <th
+                    key={h.id}
+                    style={
+                      isActions
+                        ? {
+                            ...base,
+                            width: 120,
+                            minWidth: 120,
+                            position: 'sticky',
+                            right: 0,
+                            zIndex: 3,
+                            boxShadow: 'inset 1px 0 0 #e5e7eb',
+                            background: '#f9fafb',
+                          }
+                        : { ...base }
+                    }
+                  >
+                    <div style={innerBase}>
                       {flexRender(h.column.columnDef.header, h.getContext())}
                     </div>
                   </th>
@@ -124,6 +141,15 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                   whiteSpace: 'nowrap',
                   width: isActions ? 120 : undefined,
                   minWidth: isActions ? 120 : undefined,
+                  ...(isActions
+                    ? {
+                        position: 'sticky',
+                        right: 0,
+                        zIndex: 2,
+                        boxShadow: 'inset 1px 0 0 #e5e7eb',
+                        background: '#fff',
+                      }
+                    : {}),
                 }
                 const innerStyle: React.CSSProperties = {
                   padding: '8px 10px',
@@ -133,7 +159,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 }
                 return (
                   <td key={cell.id} style={tdStyle}>
-                    <div style={isActions ? { position: 'sticky', right: 0, zIndex: 1, boxShadow: 'inset 1px 0 0 #e5e7eb', background: '#fff', ...innerStyle } : innerStyle}>
+                    <div style={innerStyle}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </div>
                   </td>

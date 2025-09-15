@@ -1022,7 +1022,9 @@ export default function SavedQueriesPage() {
           onDeleteItem={(it) => onDeleteById(it.id, it.name)}
         />
 
-        <Stack gap="md" style={{ flex: 1 }}>
+        {/* 关键：在 Flex 布局下为可伸缩列设置 minWidth: 0，
+            避免内容（如表格/代码块）撑破父容器导致整页出现横向滚动。*/}
+        <Stack gap="md" style={{ flex: 1, minWidth: 0 }}>
           <LoadingOverlay
             visible={!!busy}
             zIndex={1000}
