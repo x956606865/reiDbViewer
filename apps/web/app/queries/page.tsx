@@ -50,8 +50,6 @@ import type {
 } from '@rei-db-view/types/appdb';
 import type { SavedItem, TreeNode } from '../../components/queries/types';
 import { DataGrid } from '../../components/DataGrid';
-import { LeftDrawer } from '../../components/LeftDrawer';
-import { Tree } from '../../components/queries/Tree';
 import { SqlEditor } from '../../components/queries/SqlEditor';
 import { VariablesEditor } from '../../components/queries/VariablesEditor';
 import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
@@ -64,6 +62,8 @@ import { PaginationBar } from '../../components/queries/PaginationBar';
 import { ResultsPanel } from '../../components/queries/ResultsPanel';
 import { RunParamsPanel } from '../../components/queries/RunParamsPanel';
 import { useCurrentConnId } from '@/lib/current-conn';
+import { SavedQueriesSidebar } from '../../components/queries/SavedQueriesSidebar';
+import { buildSavedTree } from '../../components/queries/tree-utils';
 import {
   parseSavedQueriesExport,
   normalizeImportItems,
@@ -92,7 +92,7 @@ export default function SavedQueriesPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [suggestedSQL, setSuggestedSQL] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // file import handled in SavedQueriesSidebar
 
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -358,9 +358,7 @@ export default function SavedQueriesPage() {
     }
   }, [items]);
 
-  const onImportClick = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  // import click handled in SavedQueriesSidebar
 
   const onImportFile = useCallback(
     async (file: File) => {
@@ -441,72 +439,12 @@ export default function SavedQueriesPage() {
         setError(String(e?.message || e));
       } finally {
         setBusy(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     },
     [refresh]
   );
 
-  const buildTree = (list: SavedItem[]): TreeNode => {
-    const root: TreeNode = {
-      type: 'folder',
-      name: '',
-      path: '/',
-      children: [],
-    };
-    const ensureFolder = (segments: string[]): TreeNode => {
-      let node = root;
-      let p = '';
-      for (const seg of segments) {
-        p = p ? `${p}/${seg}` : seg;
-        let child = node.children!.find(
-          (c) => c.type === 'folder' && c.name === seg
-        );
-        if (!child) {
-          child = { type: 'folder', name: seg, path: p, children: [] };
-          node.children!.push(child);
-        }
-        node = child;
-      }
-      return node;
-    };
-    for (const it of list) {
-      const parts = it.name.split('/').filter(Boolean);
-      if (parts.length <= 1) {
-        root.children!.push({
-          type: 'item',
-          name: it.name,
-          path: it.name,
-          item: it,
-        });
-      } else {
-        const leaf = parts[parts.length - 1]!;
-        const folder = ensureFolder(parts.slice(0, -1));
-        folder.children!.push({
-          type: 'item',
-          name: leaf,
-          path: it.name,
-          item: it,
-        });
-      }
-    }
-    // inject extra (virtual) folders so they appear even when empty
-    for (const f of Array.from(extraFolders)) {
-      const segs = f.split('/').filter(Boolean);
-      if (segs.length > 0) ensureFolder(segs);
-    }
-    const sortNodes = (nodes: TreeNode[]) => {
-      nodes.sort((a, b) => {
-        if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-      for (const n of nodes) if (n.children) sortNodes(n.children);
-    };
-    sortNodes(root.children!);
-    return root;
-  };
-
-  const tree = useMemo(() => buildTree(items), [items]);
+  const tree = useMemo(() => buildSavedTree(items, extraFolders), [items, extraFolders]);
 
   const onDetectVars = () => {
     try {
@@ -1067,86 +1005,29 @@ export default function SavedQueriesPage() {
       )}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-        <LeftDrawer title="我的查询">
-          <Group mt="xs" gap="xs">
-            <Button
-              size="xs"
-              variant="light"
-              onClick={() => {
-                const p = prompt('新建文件夹路径（用/分隔，如 reports/daily）');
-                if (p) {
-                  const norm = p.split('/').filter(Boolean).join('/');
-                  if (!norm) return;
-                  setExpanded((s) => new Set([...Array.from(s), norm]));
-                  setExtraFolders(
-                    (prev) => new Set([...Array.from(prev), norm])
-                  );
-                  setInfo(`已创建文件夹：${norm}（本地）`);
-                  setMode('edit');
-                  setName(`${norm}/`);
-                }
-              }}
-            >
-              新建文件夹
-            </Button>
-            <Button
-              size="xs"
-              variant="default"
-              onClick={() => {
-                setMode('edit');
-                onNew();
-              }}
-            >
-              新建查询
-            </Button>
-            <Button
-              size="xs"
-              variant="default"
-              onClick={onExportAll}
-              disabled={!!busy}
-            >
-              {busy === '导出中...' ? '导出中...' : '导出全部'}
-            </Button>
-            <Button
-              size="xs"
-              variant="light"
-              onClick={onImportClick}
-              disabled={!!busy}
-            >
-              导入
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/json"
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const f = e.currentTarget.files?.[0];
-                if (f) onImportFile(f);
-              }}
-            />
-          </Group>
-          {items.length === 0 ? (
-            <Text c="dimmed" mt="xs">
-              暂无
-            </Text>
-          ) : (
-            <div style={{ marginTop: 8 }}>
-              {tree.children && tree.children.length > 0 ? (
-                <Tree
-                  nodes={tree.children}
-                  expanded={expanded}
-                  onToggle={toggleFolder}
-                  onOpenItem={onOpenItemRun}
-                  onEditItem={onOpenItemEdit}
-                  onDeleteItem={(it) => onDeleteById(it.id, it.name)}
-                />
-              ) : (
-                <Text c="dimmed">（空）</Text>
-              )}
-            </div>
-          )}
-        </LeftDrawer>
+        <SavedQueriesSidebar
+          items={items}
+          expanded={expanded}
+          onToggleFolder={toggleFolder}
+          extraFolders={extraFolders}
+          onCreateFolder={(norm) => {
+            setExpanded((s) => new Set([...Array.from(s), norm]));
+            setExtraFolders((prev) => new Set([...Array.from(prev), norm]));
+            setInfo(`已创建文件夹：${norm}（本地）`);
+            setMode('edit');
+            setName(`${norm}/`);
+          }}
+          onNewQuery={() => {
+            setMode('edit');
+            onNew();
+          }}
+          onExportAll={onExportAll}
+          onImportFile={onImportFile}
+          busy={busy}
+          onOpenItemRun={onOpenItemRun}
+          onOpenItemEdit={onOpenItemEdit}
+          onDeleteItem={(it) => onDeleteById(it.id, it.name)}
+        />
 
         <Stack gap="md" style={{ flex: 1 }}>
           <LoadingOverlay
