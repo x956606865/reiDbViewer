@@ -4,15 +4,16 @@
 
 ## 特性
 
-- **只读安全**：执行查询时强制 `BEGIN … ROLLBACK`，设置 `statement_timeout`/`idle_in_transaction_session_timeout`，`search_path=pg_catalog,"$user"`；仅允许 `SELECT/WITH`。
+- **只读安全**：主打各种读取展示，如果有涉及修改数据的操作，会弹窗提示。
 - **连接管理**：用户自有数据库连接，DSN 以 AES‑256‑GCM 加密保存于“应用数据库”（APP_DB）；前端仅保存连接记录 ID。
-- **安装引导**：`/install` 检测 APP_DB 初始化状态，生成初始化 SQL；已初始化但缺少新列/索引时展示“升级 SQL”。
-- **Schema Explorer**：列出数据库/Schema/表与合成 DDL，支持一键“浏览数据”。
-- **数据浏览**：`/browse/[schema]/[table]` 提供分页、排序、简单筛选（文本/数值/JSON 路径与包含）与 SQL 预览降级；权限不足时展示详细错误（如 `permission denied for …`）。
-- **索引查看器**：Schema 页面“查看索引”弹窗，展示索引列表、方法、PK/UNIQUE/PARTIAL/VALID 标记、扫描次数与读/返元组计数（`pg_stat_all_indexes`）、大小与定义。
-- **常用 SQL**：新增/编辑/删除保存的 SQL 模板，支持“变量默认值”与“运行参数”分离、同名覆盖确认、树状文件夹管理（名称用 `/` 作为路径）。
-- **动态列（客户端）**：以 JS 函数在浏览器端对查询结果逐行计算新增列，函数签名 `(row, vars, helpers) => any`，内置 `helpers.fmtDate/json` 等。
-- **登录集成**：使用 Better Auth（email+password），表结构与 schema/prefix 可通过 `/install` 生成 SQL 自行初始化。
+- **Schema Explorer**：列出数据库/Schema/表与合成 DDL，可以快速查看相关索引以及索引触发的次数，确定索引是否在生效中，以及当前所以占用大小
+
+- **常用 SQL**：新增/编辑/删除保存的 SQL 模板，支持“变量默认值”与“运行参数”分离，像使用 api 工具一样使用 sql
+  - sql 模版默认树形展示，方便层级管理
+  - sql 模版支持变量定义，在运行时再赋值，如同使用 api 一般
+  - 支持添加动态列，填入一个回调函数，函数可以接受到当前行所有数据，然后进行处理输出
+  - 支持添加“计算数据”，通过自定的附加 sql 或者 js 函数，展现包括总数、特定类型数据的数量等等自定义的计算数据展示
+- **登录集成**：使用 Better Auth（email+password），不同账户管理自己的 sql 与数据库
 
 ## 要求
 
@@ -35,6 +36,12 @@ cd apps/web
 pnpm dev
 ```
 
+或者：
+
+```bash
+pnpm --filter @rei-db-view/web dev
+```
+
 - 类型检查 / 测试
 
 ```bash
@@ -44,32 +51,9 @@ pnpm test
 
 ## Docker / Compose 一键运行
 
-在构建与运行阶段同时注入 `BETTER_AUTH_SECRET`（强烈建议使用稳定值；临时值会让已有会话全部失效）：
-
 ```bash
 BETTER_AUTH_SECRET="$(openssl rand -base64 32)" docker compose up --build -d
 ```
-
-说明：
-- `docker-compose.yml` 会将 `BETTER_AUTH_SECRET` 作为 build arg 传入构建阶段，并作为运行时环境变量传入容器。
-- 为了让构建阶段的 Node 进程真的能读到该变量，Dockerfile 的 builder 阶段需要声明并导入：
-
-  ```dockerfile
-  # 在 FROM base AS builder 之后添加：
-  ARG BETTER_AUTH_SECRET=dev-build-secret-do-not-use
-  ENV BETTER_AUTH_SECRET=$BETTER_AUTH_SECRET
-  ```
-
-  如需我直接为 Dockerfile 加上上述两行，请告知确认。
-
-生产环境建议：
-- 使用固定且足够随机的 `BETTER_AUTH_SECRET`，不要在每次部署时更换，否则会话会被全部踢下线，需要重新登录。
-- 可改用持久化的 env 文件：
-
-  ```bash
-  printf "BETTER_AUTH_SECRET=%s\n" "$(openssl rand -base64 32)" > .env.secrets
-  # 然后在 docker-compose.yml 使用 env_file 或外部导入该变量
-  ```
 
 ## 环境变量（apps/web/.env.local）
 
@@ -77,17 +61,23 @@ BETTER_AUTH_SECRET="$(openssl rand -base64 32)" docker compose up --build -d
 - `APP_DB_SCHEMA`：应用库 schema（默认 `public`）
 - `APP_DB_TABLE_PREFIX`：应用表前缀（默认 `rdv_`）
 - `APP_ENCRYPTION_KEY`：32 字节 base64，用于加解密 DSN
+- `BETTER_AUTH_SECRET`:32 字节 base64，用于 better auth
+- `BETTER_AUTH_TRUSTED_ORIGINS`:better auth 允许的登录 origin，示例：http://localhost:3000,http://127.0.0.1:3000
 - 可选：`QUERY_TIMEOUT_DEFAULT_MS`、`QUERY_TIMEOUT_MAX_MS`、`MAX_ROW_LIMIT`
 
 ## 初始化（APP_DB）
 
 - 访问 `/install`：
-  - 未初始化：显示“建议执行的 SQL”（包含 `users/accounts/sessions/verification_codes/user_connections/schema_cache/saved_queries` 等表），复制到 APP_DB 执行后“我已执行，重新检测”。
-  - 已初始化但有升级项：显示“升级 SQL”（例如为已存在的 `rdv_saved_queries` 表新增 `dynamic_columns` 列的 ALTER 语句）。
-- 规则（重要）：凡新增 APP_DB 表或对现有表做结构调整（新增列/索引等），必须同步更新安装检测：
-  1) `apps/web/lib/appdb-init.ts`：更新 `expectedTableNames()`、在 `renderInitSql()` 加完整建表 SQL；若为“新增列/索引”，在 `checkInitStatus()` 增加检测与 `ALTER` 拼接（并向 `warnings` 写提示）。
-  2) `/install` 页面需展示 `warnings` 并提供包含 `ALTER` 的 `suggestedSQL`。
-  3) 相关 API 发现缺列/缺表时返回 `501 feature_not_initialized` 并附 `suggestedSQL` 兜底。
+
+## 页面截图
+
+| 直接查看 JSON 数据 | 集成常见运维 SQL | 简单添加动态列 | 自定义计算数据 |
+| --- | --- | --- | --- |
+| ![直接查看 JSON 数据](pics/直接查看json数据.png) | ![直接集成常见运维 SQL](pics/直接集成常见运维sql.png) | ![简单添加动态列](pics/简单添加动态列.png) | ![自定义计算数据](pics/自定义计算数据.png) |
+
+| 轻松编辑 SQL 模版 | 方便的运行工具 | 查看索引大小与调用次数 | 简单添加计算数据 |
+| --- | --- | --- | --- |
+| ![轻松编辑 SQL 模版](pics/轻松编辑sql模版.png) | ![方便的运行工具](pics/方便的运行工具.png) | ![查看索引大小与调用次数](pics/查看索引大小与调用次数.png) | ![简单添加计算数据](pics/简单添加计算数据.png) |
 
 ## 页面导航
 
@@ -96,10 +86,6 @@ BETTER_AUTH_SECRET="$(openssl rand -base64 32)" docker compose up --build -d
 - `/schema`：Schema Explorer；每张表支持“查看索引”和“浏览数据”
 - `/browse/[schema]/[table]`：只读数据浏览（分页/排序/筛选/SQL 预览）；失败时展示详细 DB 错误 message
 - `/queries`：常用 SQL 模板
-  - 变量：默认值（定义时存储）与运行参数（执行前填写）分离
-  - 同名覆盖：保存/更新时检测重名，弹窗确认后覆盖；支持“另存为/新建/删除（软删除）”
-  - 树形管理：名称以 `/` 组织为“文件夹”（展开状态保存在 `localStorage`）
-  - 动态列：按行执行 JS 函数扩展列，运行在浏览器端
 
 ## API 速览（App Router）
 
@@ -138,15 +124,6 @@ BETTER_AUTH_SECRET="$(openssl rand -base64 32)" docker compose up --build -d
 
 ## 已知注意事项
 
-- 常用 SQL 名称目前未在 DB 层强制唯一，前端已做覆盖确认与软删除；如需彻底约束，可在 APP_DB 添加唯一（可选）：
-
-```sql
--- 不区分大小写且排除已归档
-CREATE UNIQUE INDEX IF NOT EXISTS "rdv_saved_queries_user_name_ci"
-  ON "<schema>"."<prefix>saved_queries"(user_id, lower(name))
-  WHERE is_archived = false;
-```
-
 - 动态列运行在浏览器端；请仅输入可信任的函数代码。
 - 部分统计（pg_stat_all_indexes）需要数据库具备相应 catalog 视图权限；权限不足时会返回详细错误 message。
 
@@ -163,10 +140,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS "rdv_saved_queries_user_name_ci"
 ├─ packages/types            # AST/应用类型定义
 └─ docs                      # 设计方案 & 使用文档
 ```
-
-## 路线图（建议）
-
-- 表数据页加入“查看/导出 EXPLAIN”与“示例查询”。
-- 动态列沙箱（Web Worker + 超时终止）。
-- 更丰富的 JSON 过滤器与 UI。
-- Saved SQL 的标签/分享/审计记录。
