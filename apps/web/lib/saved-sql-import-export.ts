@@ -15,7 +15,7 @@ export const SavedQueriesExportSchema = z.object({
           z.object({
             name: z.string().min(1).max(64).regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
             label: z.string().max(100).optional(),
-            type: z.enum(['text', 'number', 'boolean', 'date', 'timestamp', 'json', 'uuid']),
+            type: z.enum(['text', 'number', 'boolean', 'date', 'timestamp', 'json', 'uuid', 'raw']),
             required: z.boolean().optional(),
             default: z.any().optional(),
           })
@@ -65,4 +65,3 @@ export function normalizeImportItems(data: SavedQueriesExport): ImportItem[] {
     dynamicColumns: Array.isArray(it.dynamicColumns) ? it.dynamicColumns : [],
   }))
 }
-

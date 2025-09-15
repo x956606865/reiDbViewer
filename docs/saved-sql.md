@@ -25,7 +25,8 @@ CREATE INDEX IF NOT EXISTS "rdv_saved_queries_user" ON "public"."rdv_saved_queri
 ## 占位符与类型
 
 - 占位符语法：`{{name}}`，同名变量多处使用会映射为同一个 `$n` 参数。
-- 变量类型：`text | number | boolean | date | timestamp | json | uuid`。
+- 变量类型：`text | number | boolean | date | timestamp | json | uuid | raw`。
+- `raw`：将传入值原样内联到 SQL 文本（不做参数化）。谨慎使用，仅用于列名/排序片段等安全位置；执行仍在只读事务中并且仅允许 `SELECT/WITH` 开头，但内联文本可能导致语法错误或注入风险，请勿拼接来自不可信输入的表达式。
 - 只允许 `SELECT` 或 `WITH` 开头的查询。
 
 ## API（App Router）

@@ -22,7 +22,8 @@ function parseSslFromUrl(cs: string | undefined): boolean | { rejectUnauthorized
 }
 
 function tableName() {
-  const prefix = env.APP_DB_TABLE_PREFIX || 'rdv_'
+  // Prefer live env for testability; fall back to compiled defaults.
+  const prefix = process.env.APP_DB_TABLE_PREFIX || env.APP_DB_TABLE_PREFIX || 'rdv_'
   return `${prefix}user_connections`
 }
 

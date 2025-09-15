@@ -46,6 +46,7 @@ const VAR_TYPES: Array<{ value: SavedQueryVariableDef['type']; label: string }> 
   { value: 'timestamp', label: 'timestamp' },
   { value: 'json', label: 'json' },
   { value: 'uuid', label: 'uuid' },
+  { value: 'raw', label: 'raw' },
 ]
 
 export default function SavedQueriesPage() {

@@ -85,8 +85,14 @@ export function compileSql(
   const text = sql.replace(varNameRe, (_, raw: string) => {
     const name = String(raw)
     if (!byName.has(name)) throw new Error(`Undefined variable: ${name}`)
-    if (used.has(name)) return `$${used.get(name)}`
     const def = byName.get(name)!
+    // For raw type, inline the value literally into SQL (no parameterization)
+    if (def.type === 'raw') {
+      const val = normalizeValue(name, def, input[name])
+      // Insert as-is (string); caller must ensure it is syntactically valid
+      return String(val ?? '')
+    }
+    if (used.has(name)) return `$${used.get(name)}`
     const val = normalizeValue(name, def, input[name])
     values.push(val)
     const idx = values.length
@@ -182,6 +188,8 @@ function normalizeValue(name: string, def: SavedQueryVariableDef, raw: unknown):
       }
       return raw
     }
+    case 'raw':
+      return String(raw)
     default:
       return raw
   }

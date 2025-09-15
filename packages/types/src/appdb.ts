@@ -21,6 +21,7 @@ export type SavedQueryVarType =
   | 'timestamp'
   | 'json'
   | 'uuid'
+  | 'raw'
 
 export interface SavedQueryVariableDef {
   name: string
