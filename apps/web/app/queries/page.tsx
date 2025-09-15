@@ -1,6 +1,7 @@
 'use client';
 
 import React, {
+  RefObject,
   useCallback,
   useEffect,
   useMemo,
@@ -8,40 +9,16 @@ import React, {
   useState,
 } from 'react';
 import {
-  ActionIcon,
-  Badge,
   Button,
   Code,
-  Group,
   LoadingOverlay,
-  NumberInput,
   Paper,
   ScrollArea,
-  Select,
-  TagsInput,
-  Tooltip,
   Stack,
-  Switch,
-  Table,
   Text,
-  TextInput,
-  Textarea,
   Title,
 } from '@mantine/core';
-import {
-  IconPlus,
-  IconTrash,
-  IconScan,
-  IconChevronRight,
-  IconChevronDown,
-  IconFolder,
-  IconFileText,
-  IconPencil,
-  IconHelpCircle,
-  IconCheck,
-  IconX,
-  IconRefresh,
-} from '@tabler/icons-react';
+import { IconCheck, IconX } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import type {
   SavedQueryVariableDef,
@@ -49,18 +26,8 @@ import type {
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
 import type { SavedItem, TreeNode } from '../../components/queries/types';
-import { DataGrid } from '../../components/DataGrid';
-import { SqlEditor } from '../../components/queries/SqlEditor';
-import { VariablesEditor } from '../../components/queries/VariablesEditor';
-import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
-import { CalcItemsEditor } from '../../components/queries/CalcItemsEditor';
-import { PaginationSettings } from '../../components/queries/PaginationSettings';
-import { RunActionsBar } from '../../components/queries/RunActionsBar';
-import { SqlPreviewPanel } from '../../components/queries/SqlPreviewPanel';
-import { RuntimeCalcCards } from '../../components/queries/RuntimeCalcCards';
-import { PaginationBar } from '../../components/queries/PaginationBar';
-import { ResultsPanel } from '../../components/queries/ResultsPanel';
-import { RunParamsPanel } from '../../components/queries/RunParamsPanel';
+import { EditQueryPanel } from '../../components/queries/EditQueryPanel';
+import { RunQueryPanel } from '../../components/queries/RunQueryPanel';
 import { useCurrentConnId } from '@/lib/current-conn';
 import { SavedQueriesSidebar } from '../../components/queries/SavedQueriesSidebar';
 import { buildSavedTree } from '../../components/queries/tree-utils';
@@ -68,23 +35,6 @@ import {
   parseSavedQueriesExport,
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export';
-
-// Types moved to components/queries/types
-
-const VAR_TYPES: Array<{
-  value: SavedQueryVariableDef['type'];
-  label: string;
-}> = [
-  { value: 'text', label: 'text' },
-  { value: 'number', label: 'number' },
-  { value: 'boolean', label: 'boolean' },
-  { value: 'date', label: 'date' },
-  { value: 'timestamp', label: 'timestamp' },
-  { value: 'json', label: 'json' },
-  { value: 'uuid', label: 'uuid' },
-  { value: 'raw', label: 'raw' },
-  { value: 'enum', label: 'enum' },
-];
 
 export default function SavedQueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -1079,295 +1029,76 @@ export default function SavedQueriesPage() {
             overlayProps={{ blur: 1 }}
           />
           {mode === 'edit' ? (
-            <>
-              <Paper withBorder p="md">
-                <Title order={4}>基本信息</Title>
-                <Group mt="sm" align="end">
-                  <TextInput
-                    label="名称"
-                    value={name}
-                    onChange={(e) => setName(e.currentTarget.value)}
-                    w={320}
-                  />
-                  <TextInput
-                    label="描述"
-                    value={description}
-                    onChange={(e) => setDescription(e.currentTarget.value)}
-                    w={420}
-                  />
-                  <Button onClick={onSave} disabled={!canSave}>
-                    {currentId ? '更新' : '保存'}
-                  </Button>
-                  <Button
-                    variant="light"
-                    onClick={onSaveAs}
-                    disabled={!canSave}
-                  >
-                    另存为
-                  </Button>
-                  <Button variant="default" onClick={onNew}>
-                    新建
-                  </Button>
-                  <ActionIcon
-                    color="red"
-                    variant="light"
-                    onClick={onDelete}
-                    disabled={!currentId}
-                    title="删除当前"
-                  >
-                    <IconTrash size={18} />
-                  </ActionIcon>
-                </Group>
-              </Paper>
-
-              <SqlEditor
-                sql={sql}
-                onChange={setSql}
-                onDetectVars={onDetectVars}
-                onAddVar={onAddVar}
-              />
-
-              {/* Extracted editors */}
-              <VariablesEditor
-                vars={vars}
-                setVars={setVars}
-                runValues={runValues}
-                setRunValues={setRunValues}
-                onRemoveVar={onRemoveVar}
-                userConnId={userConnId}
-              />
-
-              <DynamicColumnsEditor dynCols={dynCols} setDynCols={setDynCols} />
-
-              <CalcItemsEditor
-                calcItems={calcItems}
-                setCalcItems={setCalcItems}
-                vars={vars}
-                setRunValues={setRunValues}
-              />
-
-              {false && (
-                <Paper withBorder p="md">
-                  <Title order={4}>计算数据</Title>
-                  <Text c="dimmed" size="sm">
-                    配置在“运行”时可点击手动计算的指标。支持两种方式：
-                  </Text>
-                  <Text c="dimmed" size="sm">
-                    1) SQL：可使用所有变量，另提供{' '}
-                    <Code>
-                      {`{{`}_sql{`}}`}
-                    </Code>{' '}
-                    为当前查询未包裹分页的原始 SQL（将被作为 CTE 注入）。
-                  </Text>
-                  <Text c="dimmed" size="sm">
-                    2) JS：函数签名 <Code>(vars, rows, helpers) =&gt; any</Code>
-                    ，其中 rows 为当前页数据。
-                  </Text>
-                  <Table mt="sm" withTableBorder withColumnBorders>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th w={220}>名称</Table.Th>
-                        <Table.Th w={120}>类型</Table.Th>
-                        <Table.Th>代码</Table.Th>
-                        <Table.Th w={60}>操作</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {calcItems.length === 0 && (
-                        <Table.Tr>
-                          <Table.Td colSpan={4}>
-                            <Text c="dimmed">暂无计算数据</Text>
-                          </Table.Td>
-                        </Table.Tr>
-                      )}
-                      {calcItems.map((ci, i) => (
-                        <Table.Tr key={ci.name + i}>
-                          <Table.Td>
-                            <TextInput
-                              value={ci.name}
-                              onChange={(e) => {
-                                const val = e.currentTarget.value;
-                                setCalcItems((arr) =>
-                                  arr.map((x, idx) =>
-                                    idx === i ? { ...x, name: val } : x
-                                  )
-                                );
-                              }}
-                            />
-                          </Table.Td>
-                          <Table.Td>
-                            <Select
-                              data={[
-                                { value: 'sql', label: 'SQL' },
-                                { value: 'js', label: 'JS' },
-                              ]}
-                              value={ci.type}
-                              onChange={(v) =>
-                                setCalcItems((arr) =>
-                                  arr.map((x, idx) =>
-                                    idx === i
-                                      ? { ...x, type: (v as any) || 'sql' }
-                                      : x
-                                  )
-                                )
-                              }
-                            />
-                          </Table.Td>
-                          <Table.Td>
-                            <Textarea
-                              value={ci.code}
-                              onChange={(e) => {
-                                const val = e.currentTarget.value;
-                                setCalcItems((arr) =>
-                                  arr.map((x, idx) =>
-                                    idx === i ? { ...x, code: val } : x
-                                  )
-                                );
-                              }}
-                              autosize
-                              minRows={3}
-                              styles={{
-                                input: {
-                                  fontFamily:
-                                    'var(--mantine-font-family-monospace)',
-                                },
-                              }}
-                              placeholder={
-                                ci.type === 'sql'
-                                  ? 'select count(*) from ({{_sql}}) t'
-                                  : '(vars, rows) => rows.length'
-                              }
-                            />
-                          </Table.Td>
-                          <Table.Td>
-                            <ActionIcon
-                              color="red"
-                              variant="light"
-                              onClick={() =>
-                                setCalcItems((arr) =>
-                                  arr.filter((_, idx) => idx !== i)
-                                )
-                              }
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                  <Group gap="xs" mt="xs">
-                    <Button
-                      size="xs"
-                      leftSection={<IconPlus size={14} />}
-                      variant="light"
-                      onClick={() =>
-                        setCalcItems((arr) => [
-                          ...arr,
-                          {
-                            name: `calc_${arr.length + 1}`,
-                            type: 'sql',
-                            code: 'select count(*) as total from ({{_sql}}) t',
-                          },
-                        ])
-                      }
-                    >
-                      新增计算
-                    </Button>
-                  </Group>
-                </Paper>
-              )}
-            </>
+            <EditQueryPanel
+              name={name}
+              setName={setName}
+              description={description}
+              setDescription={setDescription}
+              canSave={canSave}
+              onSave={onSave}
+              onSaveAs={onSaveAs}
+              onNew={onNew}
+              onDelete={onDelete}
+              currentId={currentId}
+              sql={sql}
+              setSql={setSql}
+              onDetectVars={onDetectVars}
+              onAddVar={onAddVar}
+              vars={vars}
+              setVars={setVars}
+              runValues={runValues}
+              setRunValues={setRunValues}
+              onRemoveVar={onRemoveVar}
+              userConnId={userConnId}
+              dynCols={dynCols}
+              setDynCols={setDynCols}
+              calcItems={calcItems}
+              setCalcItems={setCalcItems}
+            />
           ) : (
-            <>
-              <RunParamsPanel
-                userConnId={userConnId}
-                currentConn={currentConn}
-                vars={vars}
-                runValues={runValues}
-                setRunValues={setRunValues}
-              />
-              <PaginationSettings
-                pgEnabled={pgEnabled}
-                setPgEnabled={setPgEnabled}
-                pgSize={pgSize}
-                setPgSize={(n) => setPgSize(n)}
-                pgPage={pgPage}
-                setPgPage={(n) => setPgPage(n)}
-                resetCounters={() => {
-                  setPgTotalRows(null);
-                  setPgTotalPages(null);
-                  setPgCountLoaded(false);
-                }}
-              />
-              <RunActionsBar
-                onPreview={() => onPreview()}
-                onExecute={() => onExecute()}
-                onExplain={() => onExplain()}
-                isExecuting={isExecuting}
-                explainFormat={explainFormat}
-                setExplainFormat={setExplainFormat}
-                explainAnalyze={explainAnalyze}
-                setExplainAnalyze={setExplainAnalyze}
-              />
-
-              <SqlPreviewPanel
-                ref={sqlPreviewRef}
-                isPreviewing={isPreviewing}
-                previewSQL={previewSQL}
-              />
-
-              <ResultsPanel
-                isExecuting={isExecuting}
-                top={
-                  <RuntimeCalcCards
-                    items={runtimeCalcItems}
-                    calcResults={calcResults}
-                    setCalcResults={setCalcResults}
-                    currentId={currentId}
-                    userConnId={userConnId}
-                    runValues={runValues}
-                    rows={rows}
-                    onUpdateCount={(total) => {
-                      setPgTotalRows(total);
-                      setPgTotalPages(Math.max(1, Math.ceil(total / pgSize)));
-                      setPgCountLoaded(true);
-                    }}
-                  />
-                }
-                textResult={textResult}
-                gridCols={gridCols}
-                rows={rows}
-                footer={
-                  <PaginationBar
-                    visible={pgEnabled && !textResult}
-                    page={pgPage}
-                    totalPages={pgTotalPages}
-                    totalRows={pgTotalRows}
-                    onFirst={() => {
-                      setPgPage(1);
-                      onExecute({ page: 1 });
-                    }}
-                    onPrev={() => {
-                      const next = Math.max(1, pgPage - 1);
-                      setPgPage(next);
-                      onExecute({ page: next });
-                    }}
-                    onNext={() => {
-                      const next = pgPage + 1;
-                      setPgPage(next);
-                      onExecute({ page: next });
-                    }}
-                    onLast={() => {
-                      if (pgTotalPages) {
-                        setPgPage(pgTotalPages);
-                        onExecute({ page: pgTotalPages });
-                      }
-                    }}
-                  />
-                }
-              />
-            </>
+            <RunQueryPanel
+              userConnId={userConnId}
+              currentConn={currentConn}
+              vars={vars}
+              runValues={runValues}
+              setRunValues={setRunValues}
+              pgEnabled={pgEnabled}
+              setPgEnabled={setPgEnabled}
+              pgSize={pgSize}
+              setPgSize={setPgSize}
+              pgPage={pgPage}
+              setPgPage={setPgPage}
+              pgTotalRows={pgTotalRows}
+              pgTotalPages={pgTotalPages}
+              onResetCounters={() => {
+                setPgTotalRows(null);
+                setPgTotalPages(null);
+                setPgCountLoaded(false);
+              }}
+              onPreview={() => onPreview()}
+              onExecute={(override) => onExecute(override)}
+              onExplain={() => onExplain()}
+              isExecuting={isExecuting}
+              explainFormat={explainFormat}
+              setExplainFormat={setExplainFormat}
+              explainAnalyze={explainAnalyze}
+              setExplainAnalyze={setExplainAnalyze}
+              sqlPreviewRef={sqlPreviewRef as RefObject<HTMLDivElement>}
+              isPreviewing={isPreviewing}
+              previewSQL={previewSQL}
+              textResult={textResult}
+              gridCols={gridCols}
+              rows={rows}
+              runtimeCalcItems={runtimeCalcItems}
+              calcResults={calcResults}
+              setCalcResults={setCalcResults}
+              currentId={currentId}
+              onUpdateTotal={(totalRows, totalPages) => {
+                setPgTotalRows(totalRows);
+                setPgTotalPages(totalPages);
+                setPgCountLoaded(true);
+              }}
+            />
           )}
         </Stack>
       </div>
