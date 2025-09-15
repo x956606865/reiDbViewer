@@ -19,12 +19,19 @@ const DynColSchema = z.object({
   manualTrigger: z.boolean().optional(),
 })
 
+const CalcItemSchema = z.object({
+  name: z.string().min(1).max(64),
+  type: z.enum(['sql', 'js']),
+  code: z.string().min(1),
+})
+
 const UpdateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).nullable().optional(),
   sql: z.string().min(1).optional(),
   variables: z.array(VarDefSchema).optional(),
   dynamicColumns: z.array(DynColSchema).optional(),
+  calcItems: z.array(CalcItemSchema).optional(),
   isArchived: z.boolean().optional(),
 })
 
@@ -41,6 +48,14 @@ function renderAlterAddDynCols(schema?: string, prefix?: string) {
   return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
 }
 
+function renderAlterAddCalcItems(schema?: string, prefix?: string) {
+  const sch = schema || env.APP_DB_SCHEMA || 'public'
+  const pfx = prefix || env.APP_DB_TABLE_PREFIX || 'rdv_'
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const t = (n: string) => `${q(sch)}.${q(pfx + n)}`
+  return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS calc_items JSONB NOT NULL DEFAULT '[]'::jsonb;`
+}
+
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!process.env.APP_DB_URL) return NextResponse.json({ error: 'app_db_not_configured' }, { status: 501 })
@@ -52,12 +67,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     let r
     try {
       r = await pool.query(
-        `SELECT id, name, description, sql, variables, dynamic_columns, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
+        `SELECT id, name, description, sql, variables, dynamic_columns, calc_items, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
         [id, userId]
       )
     } catch (e: any) {
       const msg = String(e?.message || e)
-      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
+      if ((/dynamic_columns/i.test(msg) || /calc_items/i.test(msg)) && /does not exist|column/i.test(msg)) {
         r = await pool.query(
           `SELECT id, name, description, sql, variables, is_archived, created_at, updated_at FROM ${tableName()} WHERE id = $1 AND user_id = $2`,
           [id, userId]
@@ -72,7 +87,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       description: x.description ? String(x.description) : null,
       sql: String(x.sql),
       variables: Array.isArray(x.variables) ? x.variables : [],
-      dynamicColumns: Array.isArray(x.dynamic_columns) ? x.dynamic_columns : [],
+      dynamicColumns: Array.isArray((x as any).dynamic_columns) ? (x as any).dynamic_columns : [],
+      calcItems: Array.isArray((x as any).calc_items) ? (x as any).calc_items : [],
       isArchived: !!x.is_archived,
       createdAt: x.created_at ? new Date(x.created_at).toISOString() : null,
       updatedAt: x.updated_at ? new Date(x.updated_at).toISOString() : null,
@@ -110,6 +126,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (parsed.data.sql !== undefined) push('sql', parsed.data.sql)
     if (parsed.data.variables !== undefined) push('variables', JSON.stringify(parsed.data.variables))
     if (parsed.data.dynamicColumns !== undefined) push('dynamic_columns', JSON.stringify(parsed.data.dynamicColumns))
+    if (parsed.data.calcItems !== undefined) push('calc_items', JSON.stringify(parsed.data.calcItems))
     if (parsed.data.isArchived !== undefined) push('is_archived', parsed.data.isArchived)
     push('updated_at', new Date())
     values.push(id, userId)
@@ -121,6 +138,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const msg = String(e?.message || e)
       if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
         return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddDynCols() }, { status: 501 })
+      }
+      if (/calc_items/i.test(msg) && /does not exist|column/i.test(msg)) {
+        return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddCalcItems() }, { status: 501 })
       }
       throw e
     }

@@ -39,6 +39,7 @@ export interface SavedQueryRecord {
   sql: string
   variables: SavedQueryVariableDef[]
   dynamicColumns?: DynamicColumnDef[]
+  calcItems?: CalcItemDef[]
   isArchived?: boolean
   createdAt: string
   updatedAt: string
@@ -48,4 +49,10 @@ export interface DynamicColumnDef {
   name: string
   code: string // JavaScript function body. Signature: (row, vars, helpers) => any
   manualTrigger?: boolean
+}
+
+export interface CalcItemDef {
+  name: string
+  type: 'sql' | 'js'
+  code: string // if type=js: function body Signature: (vars, rows, helpers) => any; if type=sql: SQL text supporting {{vars}} and special {{_sql}}
 }

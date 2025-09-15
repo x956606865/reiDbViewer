@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS ${t('saved_queries')} (
   sql TEXT NOT NULL,
   variables JSONB NOT NULL DEFAULT '[]'::jsonb,
   dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+  calc_items JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -149,6 +150,22 @@ export async function checkInitStatus(appPool: any, schema?: string, prefix?: st
       warnings.push(`${savedTbl} 缺少列 dynamic_columns；建议执行 ALTER 语句新增（见下方 SQL）。`)
       alterSQLs.push(
         `ALTER TABLE ${q(sch)}.${q(savedTbl)} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+      )
+    }
+
+    // calc_items column (added for computed metrics)
+    const colRes2 = await appPool.query(
+      `SELECT EXISTS (
+         SELECT 1 FROM information_schema.columns
+         WHERE table_schema = $1 AND table_name = $2 AND column_name = 'calc_items'
+       ) AS exists`,
+      [sch, savedTbl]
+    )
+    const hasCalc = Boolean(colRes2.rows[0]?.exists)
+    if (!hasCalc) {
+      warnings.push(`${savedTbl} 缺少列 calc_items；建议执行 ALTER 语句新增（见下方 SQL）。`)
+      alterSQLs.push(
+        `ALTER TABLE ${q(sch)}.${q(savedTbl)} ADD COLUMN IF NOT EXISTS calc_items JSONB NOT NULL DEFAULT '[]'::jsonb;`
       )
     }
   }

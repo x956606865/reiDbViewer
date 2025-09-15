@@ -20,12 +20,19 @@ const DynColSchema = z.object({
   manualTrigger: z.boolean().optional(),
 })
 
+const CalcItemSchema = z.object({
+  name: z.string().min(1).max(64),
+  type: z.enum(['sql', 'js']),
+  code: z.string().min(1),
+})
+
 const CreateSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   sql: z.string().min(1),
   variables: z.array(VarDefSchema).default([]),
   dynamicColumns: z.array(DynColSchema).default([]),
+  calcItems: z.array(CalcItemSchema).default([]),
 })
 
 function tableName() {
@@ -47,6 +54,7 @@ CREATE TABLE IF NOT EXISTS ${t('saved_queries')} (
   sql TEXT NOT NULL,
   variables JSONB NOT NULL DEFAULT '[]'::jsonb,
   dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb,
+  calc_items JSONB NOT NULL DEFAULT '[]'::jsonb,
   is_archived BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -60,6 +68,14 @@ function renderAlterAddDynCols(schema?: string, prefix?: string) {
   const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
   const t = (n: string) => `${q(sch)}.${q(pfx + n)}`
   return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS dynamic_columns JSONB NOT NULL DEFAULT '[]'::jsonb;`
+}
+
+function renderAlterAddCalcItems(schema?: string, prefix?: string) {
+  const sch = schema || env.APP_DB_SCHEMA || 'public'
+  const pfx = prefix || env.APP_DB_TABLE_PREFIX || 'rdv_'
+  const q = (s: string) => '"' + s.replace(/"/g, '""') + '"'
+  const t = (n: string) => `${q(sch)}.${q(pfx + n)}`
+  return `ALTER TABLE ${t('saved_queries')} ADD COLUMN IF NOT EXISTS calc_items JSONB NOT NULL DEFAULT '[]'::jsonb;`
 }
 
 async function ensureTableExists() {
@@ -89,11 +105,11 @@ export async function GET() {
     const pool = getAppDb()
     let r
     try {
-      r = await pool.query(`SELECT id, name, description, variables, dynamic_columns, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`, [userId])
+      r = await pool.query(`SELECT id, name, description, variables, dynamic_columns, calc_items, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`, [userId])
     } catch (e: any) {
       const msg = String(e?.message || e)
-      if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
-        // fallback w/o dynamic columns
+      if ((/dynamic_columns/i.test(msg) || /calc_items/i.test(msg)) && /does not exist|column/i.test(msg)) {
+        // fallback w/o new columns
         r = await pool.query(`SELECT id, name, description, variables, created_at, updated_at FROM ${tableName()} WHERE user_id = $1 AND is_archived = FALSE ORDER BY updated_at DESC`, [userId])
       } else {
         throw e
@@ -105,7 +121,8 @@ export async function GET() {
       name: String(x.name),
       description: x.description ? String(x.description) : null,
       variables: Array.isArray(x.variables) ? x.variables : [],
-      dynamicColumns: Array.isArray(x.dynamic_columns) ? x.dynamic_columns : [],
+      dynamicColumns: Array.isArray((x as any).dynamic_columns) ? (x as any).dynamic_columns : [],
+      calcItems: Array.isArray((x as any).calc_items) ? (x as any).calc_items : [],
       createdAt: x.created_at ? new Date(String(x.created_at)).toISOString() : null,
       updatedAt: x.updated_at ? new Date(String(x.updated_at)).toISOString() : null,
     }))
@@ -143,14 +160,17 @@ export async function POST(req: Request) {
       }
     } catch {}
     const id = randomUUID()
-    const { name, description, sql, variables, dynamicColumns } = parsed.data
+    const { name, description, sql, variables, dynamicColumns, calcItems } = parsed.data
     try {
-      const q = `INSERT INTO ${tableName()} (id, user_id, name, description, sql, variables, dynamic_columns) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-      await pool.query(q, [id, userId, name, description ?? null, sql, JSON.stringify(variables), JSON.stringify(dynamicColumns)])
+      const q = `INSERT INTO ${tableName()} (id, user_id, name, description, sql, variables, dynamic_columns, calc_items) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+      await pool.query(q, [id, userId, name, description ?? null, sql, JSON.stringify(variables), JSON.stringify(dynamicColumns), JSON.stringify(calcItems)])
     } catch (e: any) {
       const msg = String(e?.message || e)
       if (/dynamic_columns/i.test(msg) && /does not exist|column/i.test(msg)) {
         return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddDynCols() }, { status: 501 })
+      }
+      if (/calc_items/i.test(msg) && /does not exist|column/i.test(msg)) {
+        return NextResponse.json({ error: 'feature_not_initialized', suggestedSQL: renderAlterAddCalcItems() }, { status: 501 })
       }
       throw e
     }

@@ -15,6 +15,10 @@ describe('saved-sql import/export schema', () => {
             { name: 'from', type: 'timestamp', required: true },
           ],
           dynamicColumns: [{ name: 'fullName', code: 'return `${row.first_name} ${row.last_name}`' }],
+          calcItems: [
+            { name: 'total_users', type: 'sql', code: 'select count(*) as total from ({{_sql}}) t' },
+            { name: 'sum_score', type: 'js', code: '(vars, rows) => rows.reduce((s,r)=>s+(r.score||0),0)' },
+          ],
         },
       ],
     }
@@ -26,6 +30,7 @@ describe('saved-sql import/export schema', () => {
       expect(items[0].name).toContain('top_users')
       expect(items[0].variables[0].name).toBe('from')
       expect(items[0].dynamicColumns?.[0].name).toBe('fullName')
+      expect(items[0].calcItems?.[0].name).toBe('total_users')
     }
   })
 
@@ -47,4 +52,3 @@ describe('saved-sql import/export schema', () => {
     expect(parsed.ok).toBe(false)
   })
 })
-

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { SavedQueryVariableDef, DynamicColumnDef } from '@rei-db-view/types/appdb'
+import type { SavedQueryVariableDef, DynamicColumnDef, CalcItemDef } from '@rei-db-view/types/appdb'
 
 // File format v1
 export const SavedQueriesExportSchema = z.object({
@@ -31,6 +31,16 @@ export const SavedQueriesExportSchema = z.object({
         )
         .default([])
         .optional(),
+      calcItems: z
+        .array(
+          z.object({
+            name: z.string().min(1).max(64),
+            type: z.enum(['sql', 'js']),
+            code: z.string().min(1),
+          })
+        )
+        .default([])
+        .optional(),
     })
   ),
 })
@@ -58,6 +68,7 @@ export type ImportItem = {
   sql: string
   variables: SavedQueryVariableDef[]
   dynamicColumns?: DynamicColumnDef[]
+  calcItems?: CalcItemDef[]
 }
 
 export function normalizeImportItems(data: SavedQueriesExport): ImportItem[] {
@@ -67,5 +78,6 @@ export function normalizeImportItems(data: SavedQueriesExport): ImportItem[] {
     sql: it.sql,
     variables: Array.isArray(it.variables) ? it.variables : [],
     dynamicColumns: Array.isArray(it.dynamicColumns) ? it.dynamicColumns : [],
+    calcItems: Array.isArray(it.calcItems) ? it.calcItems : [],
   }))
 }
