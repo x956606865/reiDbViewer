@@ -57,6 +57,8 @@ import { VariablesEditor } from '../../components/queries/VariablesEditor';
 import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
 import { CalcItemsEditor } from '../../components/queries/CalcItemsEditor';
 import { PaginationSettings } from '../../components/queries/PaginationSettings';
+import { RunActionsBar } from '../../components/queries/RunActionsBar';
+import { SqlPreviewPanel } from '../../components/queries/SqlPreviewPanel';
 import { useCurrentConnId } from '@/lib/current-conn';
 import {
   parseSavedQueriesExport,
@@ -1981,90 +1983,19 @@ export default function SavedQueriesPage() {
                   />
                   {/* 首次执行自动计算一次总数；可在结果上方点击“刷新总数”手动更新 */}
                 </Group>
-                <Group mt="sm">
-                  <Button onClick={() => onPreview()} variant="light">
-                    预览 SQL
-                  </Button>
-                  <Button onClick={() => onExecute()} loading={isExecuting}>
-                    执行
-                  </Button>
-                  <Button
-                    onClick={() => onExplain()}
-                    variant="default"
-                    loading={isExecuting}
-                  >
-                    Explain
-                  </Button>
-                  <Select
-                    data={[
-                      { value: 'text', label: 'TEXT' },
-                      { value: 'json', label: 'JSON' },
-                    ]}
-                    value={explainFormat}
-                    onChange={(v) => setExplainFormat((v as any) || 'text')}
-                    w={120}
-                  />
-                  <Group gap="xs" align="center">
-                    <Switch
-                      checked={explainAnalyze}
-                      onChange={(e) =>
-                        setExplainAnalyze(e.currentTarget.checked)
-                      }
-                      label="ANALYZE"
-                    />
-                    <Tooltip
-                      label={
-                        <div>
-                          <div>
-                            <b>EXPLAIN</b>：仅显示计划（估算的 cost/rows）。
-                          </div>
-                          <div>
-                            <b>EXPLAIN ANALYZE</b>
-                            ：真实执行并返回实际行数/耗时等。
-                          </div>
-                          <div style={{ marginTop: 6 }}>
-                            本应用仅允许在只读 SQL 上使用
-                            ANALYZE；写语句将被拒绝。
-                          </div>
-                        </div>
-                      }
-                      withArrow
-                      multiline
-                      w={360}
-                      position="bottom"
-                    >
-                      <ActionIcon
-                        variant="subtle"
-                        color="gray"
-                        aria-label="Explain Analyze 帮助"
-                      >
-                        <IconHelpCircle size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Group>
-                </Group>
+                <RunActionsBar
+                  onPreview={() => onPreview()}
+                  onExecute={() => onExecute()}
+                  onExplain={() => onExplain()}
+                  isExecuting={isExecuting}
+                  explainFormat={explainFormat}
+                  setExplainFormat={setExplainFormat}
+                  explainAnalyze={explainAnalyze}
+                  setExplainAnalyze={setExplainAnalyze}
+                />
               </Paper>
 
-              <Paper
-                withBorder
-                p="sm"
-                style={{ position: 'relative' }}
-                ref={sqlPreviewRef}
-              >
-                <LoadingOverlay
-                  visible={isPreviewing}
-                  zIndex={1000}
-                  overlayProps={{ radius: 'sm', blur: 2 }}
-                />
-                <Title order={4}>SQL</Title>
-                <Paper withBorder p="sm" mt="xs">
-                  <ScrollArea h={180}>
-                    <Code block>
-                      {previewSQL || '（点击“预览 SQL”或“执行”）'}
-                    </Code>
-                  </ScrollArea>
-                </Paper>
-              </Paper>
+              <SqlPreviewPanel ref={sqlPreviewRef} isPreviewing={isPreviewing} previewSQL={previewSQL} />
 
               <Paper withBorder p="xs" style={{ position: 'relative' }}>
                 <LoadingOverlay
