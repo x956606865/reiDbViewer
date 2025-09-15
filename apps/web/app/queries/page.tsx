@@ -1220,72 +1220,7 @@ export default function SavedQueriesPage() {
                 setRunValues={setRunValues}
               />
 
-              <PaginationSettings
-                pgEnabled={pgEnabled}
-                setPgEnabled={setPgEnabled}
-                pgSize={pgSize}
-                setPgSize={(n) => setPgSize(n)}
-                pgPage={pgPage}
-                setPgPage={(n) => setPgPage(n)}
-                resetCounters={() => {
-                  setPgTotalRows(null);
-                  setPgTotalPages(null);
-                  setPgCountLoaded(false);
-                }}
-              />
-
-              <Paper withBorder p="md">
-                <Group mt="sm">
-                  <Button onClick={() => onPreview()} variant="light">
-                    预览 SQL
-                  </Button>
-                  <Button onClick={() => onExecute()} loading={isExecuting}>
-                    执行
-                  </Button>
-                  <Button onClick={() => onExplain()} variant="default" loading={isExecuting}>
-                    Explain
-                  </Button>
-                  <Select
-                    data={[
-                      { value: 'text', label: 'TEXT' },
-                      { value: 'json', label: 'JSON' },
-                    ]}
-                    value={explainFormat}
-                    onChange={(v) => setExplainFormat((v as any) || 'text')}
-                    w={120}
-                  />
-                  <Group gap="xs" align="center">
-                    <Switch
-                      checked={explainAnalyze}
-                      onChange={(e) => setExplainAnalyze(e.currentTarget.checked)}
-                      label="ANALYZE"
-                    />
-                    <Tooltip
-                      label={
-                        <div>
-                          <div>
-                            <b>EXPLAIN</b>：仅显示计划（估算的 cost/rows）。
-                          </div>
-                          <div>
-                            <b>EXPLAIN ANALYZE</b>：真实执行并返回实际行数/耗时等。
-                          </div>
-                          <div style={{ marginTop: 6 }}>
-                            本应用仅允许在只读 SQL 上使用 ANALYZE；写语句将被拒绝。
-                          </div>
-                        </div>
-                      }
-                      withArrow
-                      multiline
-                      w={360}
-                      position="bottom"
-                    >
-                      <ActionIcon variant="subtle" color="gray" aria-label="Explain Analyze 帮助">
-                        <IconHelpCircle size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  </Group>
-                </Group>
-              </Paper>
+              {/** 编辑模式不显示分页与执行工具条 */}
 
               {false && (
               <Paper withBorder p="md">
