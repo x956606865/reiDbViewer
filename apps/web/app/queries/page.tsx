@@ -48,30 +48,22 @@ import type {
   DynamicColumnDef,
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
+import type { SavedItem, TreeNode } from '../../components/queries/types';
 import { DataGrid } from '../../components/DataGrid';
 import { LeftDrawer } from '../../components/LeftDrawer';
+import { Tree } from '../../components/queries/Tree';
+import { SqlEditor } from '../../components/queries/SqlEditor';
+import { VariablesEditor } from '../../components/queries/VariablesEditor';
+import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
+import { CalcItemsEditor } from '../../components/queries/CalcItemsEditor';
+import { PaginationSettings } from '../../components/queries/PaginationSettings';
 import { useCurrentConnId } from '@/lib/current-conn';
 import {
   parseSavedQueriesExport,
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export';
 
-type SavedItem = {
-  id: string;
-  name: string;
-  description?: string | null;
-  variables: SavedQueryVariableDef[];
-  createdAt?: string | null;
-  updatedAt?: string | null;
-};
-
-type TreeNode = {
-  type: 'folder' | 'item';
-  name: string;
-  path: string; // for folder: folder path; for item: its full name (may include folder path)
-  children?: TreeNode[];
-  item?: SavedItem;
-};
+// Types moved to components/queries/types
 
 const VAR_TYPES: Array<{
   value: SavedQueryVariableDef['type'];
@@ -1198,40 +1190,100 @@ export default function SavedQueriesPage() {
                 </Group>
               </Paper>
 
+              <SqlEditor
+                sql={sql}
+                onChange={setSql}
+                onDetectVars={onDetectVars}
+                onAddVar={onAddVar}
+              />
+
+              {/* Extracted editors */}
+              <VariablesEditor
+                vars={vars}
+                setVars={setVars}
+                runValues={runValues}
+                setRunValues={setRunValues}
+                onRemoveVar={onRemoveVar}
+                userConnId={userConnId}
+              />
+
+              <DynamicColumnsEditor dynCols={dynCols} setDynCols={setDynCols} />
+
+              <CalcItemsEditor
+                calcItems={calcItems}
+                setCalcItems={setCalcItems}
+                vars={vars}
+                setRunValues={setRunValues}
+              />
+
+              <PaginationSettings
+                pgEnabled={pgEnabled}
+                setPgEnabled={setPgEnabled}
+                pgSize={pgSize}
+                setPgSize={(n) => setPgSize(n)}
+                pgPage={pgPage}
+                setPgPage={(n) => setPgPage(n)}
+                resetCounters={() => {
+                  setPgTotalRows(null);
+                  setPgTotalPages(null);
+                  setPgCountLoaded(false);
+                }}
+              />
+
               <Paper withBorder p="md">
-                <Title order={4}>SQL</Title>
-                <Textarea
-                  mt="sm"
-                  value={sql}
-                  onChange={(e) => setSql(e.currentTarget.value)}
-                  autosize
-                  minRows={8}
-                  styles={{
-                    input: {
-                      fontFamily: 'var(--mantine-font-family-monospace)',
-                    },
-                  }}
-                />
-                <Group gap="xs" mt="xs">
-                  <Button
-                    size="xs"
-                    leftSection={<IconScan size={14} />}
-                    variant="light"
-                    onClick={onDetectVars}
-                  >
-                    从 SQL 提取变量
+                <Group mt="sm">
+                  <Button onClick={() => onPreview()} variant="light">
+                    预览 SQL
                   </Button>
-                  <Button
-                    size="xs"
-                    leftSection={<IconPlus size={14} />}
-                    variant="light"
-                    onClick={onAddVar}
-                  >
-                    新增变量
+                  <Button onClick={() => onExecute()} loading={isExecuting}>
+                    执行
                   </Button>
+                  <Button onClick={() => onExplain()} variant="default" loading={isExecuting}>
+                    Explain
+                  </Button>
+                  <Select
+                    data={[
+                      { value: 'text', label: 'TEXT' },
+                      { value: 'json', label: 'JSON' },
+                    ]}
+                    value={explainFormat}
+                    onChange={(v) => setExplainFormat((v as any) || 'text')}
+                    w={120}
+                  />
+                  <Group gap="xs" align="center">
+                    <Switch
+                      checked={explainAnalyze}
+                      onChange={(e) => setExplainAnalyze(e.currentTarget.checked)}
+                      label="ANALYZE"
+                    />
+                    <Tooltip
+                      label={
+                        <div>
+                          <div>
+                            <b>EXPLAIN</b>：仅显示计划（估算的 cost/rows）。
+                          </div>
+                          <div>
+                            <b>EXPLAIN ANALYZE</b>：真实执行并返回实际行数/耗时等。
+                          </div>
+                          <div style={{ marginTop: 6 }}>
+                            本应用仅允许在只读 SQL 上使用 ANALYZE；写语句将被拒绝。
+                          </div>
+                        </div>
+                      }
+                      withArrow
+                      multiline
+                      w={360}
+                      position="bottom"
+                    >
+                      <ActionIcon variant="subtle" color="gray" aria-label="Explain Analyze 帮助">
+                        <IconHelpCircle size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
                 </Group>
               </Paper>
 
+              {false && (
               <Paper withBorder p="md">
                 <Title order={4}>变量定义</Title>
                 {/** 当存在 enum 类型变量时，增加“枚举选项”列 */}
@@ -1627,6 +1679,7 @@ export default function SavedQueriesPage() {
                   </Button>
                 </Group>
               </Paper>
+              )}
 
               <Paper withBorder p="md">
                 <Title order={4}>计算数据</Title>
@@ -2282,140 +2335,4 @@ export default function SavedQueriesPage() {
   );
 }
 
-const Tree = React.memo(function Tree({
-  nodes,
-  expanded,
-  onToggle,
-  onOpenItem,
-  onEditItem,
-  onDeleteItem,
-}: {
-  nodes: TreeNode[];
-  expanded: Set<string>;
-  onToggle: (path: string) => void;
-  onOpenItem: (it: SavedItem) => void;
-  onEditItem: (it: SavedItem) => void;
-  onDeleteItem: (it: SavedItem) => void;
-}) {
-  return (
-    <div>
-      {nodes.map((n) => (
-        <TreeRow
-          key={n.type + ':' + n.path}
-          node={n}
-          depth={0}
-          expanded={expanded}
-          onToggle={onToggle}
-          onOpenItem={onOpenItem}
-          onEditItem={onEditItem}
-          onDeleteItem={onDeleteItem}
-        />
-      ))}
-    </div>
-  );
-});
-
-const TreeRow = React.memo(function TreeRow({
-  node,
-  depth,
-  expanded,
-  onToggle,
-  onOpenItem,
-  onEditItem,
-  onDeleteItem,
-}: {
-  node: TreeNode;
-  depth: number;
-  expanded: Set<string>;
-  onToggle: (path: string) => void;
-  onOpenItem: (it: SavedItem) => void;
-  onEditItem: (it: SavedItem) => void;
-  onDeleteItem: (it: SavedItem) => void;
-}) {
-  const pad = 8 + depth * 14;
-  if (node.type === 'folder') {
-    const isOpen = expanded.has(node.path);
-    return (
-      <div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '2px 4px',
-            cursor: 'pointer',
-          }}
-          onClick={() => onToggle(node.path)}
-        >
-          <span style={{ width: pad }} />
-          {isOpen ? (
-            <IconChevronDown size={14} />
-          ) : (
-            <IconChevronRight size={14} />
-          )}
-          <IconFolder size={14} />
-          <Text>{node.name}</Text>
-        </div>
-        {isOpen &&
-          node.children &&
-          node.children.map((c) => (
-            <TreeRow
-              key={c.type + ':' + c.path}
-              node={c}
-              depth={depth + 1}
-              expanded={expanded}
-              onToggle={onToggle}
-              onOpenItem={onOpenItem}
-              onEditItem={onEditItem}
-              onDeleteItem={onDeleteItem}
-            />
-          ))}
-      </div>
-    );
-  }
-  // item
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '2px 4px',
-      }}
-    >
-      <span style={{ width: pad }} />
-      <IconFileText size={14} />
-      <a
-        onClick={() => node.item && onOpenItem(node.item)}
-        style={{ cursor: 'pointer', flex: 1 }}
-      >
-        {node.name}
-      </a>
-      {node.item && (
-        <>
-          <ActionIcon
-            variant="light"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditItem?.(node.item!);
-            }}
-            title="编辑"
-          >
-            <IconPencil size={14} />
-          </ActionIcon>
-          <ActionIcon
-            color="red"
-            variant="light"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDeleteItem(node.item!);
-            }}
-            title="删除"
-          >
-            <IconTrash size={14} />
-          </ActionIcon>
-        </>
-      )}
-    </div>
-  );
-});
+// Tree moved to components/queries/Tree
