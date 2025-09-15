@@ -49,7 +49,6 @@ import type {
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
 import type { SavedItem, TreeNode } from '../../components/queries/types';
-import { DataGrid } from '../../components/DataGrid';
 import { SqlEditor } from '../../components/queries/SqlEditor';
 import { VariablesEditor } from '../../components/queries/VariablesEditor';
 import { DynamicColumnsEditor } from '../../components/queries/DynamicColumnsEditor';
@@ -70,21 +69,6 @@ import {
 } from '@/lib/saved-sql-import-export';
 
 // Types moved to components/queries/types
-
-const VAR_TYPES: Array<{
-  value: SavedQueryVariableDef['type'];
-  label: string;
-}> = [
-  { value: 'text', label: 'text' },
-  { value: 'number', label: 'number' },
-  { value: 'boolean', label: 'boolean' },
-  { value: 'date', label: 'date' },
-  { value: 'timestamp', label: 'timestamp' },
-  { value: 'json', label: 'json' },
-  { value: 'uuid', label: 'uuid' },
-  { value: 'raw', label: 'raw' },
-  { value: 'enum', label: 'enum' },
-];
 
 export default function SavedQueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -1105,7 +1089,8 @@ export default function SavedQueriesPage() {
 
               {/** 编辑模式不显示分页与执行工具条 */}
 
-              {false && (
+              {/* legacy inline editor removed */}
+              {/*
               <Paper withBorder p="md">
                 <Title order={4}>变量定义</Title>
                 {/** 当存在 enum 类型变量时，增加“枚举选项”列 */}
@@ -1501,7 +1486,7 @@ export default function SavedQueriesPage() {
                   </Button>
                 </Group>
               </Paper>
-              )}
+              */}
 
               <Paper withBorder p="md">
                 <Title order={4}>计算数据</Title>
