@@ -130,8 +130,8 @@
 >
 > - `apps/desktop` 脚手架已创建（Vite + React + Mantine），基础布局与导航就绪。
 > - 集成 `tauri-plugin-sql`（features: sqlite, postgres）并注册本地 SQLite 迁移（4 张表）。
-> - 配置最小权限能力：`capabilities/default.json` 与 `capabilities/sql.json` 仅开放必要的 core 与 SQL 读权限。
-> - 分支尚未从 `main` 切出，建议后续迁移至 `feat/tauri-edition` 以隔离变更。
+> - 权限最小化已落实：`capabilities/default.json` 基线能力；`capabilities/sql.json` 仅开放 SQL 插件必要能力（包含 `allow-execute` 以支持本地 SQLite 迁移与写入；对 PostgreSQL 的只读约束通过应用层语法检查与 LIMIT 强制实现）。
+> - 当前分支：`feat/tauri-edition`（已从主线切出并开展开发）。
 
 - M0 基线分支与脚手架
   - [x] 建立分支 `feat/tauri-edition`（不改动现有 Web 主线）。【已在 `feat/tauri-edition` 分支】
@@ -140,9 +140,11 @@
   - [x] 前端基础壳：主题、布局、导航、窗口权限最小化。
 
 - M1 本地存储与连接管理
-  - [ ] 实现 `keyring` 读写，并在 SQLite 中保存 `dsn_key_ref`。
-  - [ ] 连接管理 UI：新增/编辑/测试连接，Zod 校验（协议/端口/TLS 建议）。
-  - [ ] 单测：DSN 校验与秘钥读写（模拟）。
+  - [x] 实现 `keyring` 读写，并在 SQLite 中保存 `dsn_key_ref`。
+  - [x] 连接管理 UI：新增/测试连接（含 TLS 使用建议）。
+  - [ ] 连接管理 UI：编辑连接与别名（待补）。
+  - [ ] 输入校验：改用 Zod 进行 DSN/表单校验（当前为轻量校验函数）。
+  - [~] 单测：已覆盖 DSN 校验；秘钥读写（使用模拟）待补。
 
 - M2 Schema Explorer
   - [ ] 复用 `packages/introspect` 结构，设计/实现 PG 自省 SQL。
