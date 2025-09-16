@@ -35,7 +35,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Configure macOS signing environment
-        if: runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != ''
+        if: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != '' }}
         shell: bash
         run: |
           write_secret() {
@@ -64,7 +64,7 @@ jobs:
           write_secret "APPLE_NOTARIZE_TEAM_ID" "${{ secrets.APPLE_NOTARIZE_TEAM_ID }}"
 
       - name: Configure Windows signing environment
-        if: runner.os == 'Windows' && secrets.TAURI_SIGNING_PRIVATE_KEY != ''
+        if: ${{ runner.os == 'Windows' && secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         shell: bash
         run: |
           write_secret() {
