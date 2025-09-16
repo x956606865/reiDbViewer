@@ -78,6 +78,7 @@ export const SavedQueriesExportSchema = z.object({
             name: z.string().min(1).max(64),
             type: z.enum(['sql', 'js']),
             code: z.string().min(1),
+            runMode: z.enum(['always', 'initial', 'manual']).default('manual'),
           })
         )
         .default([])

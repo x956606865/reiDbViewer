@@ -60,4 +60,5 @@ export interface CalcItemDef {
   name: string
   type: 'sql' | 'js'
   code: string // if type=js: function body Signature: (vars, rows, helpers) => any; if type=sql: SQL text supporting {{vars}} and special {{_sql}}
+  runMode?: 'always' | 'initial' | 'manual'
 }

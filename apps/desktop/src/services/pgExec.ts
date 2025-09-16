@@ -355,7 +355,7 @@ export async function computeCalcSql(opts: CalcOptions): Promise<CalcResult> {
   const finalSql = `with rdv_base as ( ${shiftParamPlaceholders(baseCompiled.text, calcCompiled.values.length)} ) ${calcCompiled.text}`
   const finalParams = [...calcCompiled.values, ...baseCompiled.values]
   const dsn = await getDsnForConn(opts.userConnId)
-  const rows = await runReadonly<Array<Record<string, unknown>>>(dsn, async (db) => {
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
     return await db.select<Array<Record<string, unknown>>>(finalSql, finalParams)
   })
   return {

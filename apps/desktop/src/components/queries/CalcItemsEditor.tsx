@@ -45,6 +45,7 @@ export function CalcItemsEditor({
           <Table.Tr>
             <Table.Th w={220}>名称</Table.Th>
             <Table.Th w={120}>类型</Table.Th>
+            <Table.Th w={140}>执行模式</Table.Th>
             <Table.Th>代码</Table.Th>
             <Table.Th w={60}>操作</Table.Th>
           </Table.Tr>
@@ -52,7 +53,7 @@ export function CalcItemsEditor({
         <Table.Tbody>
           {calcItems.length === 0 && (
             <Table.Tr>
-              <Table.Td colSpan={4}>
+              <Table.Td colSpan={5}>
                 <Text c="dimmed">暂无计算数据</Text>
               </Table.Td>
             </Table.Tr>
@@ -78,6 +79,23 @@ export function CalcItemsEditor({
                   onChange={(v) =>
                     setCalcItems((arr) =>
                       arr.map((x, idx) => (idx === i ? { ...x, type: (v as any) || "sql" } : x))
+                    )
+                  }
+                />
+              </Table.Td>
+              <Table.Td>
+                <Select
+                  data={[
+                    { value: "always", label: "完全" },
+                    { value: "initial", label: "首次拉取" },
+                    { value: "manual", label: "手动" },
+                  ]}
+                  value={ci.runMode ?? 'manual'}
+                  onChange={(v) =>
+                    setCalcItems((arr) =>
+                      arr.map((x, idx) =>
+                        idx === i ? { ...x, runMode: ((v as any) ?? 'manual') as 'always' | 'initial' | 'manual' } : x
+                      )
                     )
                   }
                 />
@@ -115,6 +133,7 @@ export function CalcItemsEditor({
                 name: `calc_${arr.length + 1}`,
                 type: "sql",
                 code: "select count(*) as total from ({{_sql}}) t",
+                runMode: 'manual',
               },
             ])
           }

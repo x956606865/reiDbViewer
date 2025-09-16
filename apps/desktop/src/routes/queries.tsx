@@ -40,6 +40,7 @@ import {
   previewSavedSql,
   executeSavedSql,
   explainSavedSql,
+  computeCalcSql,
   QueryError,
 } from '@/services/pgExec';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
@@ -97,6 +98,9 @@ export default function QueriesPage() {
   const [calcResults, setCalcResults] = useState<
     Record<string, { loading?: boolean; value?: any; error?: string }>
   >({});
+  const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
+  const lastExecSignatureRef = useRef<string | null>(null);
+  const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState(false);
   const userConnId = useCurrentConnIdState();
@@ -168,6 +172,15 @@ export default function QueriesPage() {
     } catch {}
   }, [extraFolders]);
 
+  useEffect(() => {
+    calcAutoTriggeredRef.current = {};
+    lastExecSignatureRef.current = null;
+  }, [currentId]);
+
+  useEffect(() => {
+    calcAutoTriggeredRef.current = {};
+  }, [calcItems]);
+
   const currentConn = useMemo(() => {
     if (!userConnId) return null;
     return connItems.find((x) => x.id === userConnId) || null;
@@ -226,6 +239,8 @@ export default function QueriesPage() {
     setCalcResults({});
     setTextResult(null);
     setInfo('已切换为新建模式。');
+    calcAutoTriggeredRef.current = {};
+    lastExecSignatureRef.current = null;
   };
 
   const loadAndOpen = useCallback(
@@ -245,7 +260,11 @@ export default function QueriesPage() {
         for (const v of varDefs) defaults[v.name] = v.default ?? '';
         setRunValues(defaults);
         setDynCols(res.dynamicColumns || []);
-        setCalcItems(res.calcItems || []);
+        const normalizedCalcItems = (res.calcItems || []).map((item) => ({
+          ...item,
+          runMode: item.runMode ?? 'manual',
+        }));
+        setCalcItems(normalizedCalcItems);
         setPreviewSQL('');
         setRows([]);
         setGridCols([]);
@@ -256,6 +275,8 @@ export default function QueriesPage() {
         setPgCountLoaded(false);
         setCalcResults({});
         setMode(focusMode);
+        calcAutoTriggeredRef.current = {};
+        lastExecSignatureRef.current = null;
       } catch (e: any) {
         setError(String(e?.message || e));
       }
@@ -409,6 +430,41 @@ export default function QueriesPage() {
         setPgTotalPages(null);
         setPgCountLoaded(false);
       }
+
+      const resultRows = res.rows;
+      const pageSizeForAuto = res.pageSize ?? pagination.pageSize;
+      const isPagination = typeof override?.page === 'number';
+      if (!isPagination && override?.pageSize === undefined) {
+        const signature = JSON.stringify({
+          id: currentId ?? '',
+          values: runValues,
+        });
+        if (lastExecSignatureRef.current !== signature) {
+          calcAutoTriggeredRef.current = {};
+        }
+        lastExecSignatureRef.current = signature;
+      }
+
+      const autoItems: CalcItemDef[] = [];
+      for (const ci of runtimeCalcItemsRef.current) {
+        const mode = ci.runMode ?? 'manual';
+        if (mode === 'manual') continue;
+        if (mode === 'initial') {
+          if (isPagination) continue;
+          if (calcAutoTriggeredRef.current[ci.name]) continue;
+          calcAutoTriggeredRef.current[ci.name] = true;
+          autoItems.push(ci);
+        } else if (mode === 'always') {
+          autoItems.push(ci);
+        }
+      }
+      for (const ci of autoItems) {
+        await runCalcItem(ci, {
+          source: 'auto',
+          rowsOverride: ci.type === 'js' ? resultRows : undefined,
+          pageSizeOverride: pageSizeForAuto,
+        });
+      }
     } catch (e: any) {
       if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
         setPreviewSQL(e.previewInline || '');
@@ -549,6 +605,15 @@ export default function QueriesPage() {
     });
   };
 
+  const onUpdateTotals = useCallback(
+    (totalRows: number | null, totalPages: number | null) => {
+      setPgTotalRows(totalRows);
+      setPgTotalPages(totalPages);
+      setPgCountLoaded(totalRows != null);
+    },
+    []
+  );
+
   const runtimeCalcItems = useMemo(() => {
     const base: CalcItemDef[] = [];
     if (pgEnabled) {
@@ -556,19 +621,134 @@ export default function QueriesPage() {
         name: '__total_count__',
         type: 'sql',
         code: 'select count(*)::bigint as total from ({{_sql}}) t',
+        runMode: 'manual',
       });
     }
-    return [...base, ...calcItems];
+    return [
+      ...base,
+      ...calcItems.map((ci) => ({
+        ...ci,
+        runMode: ci.runMode ?? 'manual',
+      })),
+    ];
   }, [calcItems, pgEnabled]);
 
-  const onUpdateTotals = (
-    totalRows: number | null,
-    totalPages: number | null
-  ) => {
-    setPgTotalRows(totalRows);
-    setPgTotalPages(totalPages);
-    setPgCountLoaded(totalRows != null);
-  };
+  useEffect(() => {
+    runtimeCalcItemsRef.current = runtimeCalcItems;
+  }, [runtimeCalcItems]);
+
+  const runCalcItem = useCallback(
+    async (
+      ci: CalcItemDef,
+      opts?: {
+        source?: 'auto' | 'manual';
+        rowsOverride?: Array<Record<string, unknown>>;
+        pageSizeOverride?: number;
+      }
+    ) => {
+      const key = ci.name;
+      const effectiveRows = opts?.rowsOverride ?? rows;
+      const pageSizeForCount = opts?.pageSizeOverride ?? pgSize;
+      setCalcResults((s) => ({
+        ...s,
+        [key]: { ...s[key], loading: true, error: undefined },
+      }));
+      try {
+        if (ci.type === 'sql') {
+          if (!currentId) throw new Error('请先保存/选择查询');
+          if (!userConnId) throw new Error('未设置当前连接');
+          const res = await computeCalcSql({
+            savedId: currentId,
+            values: runValues,
+            userConnId,
+            calcSql: ci.code,
+          });
+          const rowsRes = Array.isArray(res.rows) ? res.rows : [];
+          if (ci.name === '__total_count__') {
+            let num: number | null = null;
+            if (rowsRes[0]) {
+              const v =
+                (rowsRes[0] as any).total ??
+                (rowsRes[0] as any).count ??
+                Object.values(rowsRes[0])[0];
+              const n =
+                typeof v === 'string'
+                  ? Number(v)
+                  : typeof v === 'number'
+                  ? v
+                  : null;
+              num = Number.isFinite(n as number) ? (n as number) : null;
+            }
+            if (num === null)
+              throw new Error('返回格式不符合预期，应包含 total/count');
+            const normalizedPageSize = Math.max(
+              1,
+              Number.isFinite(pageSizeForCount)
+                ? Number(pageSizeForCount)
+                : pgSize
+            );
+            const totalPages =
+              num != null && normalizedPageSize > 0
+                ? Math.max(1, Math.ceil(num / normalizedPageSize))
+                : null;
+            onUpdateTotals(num, totalPages);
+            setCalcResults((s) => ({
+              ...s,
+              [key]: { value: num, loading: false },
+            }));
+          } else {
+            let display: any = null;
+            if (rowsRes.length === 0) display = null;
+            else if (rowsRes.length === 1) {
+              const cols = res.columns?.length
+                ? res.columns
+                : Object.keys(rowsRes[0] || {});
+              display = cols.length === 1 ? (rowsRes[0] as any)[cols[0] as any] : rowsRes[0];
+            } else display = rowsRes;
+            setCalcResults((s) => ({
+              ...s,
+              [key]: { value: display, loading: false },
+            }));
+          }
+        } else {
+          const helpers = {
+            fmtDate: (v: any) => (v ? new Date(v).toISOString() : ''),
+            json: (v: any) => JSON.stringify(v),
+            sumBy: (arr: any[], sel: (r: any) => number) =>
+              arr.reduce((sum, row) => sum + (Number(sel(row)) || 0), 0),
+            avgBy: (arr: any[], sel: (r: any) => number) => {
+              const values = arr
+                .map(sel)
+                .map(Number)
+                .filter((n) => Number.isFinite(n));
+              return values.length
+                ? values.reduce((sum, n) => sum + n, 0) / values.length
+                : 0;
+            },
+          };
+          // eslint-disable-next-line no-new-func
+          const fn = new Function(
+            'vars',
+            'rows',
+            'helpers',
+            `"use strict"; return ( ${ci.code} )(vars, rows, helpers)`
+          ) as any;
+          const val = fn(runValues, effectiveRows, helpers);
+          setCalcResults((s) => ({
+            ...s,
+            [key]: { value: val, loading: false },
+          }));
+        }
+      } catch (e: any) {
+        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
+        setCalcResults((s) => ({
+          ...s,
+          [key]: { ...s[key], error: msg, loading: false },
+        }));
+      }
+    },
+    [currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
+  );
 
   return (
     <Stack gap="md" style={{ position: 'relative', height: '100%' }}>
@@ -711,8 +891,7 @@ export default function QueriesPage() {
                 rows={rows}
                 runtimeCalcItems={runtimeCalcItems}
                 calcResults={calcResults}
-                setCalcResults={setCalcResults}
-                currentId={currentId}
+                onRunCalc={(ci) => runCalcItem(ci)}
                 onUpdateTotal={onUpdateTotals}
               />
             )}
