@@ -49,7 +49,14 @@ export default function ConnectionSwitcher() {
       clearable
       allowDeselect
       checkIconPosition="right"
-      styles={{ root: { width: 220 } }}
+      size="xs"
+      variant="default"
+      styles={{
+        root: { width: 220 },
+        input: {
+          backgroundColor: 'var(--mantine-color-gray-1)',
+        },
+      }}
     />
   )
 }
