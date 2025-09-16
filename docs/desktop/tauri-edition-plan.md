@@ -126,12 +126,15 @@
 
 ## 八、里程碑与 TODO（Test First）
 
-> 进度小结（截至 2025-09-15）
+> 进度小结（截至 2025-09-16）
 >
 > - `apps/desktop` 脚手架已创建（Vite + React + Mantine），基础布局与导航就绪。
 > - 集成 `tauri-plugin-sql`（features: sqlite, postgres）并注册本地 SQLite 迁移（4 张表）。
 > - 权限最小化已落实：`capabilities/default.json` 基线能力；`capabilities/sql.json` 仅开放 SQL 插件必要能力（包含 `allow-execute` 以支持本地 SQLite 迁移与写入；对 PostgreSQL 的只读约束通过应用层语法检查与 LIMIT 强制实现）。
 > - 当前分支：`feat/tauri-edition`（已从主线切出并开展开发）。
+> - M2（Schema Explorer）进展：已实现 PG 自省（columns/PK/FK + 合成 DDL）、本地 `schema_cache` 读写与“手动刷新”，完成 Schema/表列表与索引详情 UI；“自省 SQL 生成与结果映射的单测”待补。
+> - M3（表数据浏览）进展：已完成 AST→SQL 构建（复用 `packages/types` 与 `packages/query-engine`）、SmartGrid 排序/筛选与 JSONCell 渲染、基本分页与 SQL 预览；只读执行器已提供“只读语句校验 + LIMIT 强制”，事务与超时（SET LOCAL）待补；组件测试待补。
+- M4（Saved SQL）进展：桌面端已接入 `sql-template` / `saved-sql-import-export` 与 `savedSql`/`pgExec` 服务，`routes/queries.tsx` 完成执行、分页、Explain、动态列与导入导出联调；对于可能写操作，已在 UI 层弹窗确认；SQLite 建表脚本与相关 Vitest 仍缺失。
 
 - M0 基线分支与脚手架
   - [x] 建立分支 `feat/tauri-edition`（不改动现有 Web 主线）。【已在 `feat/tauri-edition` 分支】
@@ -147,20 +150,20 @@
   - [~] 单测：已覆盖 DSN 校验；秘钥读写（使用模拟）待补。
 
 - M2 Schema Explorer
-  - [ ] 复用 `packages/introspect` 结构，设计/实现 PG 自省 SQL。
-  - [ ] `schema_cache` 读写策略（过期或手动刷新）。
-  - [ ] UI：schema/table 列表与索引详情。
+  - [x] 复用 `packages/introspect` 结构，设计/实现 PG 自省 SQL。
+  - [x] `schema_cache` 读写策略（过期或手动刷新）。
+  - [x] UI：schema/table 列表与索引详情。
   - [ ] 单测：自省 SQL 生成与结果映射。
 
 - M3 表数据浏览
-  - [ ] 复用 `packages/types` + `packages/query-engine` 构建 AST→SQL。
-  - [ ] 只读执行器封装（事务 + 超时 + LIMIT）。
-  - [ ] UI：SmartGrid（排序/筛选），JSONCell 渲染。
+  - [x] 复用 `packages/types` + `packages/query-engine` 构建 AST→SQL。
+  - [~] 只读执行器封装（事务 + 超时 + LIMIT）。
+  - [x] UI：SmartGrid（排序/筛选），JSONCell 渲染。
   - [ ] 组件测：分页/排序/筛选行为一致性。
 
 - M4 Saved SQL（模板/动态列/导入导出）
-  - [ ] 迁移 `sql-template.ts` 并加强只读守护（多语句拒绝）。
-  - [ ] `saved_sql` CRUD + 运行；导入/导出 JSON（沿用当前 schema v1）。
+  - [x] 迁移 `sql-template.ts` 并在执行写操作前弹窗确认。【`apps/desktop/src/lib/sql-template.ts` 已落地，`routes/queries.tsx` 遇到写语句时要求用户确认】
+  - [x] `saved_sql` CRUD + 运行；导入/导出 JSON（沿用当前 schema v1）。【`apps/desktop/src/services/savedSql.ts` / `pgExec.ts` 已实现并在 `routes/queries.tsx` 调用】
   - [ ] 单测：模板编译只读校验；导入规范化。
 
 - M5 运维只读查询与信号
@@ -222,6 +225,7 @@ packages/
 - [ ] 本地 SQLite 迁移：建表/迁移、存取 API、导入导出工具。
 - [ ] 连接管理：Keychain 优先，AES-GCM 兜底。
 - [ ] Schema Explorer：缓存策略 + 手动刷新。
+- [x] Schema Explorer：缓存策略 + 手动刷新。
 - [ ] 浏览页：Keyset/Offset 分页一致性（复用现有逻辑）。
 - [ ] Saved SQL：v1 JSON 兼容；动态列在客户端计算。
 - [ ] Ops：查询与信号；严格二次确认与日志。
