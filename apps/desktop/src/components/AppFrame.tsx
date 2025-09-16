@@ -16,7 +16,7 @@ type AppFrameProps = {
 
 const NAV_ITEMS = [
   { value: 'schema', label: 'Schema', icon: IconDatabase },
-  { value: 'browse', label: 'Browse', icon: IconTable },
+  // { value: 'browse', label: 'Browse', icon: IconTable },
   { value: 'queries', label: 'Queries', icon: IconCodeDots },
   { value: 'connections', label: 'Connections', icon: IconPlugConnected },
   { value: 'ops', label: 'Ops', icon: IconHeartbeat },
@@ -35,7 +35,12 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
     >
       <Group justify="space-between" align="center">
         <Group gap="md" align="center">
-          <Avatar src={appIcon} size={44} radius="md" alt="Rei DbView Desktop icon" />
+          <Avatar
+            src={appIcon}
+            size={44}
+            radius="md"
+            alt="Rei DbView Desktop icon"
+          />
           <div>
             <Title order={5}>Rei DbView Desktop</Title>
             <Text size="xs" c="dimmed">
@@ -100,9 +105,6 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
           </Tabs>
         </Group>
         <Group gap="sm" align="center">
-          <Badge size="sm" variant="outline" color="gray">
-            Desktop beta
-          </Badge>
           <ConnectionSwitcher />
         </Group>
       </Group>
