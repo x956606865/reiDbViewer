@@ -21,6 +21,60 @@
       }
     ]
   },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "msi", "nsis", "appimage", "deb"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "shortDescription": "Read-only Postgres explorer for desktop",
+    "longDescription": "reiDbView Desktop packages the read-first Postgres browsing experience as an offline Tauri application.",
+    "category": "Utility",
+    "createUpdaterArtifacts": false,
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "bundleName": "reiDbView Desktop",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "hardenedRuntime": true,
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 170
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 170
+        }
+      }
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
+      "certificateThumbprint": null,
+      "allowDowngrades": false,
+      "wix": {
+        "language": "en-US"
+      },
+      "nsis": {
+        "displayLanguageSelector": false
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libgtk-3-0",
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
   "plugins": {
     "sql": {
       "preload": ["sqlite:rdv_local.db"]

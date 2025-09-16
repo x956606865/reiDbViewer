@@ -172,13 +172,17 @@
   - [~] UI：进程/锁视图与快速过滤。【基础界面就绪（连接切换、分钟/行数筛选、结果表 + signal 操作），后续需补充更细粒度的列筛选与审计记录查看】
 
 - M6 安全与稳定性加固
-  - [ ] Tauri 权限清单最小化（仅 window、dialog、sql、fs、clipboard 等必要）。
+  - [x] 为主窗口 capability 去掉 `core:default` 聚合，仅保留 app/version、event emit/listen 以及窗口显隐/关闭权限。
+  - [x] `sql-minimal` capability 仅保留 `sql:allow-load/select/execute`。
+  - [ ] `secrets-minimal` 仅暴露 `set_secret`/`get_secret`/`delete_secret` 自定义命令。（待引入自定义 permission manifest，当前暂用 `core:default` 兜底）
+  - [ ] `pnpm --filter @rei-db-view/desktop tauri dev` 自检并记录如需额外权限的日志。
   - [ ] 大 JSON 增量抓取 `/api/json/chunk` 的桌面等价（按路径+范围分页）。
   - [ ] 跨平台 TLS（Postgres 连接 `rustls` 首选，必要时 fallback `native-tls`）。
   - [ ] 崩溃恢复与错误上报（本地日志）。
 
 - M7 打包与分发
   - [ ] macOS/Windows/Linux 打包与签名配置。
+  - [~] GitHub Actions 多平台打包流水线（`desktop-bundles`，tag/手动触发 + Artifact 上传）。
   - [ ] 更新检查（可选，默认关闭；尊重离线需求）。
   - [ ] 文档与上手指引。
 
@@ -230,7 +234,7 @@ packages/
 - [ ] Saved SQL：v1 JSON 兼容；动态列在客户端计算。
 - [ ] Ops：查询与信号；严格二次确认与日志。
 - [ ] 大 JSON 抓取：分片接口与 UI 抽屉（桌面等价）。
-- [ ] 打包脚本与跨平台验证。
+- [~] 打包脚本与跨平台验证（CI 工作流 scaffold，待补本地 smoke 与签名说明）。
 
 ---
 

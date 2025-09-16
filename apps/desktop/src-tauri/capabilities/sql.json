@@ -4,7 +4,6 @@
   "description": "Allow SQL plugin load/select for main window (read-only)",
   "windows": ["main"],
   "permissions": [
-    "core:default",
     "sql:allow-load",
     "sql:allow-select",
     "sql:allow-execute"

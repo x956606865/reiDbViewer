@@ -4,8 +4,16 @@
   "description": "Baseline capability for main window",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "core:window:default",
-    "core:event:default"
+    "core:app:allow-name",
+    "core:app:allow-version",
+    "core:app:allow-tauri-version",
+    "core:app:allow-identifier",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close"
   ]
 }
