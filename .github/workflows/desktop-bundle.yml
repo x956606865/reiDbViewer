@@ -27,25 +27,66 @@ jobs:
           - runner: windows-latest
             os_label: windows
             artifact_glob: apps/desktop/src-tauri/target/release/bundle/**
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-      TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-      TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-      APPLE_PROVIDER_SHORT_NAME: ${{ secrets.APPLE_PROVIDER_SHORT_NAME }}
-      APPLE_NOTARIZE_APPLE_ID: ${{ secrets.APPLE_NOTARIZE_APPLE_ID }}
-      APPLE_NOTARIZE_PASSWORD: ${{ secrets.APPLE_NOTARIZE_PASSWORD }}
-      APPLE_NOTARIZE_TEAM_ID: ${{ secrets.APPLE_NOTARIZE_TEAM_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure macOS signing environment
+        if: runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != ''
+        shell: bash
+        run: |
+          write_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              if [ "$name" = "APPLE_CERTIFICATE" ]; then
+                {
+                  echo "${name}<<'EOF'"
+                  echo "$value"
+                  echo 'EOF'
+                } >> "$GITHUB_ENV"
+              else
+                echo "${name}=$value" >> "$GITHUB_ENV"
+              fi
+            fi
+          }
+
+          write_secret "APPLE_CERTIFICATE" "${{ secrets.APPLE_CERTIFICATE }}"
+          write_secret "APPLE_CERTIFICATE_PASSWORD" "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+          write_secret "APPLE_TEAM_ID" "${{ secrets.APPLE_TEAM_ID }}"
+          write_secret "APPLE_SIGNING_IDENTITY" "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+          write_secret "APPLE_PROVIDER_SHORT_NAME" "${{ secrets.APPLE_PROVIDER_SHORT_NAME }}"
+          write_secret "APPLE_NOTARIZE_APPLE_ID" "${{ secrets.APPLE_NOTARIZE_APPLE_ID }}"
+          write_secret "APPLE_NOTARIZE_PASSWORD" "${{ secrets.APPLE_NOTARIZE_PASSWORD }}"
+          write_secret "APPLE_NOTARIZE_TEAM_ID" "${{ secrets.APPLE_NOTARIZE_TEAM_ID }}"
+
+      - name: Configure Windows signing environment
+        if: runner.os == 'Windows' && secrets.TAURI_SIGNING_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          write_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -n "$value" ]; then
+              if [ "$name" = "TAURI_SIGNING_PRIVATE_KEY" ] || [ "$name" = "TAURI_PRIVATE_KEY" ]; then
+                {
+                  echo "${name}<<'EOF'"
+                  echo "$value"
+                  echo 'EOF'
+                } >> "$GITHUB_ENV"
+              else
+                echo "${name}=$value" >> "$GITHUB_ENV"
+              fi
+            fi
+          }
+
+          write_secret "TAURI_SIGNING_PRIVATE_KEY" "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+          write_secret "TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          write_secret "TAURI_PRIVATE_KEY" "${{ secrets.TAURI_PRIVATE_KEY }}"
+          write_secret "TAURI_KEY_PASSWORD" "${{ secrets.TAURI_KEY_PASSWORD }}"
 
       - name: Cache cargo registry
         uses: actions/cache@v4
