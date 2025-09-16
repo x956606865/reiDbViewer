@@ -16,7 +16,39 @@ function genId() {
   return 'conn_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 }
 
-export type UserConn = { id: string; alias: string; created_at?: number | null; updated_at?: number | null }
+export type UserConn = {
+  id: string
+  alias: string
+  host?: string | null
+  port?: number | null
+  database?: string | null
+  username?: string | null
+  created_at?: number | null
+  updated_at?: number | null
+}
+
+function extractConnMeta(dsn: string): {
+  host: string | null
+  port: number | null
+  database: string | null
+  username: string | null
+} {
+  try {
+    const url = new URL(dsn)
+    const host = url.hostname || null
+    const port = url.port ? Number(url.port) : 5432
+    const database = url.pathname ? url.pathname.replace(/^\//, '') || null : null
+    const username = url.username ? url.username : null
+    return {
+      host,
+      port: Number.isFinite(port) ? port : null,
+      database,
+      username,
+    }
+  } catch {
+    return { host: null, port: null, database: null, username: null }
+  }
+}
 
 // Broadcast an event so other components (e.g., ConnectionSwitcher) can refresh
 const CONNS_CHANGED_EVENT = 'rdv:user-connections-changed'
@@ -28,9 +60,27 @@ export async function listConnections(): Promise<UserConn[]> {
   const db = await openLocal()
   // @ts-ignore select is provided by the plugin
   const rows = await db.select<UserConn[]>(
-    'SELECT id, alias, created_at, updated_at FROM user_connections ORDER BY updated_at DESC'
+    'SELECT id, alias, host, port, database, username, created_at, updated_at FROM user_connections ORDER BY updated_at DESC'
   )
-  return rows
+  const enriched = await Promise.all(
+    rows.map(async (row) => {
+      if (row.host) return row
+      try {
+        const dsn = await getDsnForConn(row.id)
+        const meta = extractConnMeta(dsn)
+        return {
+          ...row,
+          host: meta.host ?? row.host ?? null,
+          port: meta.port ?? row.port ?? null,
+          database: meta.database ?? row.database ?? null,
+          username: meta.username ?? row.username ?? null,
+        }
+      } catch {
+        return row
+      }
+    })
+  )
+  return enriched
 }
 
 export async function createConnection(alias: string, dsn: string) {
@@ -46,11 +96,23 @@ export async function createConnection(alias: string, dsn: string) {
   let usedKeyring = false
   // Try to also persist to keyring (optional)
   try { await setDsnSecret(id, dsn); usedKeyring = true } catch {}
+  const meta = extractConnMeta(dsn)
+  const port = meta.port ?? 5432
   // @ts-ignore
   await db.execute(
-    `INSERT INTO user_connections (id, alias, driver, dsn_cipher, dsn_key_ref, created_at, updated_at)
-     VALUES ($1, $2, 'postgres', $3, $4, $5, $5)`,
-    [id, alias, dsnCipher, usedKeyring ? `conn:${id}` : null, t]
+    `INSERT INTO user_connections (id, alias, driver, host, port, database, username, dsn_cipher, dsn_key_ref, created_at, updated_at)
+     VALUES ($1, $2, 'postgres', $3, $4, $5, $6, $7, $8, $9, $9)`,
+    [
+      id,
+      alias,
+      meta.host,
+      port,
+      meta.database,
+      meta.username,
+      dsnCipher,
+      usedKeyring ? `conn:${id}` : null,
+      t,
+    ]
   )
   broadcastConnectionsChanged()
   return { id, storage: usedKeyring ? 'keyring' : 'sqlite-encrypted' as const }
@@ -122,10 +184,16 @@ export async function updateConnectionDsn(id: string, alias: string | null, dsn:
   const cipher = JSON.stringify(await aesEncryptString(key, dsn))
   try { await setDsnSecret(id, dsn) } catch {}
   const t = nowSec()
+  const meta = extractConnMeta(dsn)
+  const port = meta.port ?? 5432
   // @ts-ignore
   await db.execute(
-    `UPDATE user_connections SET dsn_cipher = $1, updated_at = $2${alias ? ', alias = $3' : ''} WHERE id = ${alias ? '$4' : '$3'}`,
-    alias ? [cipher, t, alias, id] : [cipher, t, id]
+    alias
+      ? `UPDATE user_connections SET dsn_cipher = $1, host = $2, port = $3, database = $4, username = $5, updated_at = $6, alias = $7 WHERE id = $8`
+      : `UPDATE user_connections SET dsn_cipher = $1, host = $2, port = $3, database = $4, username = $5, updated_at = $6 WHERE id = $7`,
+    alias
+      ? [cipher, meta.host, port, meta.database, meta.username, t, alias, id]
+      : [cipher, meta.host, port, meta.database, meta.username, t, id]
   )
   broadcastConnectionsChanged()
 }
