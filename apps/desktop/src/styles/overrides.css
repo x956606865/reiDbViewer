@@ -1,0 +1,15 @@
+/* Neutralize icon button backgrounds inside our grid container */
+.rdv-grid .mantine-ActionIcon-root {
+  background-color: transparent !important;
+  color: var(--mantine-color-dimmed) !important;
+}
+.rdv-grid .mantine-ActionIcon-root:hover,
+.rdv-grid .mantine-ActionIcon-root:active {
+  background-color: transparent !important;
+}
+
+/* Keep table head clean */
+.rdv-grid thead .mantine-ActionIcon-root {
+  background-color: transparent !important;
+}
+

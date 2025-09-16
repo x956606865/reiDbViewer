@@ -6,9 +6,9 @@
     "paths": {
       "@/lib/*": ["src/lib/*"],
       "@/components/*": ["src/components/*"],
-      "@/routes/*": ["src/routes/*"]
+      "@/routes/*": ["src/routes/*"],
+      "@/services/*": ["src/services/*"]
     }
   },
   "include": ["src"]
 }
-

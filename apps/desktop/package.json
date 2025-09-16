@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
     "@rei-db-view/introspect": "workspace:*",
     "@rei-db-view/query-engine": "workspace:*",
     "@rei-db-view/types": "workspace:*",
@@ -26,7 +27,8 @@
     "@mantine/form": "^7.13.2",
     "@emotion/react": "^11.13.0",
     "@tabler/icons-react": "^3.20.0",
-    "@tauri-apps/plugin-sql": "^2.0.0"
+    "@tauri-apps/plugin-sql": "^2.0.0",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
