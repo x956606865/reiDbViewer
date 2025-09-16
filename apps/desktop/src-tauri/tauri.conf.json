@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "reiDbView Desktop",
+        "title": "Rei DbView Desktop",
         "width": 1200,
         "height": 800,
         "minWidth": 960,
@@ -31,7 +31,7 @@
     "createUpdaterArtifacts": false,
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "bundleName": "reiDbView Desktop",
+      "bundleName": "Rei DbView Desktop",
       "signingIdentity": null,
       "providerShortName": null,
       "hardenedRuntime": true,
