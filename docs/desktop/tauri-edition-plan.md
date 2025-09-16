@@ -167,9 +167,9 @@
   - [ ] 单测：模板编译只读校验；导入规范化。
 
 - M5 运维只读查询与信号
-  - [ ] 复用 `apps/web/lib/ops/queries.ts` 生成 SQL 并执行。
-  - [ ] `pg_cancel_backend`/`pg_terminate_backend` 操作（危险操作二次确认 + 记录审计摘要到本地）。
-  - [ ] UI：进程/锁视图与快速过滤。
+  - [x] 复用 `apps/web/lib/ops/queries.ts` 生成 SQL 并执行。【新增 `packages/ops` 导出 `buildOpsQuery`，桌面端 `apps/desktop/src/services/ops.ts` 复用并通过 `withReadonlySession` 只读执行】
+  - [x] `pg_cancel_backend`/`pg_terminate_backend` 操作（危险操作二次确认 + 记录审计摘要到本地）。【`apps/desktop/src/routes/ops.tsx` 中终止动作需确认；`apps/desktop/src/services/ops.ts` 通过 `withWritableSession` 执行并写入本地 `ops_audit`（见迁移 version 2）】
+  - [~] UI：进程/锁视图与快速过滤。【基础界面就绪（连接切换、分钟/行数筛选、结果表 + signal 操作），后续需补充更细粒度的列筛选与审计记录查看】
 
 - M6 安全与稳定性加固
   - [ ] Tauri 权限清单最小化（仅 window、dialog、sql、fs、clipboard 等必要）。

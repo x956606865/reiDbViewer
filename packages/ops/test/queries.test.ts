@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildOpsQuery } from './queries'
+import { buildOpsQuery } from '../src/queries'
 
 describe('ops queries', () => {
   it('builds long_running_activity with defaults', () => {

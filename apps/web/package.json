@@ -13,6 +13,7 @@
   "dependencies": {
     "@rei-db-view/introspect": "workspace:*",
     "@rei-db-view/query-engine": "workspace:*",
+    "@rei-db-view/ops": "workspace:*",
     "@rei-db-view/types": "workspace:*",
     "@tanstack/react-query": "^5.50.0",
     "@tanstack/react-table": "^8.20.0",

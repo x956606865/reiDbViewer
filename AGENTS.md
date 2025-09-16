@@ -157,6 +157,7 @@
   - `apps/web/lib/validate-dsn.test.ts`、`apps/web/lib/ops/queries.test.ts`
   - `packages/query-engine/test/*.test.ts`（Keyset/LATERAL 草案测试）
 - 元数据 mock：`packages/introspect/src/index.ts`（`getMockSchema()` 被 `/api/schema/tables` 在未登录/未提供连接时使用）
+- 桌面端 Vitest 运行注意：使用 `nvm` 切换到 Node ≥20（例如 `source ~/.nvm/nvm.sh && nvm use 20.16.0`），并通过 `corepack pnpm test <files>` 执行；低版本 Node（14.x）会导致 `pnpm` 启动失败。
 
 ## 常用命令
 

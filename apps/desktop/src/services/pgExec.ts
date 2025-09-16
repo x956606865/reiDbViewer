@@ -1,4 +1,3 @@
-import Database from '@tauri-apps/plugin-sql'
 import { env } from '@/lib/env'
 import { getDsnForConn } from '@/lib/localStore'
 import {
@@ -8,6 +7,7 @@ import {
   renderSqlPreview,
   __test__ as sqlTestHelpers,
 } from '@/lib/sql-template'
+import { withReadonlySession, withWritableSession } from '@/lib/db-session'
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
@@ -122,44 +122,6 @@ const ensureVarsDefined = (sql: string, vars: SavedQueryVariableDef[]) => {
   }
 }
 
-const beginReadonly = async (db: any) => {
-  await db.execute('BEGIN READ ONLY')
-  const timeout = Math.max(1, Math.min(env.QUERY_TIMEOUT_DEFAULT_MS, env.QUERY_TIMEOUT_MAX_MS))
-  await db.execute(`SET LOCAL statement_timeout = ${timeout}`)
-  await db.execute(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`)
-  await db.execute(`SET LOCAL search_path = pg_catalog, "${'$user'}"`)
-}
-
-const runReadonly = async <T>(dsn: string, fn: (db: any) => Promise<T>): Promise<T> => {
-  const db = await Database.load(dsn)
-  await beginReadonly(db)
-  try {
-    const res = await fn(db)
-    await db.execute('ROLLBACK')
-    return res
-  } catch (e) {
-    try { await db.execute('ROLLBACK') } catch {}
-    throw e
-  }
-}
-
-const runWritable = async <T>(dsn: string, fn: (db: any) => Promise<T>): Promise<T> => {
-  const db = await Database.load(dsn)
-  await db.execute('BEGIN')
-  const timeout = Math.max(1, Math.min(env.QUERY_TIMEOUT_DEFAULT_MS, env.QUERY_TIMEOUT_MAX_MS))
-  await db.execute(`SET LOCAL statement_timeout = ${timeout}`)
-  await db.execute(`SET LOCAL idle_in_transaction_session_timeout = ${timeout}`)
-  await db.execute(`SET LOCAL search_path = pg_catalog, "${'$user'}"`)
-  try {
-    const res = await fn(db)
-    await db.execute('COMMIT')
-    return res
-  } catch (e) {
-    try { await db.execute('ROLLBACK') } catch {}
-    throw e
-  }
-}
-
 const loadSaved = async (id: string): Promise<SavedSqlRecord> => {
   const saved = await getSavedSql(id)
   if (!saved) throw new QueryError('未找到指定的 Saved SQL', { code: 'not_found' })
@@ -217,7 +179,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
   const dsn = await getDsnForConn(opts.userConnId)
 
   if (!isSelect) {
-    return runWritable<ExecuteResult>(dsn, async (db) => {
+    return withWritableSession<ExecuteResult>(dsn, async (db) => {
       const res = await db.select<any[]>(execText.text, execText.values)
       const first = res[0] ?? {}
       return {
@@ -246,7 +208,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
         countReason: 'user_sql_contains_limit_or_offset',
       }
     }
-    return runReadonly<ExecuteResult>(dsn, async (db) => {
+    return withReadonlySession<ExecuteResult>(dsn, async (db) => {
       const countRows = await db.select<Array<{ total: number | string }>>(
         `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
         compiled.values,
@@ -269,7 +231,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
   }
 
   let totalRows: number | undefined
-  const rows = await runReadonly<Array<Record<string, unknown>>>(dsn, async (db) => {
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
     if (countPossible) {
       const countRows = await db.select<Array<{ total: number | string }>>(
         `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
@@ -338,7 +300,7 @@ export async function explainSavedSql(opts: ExplainOptions): Promise<ExplainResu
   const dsn = await getDsnForConn(opts.userConnId)
   const format = opts.format === 'json' ? 'json' : 'text'
   const explainSql = buildExplainSQL(compiled.text, { format, analyze: opts.analyze && isReadOnlySelect(saved.sql) })
-  const rows = await runReadonly<Array<Record<string, unknown>>>(dsn, async (db) => {
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
     return await db.select<Array<Record<string, unknown>>>(explainSql, compiled.values)
   })
   if (format === 'json') {
@@ -355,7 +317,7 @@ export async function fetchEnumOptions(opts: {
     throw new QueryError('仅支持只读 SQL', { code: 'read_only_required' })
   }
   const dsn = await getDsnForConn(opts.userConnId)
-  const rows = await runReadonly<Array<Record<string, unknown>>>(dsn, async (db) => {
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
     return await db.select<Array<Record<string, unknown>>>(opts.sql, [])
   })
   const seen = new Set<string>()

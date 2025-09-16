@@ -60,6 +60,9 @@ importers:
       '@rei-db-view/introspect':
         specifier: workspace:*
         version: link:../../packages/introspect
+      '@rei-db-view/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@rei-db-view/query-engine':
         specifier: workspace:*
         version: link:../../packages/query-engine
@@ -118,6 +121,9 @@ importers:
       '@rei-db-view/introspect':
         specifier: workspace:*
         version: link:../../packages/introspect
+      '@rei-db-view/ops':
+        specifier: workspace:*
+        version: link:../../packages/ops
       '@rei-db-view/query-engine':
         specifier: workspace:*
         version: link:../../packages/query-engine
@@ -179,6 +185,12 @@ importers:
       '@rei-db-view/types':
         specifier: workspace:*
         version: link:../types
+
+  packages/ops:
+    dependencies:
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/query-engine:
     dependencies:

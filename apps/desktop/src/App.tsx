@@ -5,6 +5,7 @@ import ConnectionsPage from '@/routes/connections'
 import SchemaPage from '@/routes/schema'
 import BrowsePage from '@/routes/browse'
 import QueriesPage from '@/routes/queries'
+import OpsPage from '@/routes/ops'
 
 function useHashRoute() {
   const [hash, setHash] = useState<string>(() => (typeof location !== 'undefined' ? location.hash : ''))
@@ -27,6 +28,7 @@ export default function App() {
         {route === 'schema' ? <SchemaPage /> : null}
         {route === 'browse' ? <BrowsePage /> : null}
         {route === 'queries' ? <QueriesPage /> : null}
+        {route === 'ops' ? <OpsPage /> : null}
         {route === 'connections' || !route ? <ConnectionsPage /> : null}
       </AppShell.Main>
     </AppShell>

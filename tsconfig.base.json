@@ -15,7 +15,8 @@
     "baseUrl": ".",
     "paths": {
       "@rei-db-view/types": ["packages/types/src"],
-      "@rei-db-view/query-engine": ["packages/query-engine/src"]
+      "@rei-db-view/query-engine": ["packages/query-engine/src"],
+      "@rei-db-view/ops": ["packages/ops/src"]
     }
   }
 }

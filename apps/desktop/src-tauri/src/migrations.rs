@@ -1,7 +1,8 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
 pub fn migrations() -> Vec<Migration> {
-    vec![Migration {
+    vec![
+        Migration {
         version: 1,
         description: "init_local_store",
         sql: r#"
@@ -48,6 +49,24 @@ pub fn migrations() -> Vec<Migration> {
         CREATE INDEX IF NOT EXISTS idx_schema_cache_conn ON schema_cache(conn_id);
         "#,
         kind: MigrationKind::Up,
-    }]
-}
+    },
+    Migration {
+        version: 2,
+        description: "ops_audit_table",
+        sql: r#"
+        CREATE TABLE IF NOT EXISTS ops_audit (
+          id TEXT PRIMARY KEY,
+          conn_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_pid INTEGER NULL,
+          status TEXT NOT NULL,
+          message TEXT NULL,
+          created_at INTEGER NOT NULL
+        );
 
+        CREATE INDEX IF NOT EXISTS idx_ops_audit_created_at ON ops_audit(created_at);
+        "#,
+        kind: MigrationKind::Up,
+    }
+    ]
+}
