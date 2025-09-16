@@ -139,3 +139,27 @@ jobs:
           name: reidbview-desktop-${{ matrix.os_label }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
+
+  publish-release:
+    name: Publish release
+    runs-on: ubuntu-22.04
+    needs: bundle
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download bundle artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: reidbview-desktop-*
+
+      - name: Display downloaded files
+        run: ls -R dist
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
+          make_latest: true
