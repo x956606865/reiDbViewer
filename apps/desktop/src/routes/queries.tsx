@@ -47,6 +47,13 @@ import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
 import { listConnections } from '@/lib/localStore';
 
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
 function toSavedItem(summary: SavedSqlSummary): SavedItem {
   return {
     id: summary.id,
@@ -95,9 +102,7 @@ export default function QueriesPage() {
   const [pgTotalRows, setPgTotalRows] = useState<number | null>(null);
   const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
   const [pgCountLoaded, setPgCountLoaded] = useState(false);
-  const [calcResults, setCalcResults] = useState<
-    Record<string, { loading?: boolean; value?: any; error?: string }>
-  >({});
+  const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
   const lastExecSignatureRef = useRef<string | null>(null);
   const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
@@ -263,6 +268,7 @@ export default function QueriesPage() {
         const normalizedCalcItems = (res.calcItems || []).map((item) => ({
           ...item,
           runMode: item.runMode ?? 'manual',
+          kind: item.kind ?? 'single',
         }));
         setCalcItems(normalizedCalcItems);
         setPreviewSQL('');
@@ -622,6 +628,7 @@ export default function QueriesPage() {
         type: 'sql',
         code: 'select count(*)::bigint as total from ({{_sql}}) t',
         runMode: 'manual',
+        kind: 'single',
       });
     }
     return [
@@ -629,6 +636,7 @@ export default function QueriesPage() {
       ...calcItems.map((ci) => ({
         ...ci,
         runMode: ci.runMode ?? 'manual',
+        kind: ci.kind ?? 'single',
       })),
     ];
   }, [calcItems, pgEnabled]);
@@ -647,11 +655,17 @@ export default function QueriesPage() {
       }
     ) => {
       const key = ci.name;
+      const variant = (ci.kind ?? 'single') as 'single' | 'group';
       const effectiveRows = opts?.rowsOverride ?? rows;
       const pageSizeForCount = opts?.pageSizeOverride ?? pgSize;
       setCalcResults((s) => ({
         ...s,
-        [key]: { ...s[key], loading: true, error: undefined },
+        [key]: {
+          ...s[key],
+          loading: true,
+          error: undefined,
+          groupRows: variant === 'group' ? undefined : s[key]?.groupRows,
+        },
       }));
       try {
         if (ci.type === 'sql') {
@@ -696,6 +710,32 @@ export default function QueriesPage() {
               ...s,
               [key]: { value: num, loading: false },
             }));
+          } else if (variant === 'group') {
+            const columns = res.columns?.length
+              ? res.columns
+              : Object.keys(rowsRes[0] || {});
+            if (columns.length < 2) {
+              throw new Error('计算数据组 SQL 需要至少两列（name, value）');
+            }
+            const [nameCol, valueCol] = columns;
+            const groupRows = rowsRes.map((row) => {
+              const rawName = (row as any)[nameCol as any];
+              if (rawName === undefined || rawName === null) {
+                throw new Error('name 列不能为空');
+              }
+              return {
+                name: String(rawName),
+                value: (row as any)[valueCol as any],
+              };
+            });
+            setCalcResults((s) => ({
+              ...s,
+              [key]: {
+                value: groupRows,
+                groupRows,
+                loading: false,
+              },
+            }));
           } else {
             let display: any = null;
             if (rowsRes.length === 0) display = null;
@@ -707,7 +747,7 @@ export default function QueriesPage() {
             } else display = rowsRes;
             setCalcResults((s) => ({
               ...s,
-              [key]: { value: display, loading: false },
+              [key]: { value: display, loading: false, groupRows: undefined },
             }));
           }
         } else {
@@ -736,14 +776,14 @@ export default function QueriesPage() {
           const val = fn(runValues, effectiveRows, helpers);
           setCalcResults((s) => ({
             ...s,
-            [key]: { value: val, loading: false },
+            [key]: { value: val, loading: false, groupRows: undefined },
           }));
         }
       } catch (e: any) {
         const msg = e instanceof QueryError ? e.message : String(e?.message || e);
         setCalcResults((s) => ({
           ...s,
-          [key]: { ...s[key], error: msg, loading: false },
+          [key]: { ...s[key], error: msg, loading: false, groupRows: undefined },
         }));
       }
     },

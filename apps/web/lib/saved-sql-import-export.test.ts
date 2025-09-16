@@ -112,4 +112,55 @@ describe('saved-sql import/export schema', () => {
       expect(items[0].calcItems?.[0]?.runMode).toBe('manual')
     }
   })
+
+  it('supports calc item group definitions', () => {
+    const sample = {
+      version: 'rdv.saved-sql.v1',
+      exportedAt: new Date().toISOString(),
+      items: [
+        {
+          name: 'reports/grouped',
+          sql: 'select 1',
+          calcItems: [
+            {
+              name: 'metrics',
+              type: 'sql',
+              code: 'select metric_name, metric_value from metrics',
+              kind: 'group',
+              runMode: 'always',
+            },
+          ],
+        },
+      ],
+    }
+    const parsed = parseSavedQueriesExport(JSON.stringify(sample))
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      const items = normalizeImportItems(parsed.data)
+      expect(items[0].calcItems?.[0]?.kind).toBe('group')
+    }
+  })
+
+  it('rejects js calc group', () => {
+    const sample = {
+      version: 'rdv.saved-sql.v1',
+      exportedAt: new Date().toISOString(),
+      items: [
+        {
+          name: 'invalid',
+          sql: 'select 1',
+          calcItems: [
+            {
+              name: 'bad',
+              type: 'js',
+              code: '(vars) => vars',
+              kind: 'group',
+            },
+          ],
+        },
+      ],
+    }
+    const parsed = parseSavedQueriesExport(JSON.stringify(sample))
+    expect(parsed.ok).toBe(false)
+  })
 })

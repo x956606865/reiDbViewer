@@ -93,4 +93,53 @@ describe('saved-sql import/export helpers', () => {
       expect(parsed.data.items[0]?.calcItems?.[0]?.runMode).toBe('manual')
     }
   })
+
+  it('supports calc data group definitions', () => {
+    const parsed = parseSavedQueriesExport(
+      JSON.stringify({
+        ...baseExport,
+        items: [
+          {
+            name: 'grouped_metrics',
+            sql: 'select 1',
+            calcItems: [
+              {
+                name: 'metrics_group',
+                type: 'sql',
+                code: 'select metric_name, metric_value from metrics',
+                kind: 'group',
+              },
+            ],
+          },
+        ],
+      })
+    )
+    expect(parsed.ok).toBe(true)
+    if (parsed.ok) {
+      expect(parsed.data.items[0]?.calcItems?.[0]?.kind).toBe('group')
+    }
+  })
+
+  it('rejects js calc group definition', () => {
+    const parsed = parseSavedQueriesExport(
+      JSON.stringify({
+        ...baseExport,
+        items: [
+          {
+            name: 'invalid_group',
+            sql: 'select 1',
+            calcItems: [
+              {
+                name: 'bad_js_group',
+                type: 'js',
+                code: '() => 1',
+                kind: 'group',
+              },
+            ],
+          },
+        ],
+      })
+    )
+    expect(parsed.ok).toBe(false)
+  })
 })

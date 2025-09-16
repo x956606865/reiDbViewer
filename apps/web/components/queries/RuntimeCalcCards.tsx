@@ -15,6 +15,26 @@ const RUN_MODE_COLOR: Record<"always" | "initial" | "manual", string> = {
   manual: "gray",
 };
 
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
+const renderValue = (value: any) => {
+  if (value === undefined) return <Text size="sm" c="dimmed">未计算</Text>;
+  if (value === null) return <Text size="sm" c="dimmed">null</Text>;
+  if (typeof value === "object") {
+    try {
+      return <Code block>{JSON.stringify(value, null, 2)}</Code>;
+    } catch {
+      return <Code block>{String(value)}</Code>;
+    }
+  }
+  return <Text size="sm">{String(value)}</Text>;
+};
+
 export function RuntimeCalcCards({
   items,
   calcResults,
@@ -26,8 +46,8 @@ export function RuntimeCalcCards({
   onUpdateCount,
 }: {
   items: CalcItemDef[];
-  calcResults: Record<string, { loading?: boolean; value?: any; error?: string }>;
-  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, { loading?: boolean; value?: any; error?: string }>>>;
+  calcResults: Record<string, CalcResultState>;
+  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, CalcResultState>>>;
   currentId: string | null;
   userConnId: string | null | undefined;
   runValues: Record<string, any>;
@@ -41,8 +61,15 @@ export function RuntimeCalcCards({
         {items.map((ci) => {
           const state = calcResults[ci.name] || {};
           const runMode = (ci.runMode ?? "manual") as "always" | "initial" | "manual";
+          const variant = (ci.kind ?? "single") as "single" | "group";
+          const hasGroupResult = variant === "group" && Array.isArray(state.groupRows);
+          const groupRows = variant === "group" && hasGroupResult ? state.groupRows ?? [] : [];
+          const cardStyle =
+            variant === "group"
+              ? { width: "100%", minWidth: "100%" }
+              : { minWidth: 240 };
           return (
-            <Paper key={ci.name} withBorder p="xs" style={{ minWidth: 240 }}>
+            <Paper key={ci.name} withBorder p="xs" style={cardStyle}>
               <Group justify="space-between" align="center">
                 <Text size="sm" component="div">
                   <b>{ci.name === "__total_count__" ? "总数" : ci.name}</b>{" "}
@@ -62,7 +89,12 @@ export function RuntimeCalcCards({
                   onClick={async () => {
                     setCalcResults((s) => ({
                       ...s,
-                      [ci.name]: { ...s[ci.name], loading: true, error: undefined },
+                      [ci.name]: {
+                        ...s[ci.name],
+                        loading: true,
+                        error: undefined,
+                        groupRows: variant === "group" ? undefined : s[ci.name]?.groupRows,
+                      },
                     }));
                     try {
                       if (ci.type === "sql") {
@@ -85,7 +117,32 @@ export function RuntimeCalcCards({
                           }
                           if (num === null) throw new Error("返回格式不符合预期，应包含 total/count");
                           onUpdateCount(num);
-                          setCalcResults((s) => ({ ...s, [ci.name]: { value: num, loading: false } }));
+                          setCalcResults((s) => ({
+                            ...s,
+                            [ci.name]: { value: num, loading: false },
+                          }));
+                        } else if (variant === "group") {
+                          const columns = Array.isArray(j.columns) && j.columns.length
+                            ? j.columns
+                            : Object.keys(rows[0] || {});
+                          if (columns.length < 2) {
+                            throw new Error("计算数据组 SQL 需要至少两列（name, value）");
+                          }
+                          const [nameCol, valueCol] = columns;
+                          const normalized = rows.map((row) => {
+                            const rawName = (row as any)[nameCol as any];
+                            if (rawName === undefined || rawName === null) {
+                              throw new Error("name 列不能为空");
+                            }
+                            return {
+                              name: String(rawName),
+                              value: (row as any)[valueCol as any],
+                            };
+                          });
+                          setCalcResults((s) => ({
+                            ...s,
+                            [ci.name]: { value: normalized, groupRows: normalized, loading: false },
+                          }));
                         } else {
                           let display: any = null;
                           if (rows.length === 0) display = null;
@@ -93,7 +150,10 @@ export function RuntimeCalcCards({
                             const cols = Array.isArray(j.columns) ? j.columns : Object.keys(rows[0] || {});
                             display = cols.length === 1 ? (rows[0] as any)[cols[0] as any] : rows[0];
                           } else display = rows;
-                          setCalcResults((s) => ({ ...s, [ci.name]: { value: display, loading: false } }));
+                          setCalcResults((s) => ({
+                            ...s,
+                            [ci.name]: { value: display, loading: false, groupRows: undefined },
+                          }));
                         }
                       } else {
                         const helpers = {
@@ -108,12 +168,20 @@ export function RuntimeCalcCards({
                         // eslint-disable-next-line no-new-func
                         const fn = new Function("vars", "rows", "helpers", `"use strict"; return ( ${ci.code} )(vars, rows, helpers)`) as any;
                         const val = fn(runValues, rows, helpers);
-                        setCalcResults((s) => ({ ...s, [ci.name]: { value: val, loading: false } }));
+                        setCalcResults((s) => ({
+                          ...s,
+                          [ci.name]: { value: val, loading: false, groupRows: undefined },
+                        }));
                       }
                     } catch (e: any) {
                       setCalcResults((s) => ({
                         ...s,
-                        [ci.name]: { error: String(e?.message || e), loading: false },
+                        [ci.name]: {
+                          ...s[ci.name],
+                          error: String(e?.message || e),
+                          loading: false,
+                          groupRows: undefined,
+                        },
                       }));
                     }
                   }}
@@ -124,14 +192,38 @@ export function RuntimeCalcCards({
               <div style={{ marginTop: 6 }}>
                 {state.error ? (
                   <Text size="sm" c="red">{state.error}</Text>
-                ) : state.value !== undefined ? (
-                  typeof state.value === "object" ? (
-                    <Code block>{JSON.stringify(state.value, null, 2)}</Code>
+                ) : variant === "group" ? (
+                  !hasGroupResult ? (
+                    <Text size="sm" c="dimmed">未计算</Text>
+                  ) : groupRows.length === 0 ? (
+                    <Text size="sm" c="dimmed">暂无数据</Text>
                   ) : (
-                    <Text size="sm">{String(state.value)}</Text>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        width: "100%",
+                      }}
+                    >
+                      {groupRows.map((row, idx) => (
+                        <Paper
+                          key={`${ci.name}-${row.name}-${idx}`}
+                          withBorder
+                          p="xs"
+                          radius="sm"
+                          style={{ flex: "0 1 220px", display: "flex", flexDirection: "column", gap: 4 }}
+                        >
+                          <Text size="sm" fw={600}>
+                            {row.name}
+                          </Text>
+                          <div>{renderValue(row.value)}</div>
+                        </Paper>
+                      ))}
+                    </div>
                   )
                 ) : (
-                  <Text size="sm" c="dimmed">未计算</Text>
+                  renderValue(state.value)
                 )}
               </div>
             </Paper>

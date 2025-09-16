@@ -64,6 +64,15 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
   }
 }
 
+const normalizeCalcItems = (items: CalcItemDef[] | null | undefined): CalcItemDef[] => {
+  if (!Array.isArray(items)) return []
+  return items.map((ci) => ({
+    ...ci,
+    runMode: ci.runMode ?? 'manual',
+    kind: ci.kind ?? 'single',
+  }))
+}
+
 const rowToRecord = (row: SavedSqlRow): SavedSqlRecord => ({
   id: row.id,
   name: row.name,
@@ -71,7 +80,7 @@ const rowToRecord = (row: SavedSqlRow): SavedSqlRecord => ({
   sql: row.sql,
   variables: parseJson<SavedQueryVariableDef[]>(row.variables, []),
   dynamicColumns: parseJson<DynamicColumnDef[]>(row.dynamic_columns, []),
-  calcItems: parseJson<CalcItemDef[]>(row.calc_items, []),
+  calcItems: normalizeCalcItems(parseJson<CalcItemDef[]>(row.calc_items, [])),
   createdAt: toIso(row.created_at),
   updatedAt: toIso(row.updated_at),
   isArchived: row.is_archived === 1,
@@ -144,7 +153,7 @@ export async function createSavedSql(input: {
       input.sql,
       JSON.stringify(input.variables ?? []),
       JSON.stringify(input.dynamicColumns ?? []),
-      JSON.stringify(input.calcItems ?? []),
+      JSON.stringify(normalizeCalcItems(input.calcItems)),
       now,
     ],
   )
@@ -184,7 +193,8 @@ export async function updateSavedSql(
   if (patch.variables !== undefined) push('variables =', JSON.stringify(patch.variables))
   if (patch.dynamicColumns !== undefined)
     push('dynamic_columns =', JSON.stringify(patch.dynamicColumns))
-  if (patch.calcItems !== undefined) push('calc_items =', JSON.stringify(patch.calcItems))
+  if (patch.calcItems !== undefined)
+    push('calc_items =', JSON.stringify(normalizeCalcItems(patch.calcItems)))
   if (patch.isArchived !== undefined) push('is_archived =', patch.isArchived ? 1 : 0)
   if (sets.length === 0) return
   push('updated_at =', nowMs())

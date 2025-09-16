@@ -56,9 +56,27 @@ export interface DynamicColumnDef {
   manualTrigger?: boolean
 }
 
-export interface CalcItemDef {
-  name: string
-  type: 'sql' | 'js'
-  code: string // if type=js: function body Signature: (vars, rows, helpers) => any; if type=sql: SQL text supporting {{vars}} and special {{_sql}}
-  runMode?: 'always' | 'initial' | 'manual'
-}
+export type CalcItemRunMode = 'always' | 'initial' | 'manual'
+
+export type CalcItemDef =
+  | {
+      name: string
+      type: 'sql'
+      code: string // SQL text supporting {{vars}} and special {{_sql}}
+      runMode?: CalcItemRunMode
+      kind?: 'single'
+    }
+  | {
+      name: string
+      type: 'sql'
+      code: string // SQL text supporting {{vars}} and special {{_sql}}
+      runMode?: CalcItemRunMode
+      kind: 'group'
+    }
+  | {
+      name: string
+      type: 'js'
+      code: string // function body Signature: (vars, rows, helpers) => any
+      runMode?: CalcItemRunMode
+      kind?: 'single'
+    }
