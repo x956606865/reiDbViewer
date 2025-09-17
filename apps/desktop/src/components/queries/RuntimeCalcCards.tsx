@@ -3,26 +3,46 @@
 import React from "react";
 import { Badge, Button, Code, Group, Paper, Text } from "@mantine/core";
 import type { CalcItemDef } from "@rei-db-view/types/appdb";
-import { computeCalcSql, QueryError } from "@/services/pgExec";
+
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
+const RUN_MODE_LABEL: Record<"always" | "initial" | "manual", string> = {
+  always: "完全",
+  initial: "首次拉取",
+  manual: "手动",
+};
+const RUN_MODE_COLOR: Record<"always" | "initial" | "manual", string> = {
+  always: "teal",
+  initial: "blue",
+  manual: "gray",
+};
+
+const renderValue = (value: any) => {
+  if (value === undefined) return <Text size="sm" c="dimmed">未计算</Text>;
+  if (value === null) return <Text size="sm" c="dimmed">null</Text>;
+  if (typeof value === "object") {
+    try {
+      return <Code block>{JSON.stringify(value, null, 2)}</Code>;
+    } catch {
+      return <Code block>{String(value)}</Code>;
+    }
+  }
+  return <Text size="sm">{String(value)}</Text>;
+};
 
 export function RuntimeCalcCards({
   items,
   calcResults,
-  setCalcResults,
-  currentId,
-  userConnId,
-  runValues,
-  rows,
-  onUpdateCount,
+  onRunCalc,
 }: {
   items: CalcItemDef[];
-  calcResults: Record<string, { loading?: boolean; value?: any; error?: string }>;
-  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, { loading?: boolean; value?: any; error?: string }>>>;
-  currentId: string | null;
-  userConnId: string | null | undefined;
-  runValues: Record<string, any>;
-  rows: Array<Record<string, unknown>>;
-  onUpdateCount: (total: number) => void;
+  calcResults: Record<string, CalcResultState>;
+  onRunCalc: (item: CalcItemDef) => Promise<void>;
 }) {
   if (items.length === 0) return null;
   return (
@@ -30,73 +50,33 @@ export function RuntimeCalcCards({
       <Group gap="sm" wrap="wrap">
         {items.map((ci) => {
           const state = calcResults[ci.name] || {};
+          const runMode = (ci.runMode ?? "manual") as "always" | "initial" | "manual";
+          const isGroup = (ci.kind ?? "single") === "group";
+          const hasGroupResult = isGroup && Array.isArray(state.groupRows);
+          const groupRows = isGroup && hasGroupResult ? state.groupRows ?? [] : [];
+          const cardStyle = isGroup
+            ? { width: "100%", minWidth: "100%" }
+            : { minWidth: 240 };
           return (
-            <Paper key={ci.name} withBorder p="xs" style={{ minWidth: 240 }}>
+            <Paper key={ci.name} withBorder p="xs" style={cardStyle}>
               <Group justify="space-between" align="center">
                 <Text size="sm" component="div">
-                  <b>{ci.name === "__total_count__" ? "总数" : ci.name}</b> <Badge size="xs" variant="light">{ci.type.toUpperCase()}</Badge>
+                  <b>{ci.name === "__total_count__" ? "总数" : ci.name}</b>{" "}
+                  <Group component="span" gap={6} align="center">
+                    <Badge size="xs" variant="light">
+                      {ci.type.toUpperCase()}
+                    </Badge>
+                    <Badge size="xs" variant="outline" color={RUN_MODE_COLOR[runMode]}>
+                      {RUN_MODE_LABEL[runMode]}
+                    </Badge>
+                  </Group>
                 </Text>
                 <Button
                   size="xs"
                   variant="light"
                   loading={!!state.loading}
-                  onClick={async () => {
-                    setCalcResults((s) => ({
-                      ...s,
-                      [ci.name]: { ...s[ci.name], loading: true, error: undefined },
-                    }));
-                    try {
-                      if (ci.type === "sql") {
-                        if (!currentId) throw new Error("请先保存/选择查询");
-                        if (!userConnId) throw new Error("未设置当前连接");
-                        const res = await computeCalcSql({
-                          savedId: currentId,
-                          values: runValues,
-                          userConnId,
-                          calcSql: ci.code,
-                        });
-                        const rows = res.rows;
-                        if (ci.name === "__total_count__") {
-                          let num: number | null = null;
-                          if (rows[0]) {
-                            const v = (rows[0] as any).total ?? (rows[0] as any).count ?? Object.values(rows[0])[0];
-                            const n = typeof v === "string" ? Number(v) : (typeof v === "number" ? v : null);
-                            num = Number.isFinite(n as number) ? (n as number) : null;
-                          }
-                          if (num === null) throw new Error("返回格式不符合预期，应包含 total/count");
-                          onUpdateCount(num);
-                          setCalcResults((s) => ({ ...s, [ci.name]: { value: num, loading: false } }));
-                        } else {
-                          let display: any = null;
-                          if (rows.length === 0) display = null;
-                          else if (rows.length === 1) {
-                            const cols = res.columns?.length ? res.columns : Object.keys(rows[0] || {});
-                            display = cols.length === 1 ? (rows[0] as any)[cols[0] as any] : rows[0];
-                          } else display = rows;
-                          setCalcResults((s) => ({ ...s, [ci.name]: { value: display, loading: false } }));
-                        }
-                      } else {
-                        const helpers = {
-                          fmtDate: (v: any) => (v ? new Date(v).toISOString() : ""),
-                          json: (v: any) => JSON.stringify(v),
-                          sumBy: (arr: any[], sel: (r: any) => number) => arr.reduce((s, r) => s + (Number(sel(r)) || 0), 0),
-                          avgBy: (arr: any[], sel: (r: any) => number) => {
-                            const a = arr.map(sel).map(Number).filter((n) => Number.isFinite(n));
-                            return a.length ? a.reduce((s, n) => s + n, 0) / a.length : 0;
-                          },
-                        };
-                        // eslint-disable-next-line no-new-func
-                        const fn = new Function("vars", "rows", "helpers", `"use strict"; return ( ${ci.code} )(vars, rows, helpers)`) as any;
-                        const val = fn(runValues, rows, helpers);
-                        setCalcResults((s) => ({ ...s, [ci.name]: { value: val, loading: false } }));
-                      }
-                    } catch (e: any) {
-                      const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-                      setCalcResults((s) => ({
-                        ...s,
-                        [ci.name]: { error: msg, loading: false },
-                      }));
-                    }
+                  onClick={() => {
+                    void onRunCalc(ci);
                   }}
                 >
                   计算
@@ -105,14 +85,41 @@ export function RuntimeCalcCards({
               <div style={{ marginTop: 6 }}>
                 {state.error ? (
                   <Text size="sm" c="red">{state.error}</Text>
-                ) : state.value !== undefined ? (
-                  typeof state.value === "object" ? (
-                    <Code block>{JSON.stringify(state.value, null, 2)}</Code>
+                ) : isGroup ? (
+                  !hasGroupResult ? (
+                    <Text size="sm" c="dimmed">未计算</Text>
+                  ) : groupRows.length === 0 ? (
+                    <Text size="sm" c="dimmed">暂无数据</Text>
                   ) : (
-                    <Text size="sm">{String(state.value)}</Text>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        width: "100%",
+                      }}
+                    >
+                      {groupRows.map((row, idx) => {
+                        const valueContent = renderValue(row.value);
+                        return (
+                          <Paper
+                            key={`${ci.name}-${row.name}-${idx}`}
+                            withBorder
+                            p="xs"
+                            radius="sm"
+                            style={{ flex: "0 1 220px", display: "flex", flexDirection: "column", gap: 4 }}
+                          >
+                            <Text size="sm" fw={600}>
+                              {row.name}
+                            </Text>
+                            <div>{valueContent}</div>
+                          </Paper>
+                        );
+                      })}
+                    </div>
                   )
                 ) : (
-                  <Text size="sm" c="dimmed">未计算</Text>
+                  renderValue(state.value)
                 )}
               </div>
             </Paper>

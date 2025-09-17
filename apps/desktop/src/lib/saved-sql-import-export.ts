@@ -74,11 +74,30 @@ export const SavedQueriesExportSchema = z.object({
         .optional(),
       calcItems: z
         .array(
-          z.object({
-            name: z.string().min(1).max(64),
-            type: z.enum(['sql', 'js']),
-            code: z.string().min(1),
-          })
+          z
+            .object({
+              name: z.string().min(1).max(64),
+              type: z.enum(['sql', 'js']),
+              code: z.string().min(1),
+              runMode: z.enum(['always', 'initial', 'manual']).default('manual'),
+              kind: z.enum(['single', 'group']).default('single').optional(),
+            })
+            .superRefine((val, ctx) => {
+              if (val.kind === 'group' && val.type !== 'sql') {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: 'group 仅支持 SQL 类型',
+                  path: ['kind'],
+                })
+              }
+              if (val.type === 'js' && val.kind === 'group') {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  message: 'JS 计算不支持数据组',
+                  path: ['kind'],
+                })
+              }
+            })
         )
         .default([])
         .optional(),
@@ -119,6 +138,12 @@ export function normalizeImportItems(data: SavedQueriesExport): ImportItem[] {
     sql: it.sql,
     variables: Array.isArray(it.variables) ? it.variables : [],
     dynamicColumns: Array.isArray(it.dynamicColumns) ? it.dynamicColumns : [],
-    calcItems: Array.isArray(it.calcItems) ? it.calcItems : [],
+    calcItems: Array.isArray(it.calcItems)
+      ? it.calcItems.map((ci) => ({
+          ...ci,
+          runMode: ci.runMode ?? 'manual',
+          kind: ci.kind ?? 'single',
+        }))
+      : [],
   }))
 }

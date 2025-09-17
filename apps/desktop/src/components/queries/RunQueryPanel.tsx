@@ -10,6 +10,13 @@ import { ResultsPanel } from "./ResultsPanel";
 import { RuntimeCalcCards } from "./RuntimeCalcCards";
 import { PaginationBar } from "./PaginationBar";
 
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
 export function RunQueryPanel({
   // connection + vars
   userConnId,
@@ -47,8 +54,7 @@ export function RunQueryPanel({
   // calc
   runtimeCalcItems,
   calcResults,
-  setCalcResults,
-  currentId,
+  onRunCalc,
   // count updates
   onUpdateTotal,
 }: {
@@ -81,9 +87,8 @@ export function RunQueryPanel({
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
   runtimeCalcItems: CalcItemDef[];
-  calcResults: Record<string, { loading?: boolean; value?: any; error?: string }>;
-  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, { loading?: boolean; value?: any; error?: string }>>>;
-  currentId: string | null;
+  calcResults: Record<string, CalcResultState>;
+  onRunCalc: (item: CalcItemDef) => Promise<void>;
   onUpdateTotal: (totalRows: number | null, totalPages: number | null) => void;
 }) {
   return (
@@ -125,16 +130,7 @@ export function RunQueryPanel({
           <RuntimeCalcCards
             items={runtimeCalcItems}
             calcResults={calcResults}
-            setCalcResults={setCalcResults}
-            currentId={currentId}
-            userConnId={userConnId}
-            runValues={runValues}
-            rows={rows}
-            onUpdateCount={(total) => {
-              const totalRows = typeof total === "number" ? total : null;
-              const totalPages = totalRows != null ? Math.max(1, Math.ceil(totalRows / pgSize)) : null;
-              onUpdateTotal(totalRows, totalPages);
-            }}
+            onRunCalc={onRunCalc}
           />
         }
         textResult={textResult}

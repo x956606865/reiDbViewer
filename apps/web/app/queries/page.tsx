@@ -36,6 +36,13 @@ import {
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export';
 
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
 export default function SavedQueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -74,9 +81,7 @@ export default function SavedQueriesPage() {
   const [mode, setMode] = useState<'edit' | 'run'>('run');
   const [isExecuting, setIsExecuting] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [calcResults, setCalcResults] = useState<
-    Record<string, { loading?: boolean; value?: any; error?: string }>
-  >({});
+  const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   // explain options
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState<boolean>(false);
@@ -88,14 +93,23 @@ export default function SavedQueriesPage() {
   const [pgTotalRows, setPgTotalRows] = useState<number | null>(null);
   const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
   const runtimeCalcItems = useMemo(() => {
-    const items: CalcItemDef[] = [];
+    const base: CalcItemDef[] = [];
     if (pgEnabled)
-      items.push({
+      base.push({
         name: '__total_count__',
         type: 'sql',
         code: 'select count(*)::bigint as total from ({{_sql}}) t',
+        runMode: 'manual',
+        kind: 'single',
       });
-    return [...items, ...calcItems];
+    return [
+      ...base,
+      ...calcItems.map((ci) => ({
+        ...ci,
+        runMode: ci.runMode ?? 'manual',
+        kind: ci.kind ?? 'single',
+      })),
+    ];
   }, [calcItems, pgEnabled]);
   const sqlPreviewRef = React.useRef<HTMLDivElement | null>(null);
   const [connItems, setConnItems] = useState<
@@ -952,7 +966,15 @@ export default function SavedQueriesPage() {
         setSql(j.sql || '');
         setVars(Array.isArray(j.variables) ? j.variables : []);
         setDynCols(Array.isArray(j.dynamicColumns) ? j.dynamicColumns : []);
-        setCalcItems(Array.isArray(j.calcItems) ? j.calcItems : []);
+        setCalcItems(
+          Array.isArray(j.calcItems)
+            ? j.calcItems.map((item: CalcItemDef) => ({
+                ...item,
+                runMode: item.runMode ?? 'manual',
+                kind: item.kind ?? 'single',
+              }))
+            : []
+        );
         const initVals: Record<string, any> = {};
         for (const v of j.variables || []) initVals[v.name] = v.default ?? '';
         setRunValues(initVals); // 载入时用默认值初始化运行值

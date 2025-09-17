@@ -10,6 +10,13 @@ import { ResultsPanel } from "./ResultsPanel";
 import { RuntimeCalcCards } from "./RuntimeCalcCards";
 import { PaginationBar } from "./PaginationBar";
 
+type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+};
+
 export function RunQueryPanel({
   // connection + vars
   userConnId,
@@ -81,8 +88,8 @@ export function RunQueryPanel({
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
   runtimeCalcItems: CalcItemDef[];
-  calcResults: Record<string, { loading?: boolean; value?: any; error?: string }>;
-  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, { loading?: boolean; value?: any; error?: string }>>>;
+  calcResults: Record<string, CalcResultState>;
+  setCalcResults: React.Dispatch<React.SetStateAction<Record<string, CalcResultState>>>;
   currentId: string | null;
   onUpdateTotal: (totalRows: number | null, totalPages: number | null) => void;
 }) {
