@@ -35,6 +35,7 @@ import {
   parseSavedQueriesExport,
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export';
+import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 
 type CalcResultState = {
   loading?: boolean;
@@ -81,6 +82,12 @@ export default function SavedQueriesPage() {
   const [mode, setMode] = useState<'edit' | 'run'>('run');
   const [isExecuting, setIsExecuting] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  useEffect(() => {
+    emitQueryExecutingEvent(isExecuting, 'web/queries');
+    return () => {
+      if (isExecuting) emitQueryExecutingEvent(false, 'web/queries');
+    };
+  }, [isExecuting]);
   const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   // explain options
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');

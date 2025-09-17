@@ -22,6 +22,7 @@ import type {
   DynamicColumnDef,
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
+import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 import { SavedQueriesSidebar } from '@/components/queries/SavedQueriesSidebar';
 import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
@@ -96,6 +97,12 @@ export default function QueriesPage() {
   const sqlPreviewRef = useRef<HTMLDivElement | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  useEffect(() => {
+    emitQueryExecutingEvent(isExecuting, 'desktop/queries');
+    return () => {
+      if (isExecuting) emitQueryExecutingEvent(false, 'desktop/queries');
+    };
+  }, [isExecuting]);
   const [pgEnabled, setPgEnabled] = useState(true);
   const [pgSize, setPgSize] = useState(20);
   const [pgPage, setPgPage] = useState(1);
