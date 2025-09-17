@@ -2,6 +2,10 @@
 
 > 目标：读优先的数据库数据浏览器（PG-only / Web-only）。强调清晰表格视图、JSON/JSONB 友好渲染、可视化 Join 与“视图内即时 Join 加列（Lookup，优先 LATERAL）”。
 
+## 全局规定
+
+- web 端暂时停止开发，若没有特殊说明，默认需求都是针对桌面端的
+
 ## 工作流与约束
 
 - 只读安全：严禁任何写库操作；不做 DB 迁移与权限变更。执行接口默认仅返回 SQL 预览；真实执行前需显式确认只读连接。
@@ -102,16 +106,19 @@
 ## 文件地图（按功能）
 
 — 安装与初始化
+
 - 前端引导：`apps/web/app/install/page.tsx`
 - 中间件：`apps/web/middleware.ts`（已配置 APP_DB_URL 但未初始化时重定向 /install，并对 `/schema`/`/connections` 做登录检查）
 - 检测 API：`apps/web/app/api/appdb/init/status/route.ts` → `apps/web/lib/appdb-init.ts`
 - 应用库连接：`apps/web/lib/appdb.ts`（连接时设置 `search_path=pg_catalog,<schema>`）
 
 — 登录认证（Better Auth）
+
 - 初始化：`apps/web/lib/auth.ts`（绑定 APP_DB 表名/字段名，插件 `nextCookies()`）
 - Handler：`apps/web/app/api/auth/[...all]/route.ts`
 
 — 用户连接（加密 DSN）
+
 - API：`apps/web/app/api/user/connections/route.ts`（GET/POST）
 - DSN 校验：`apps/web/lib/validate-dsn.ts`
 - 加解密：`apps/web/lib/crypto.ts`（`APP_ENCRYPTION_KEY` 必须为 32 字节 base64）
@@ -119,12 +126,14 @@
 - 前端状态：`apps/web/lib/current-conn.ts`（localStorage 键 `rdv.currentUserConnId`）+ `apps/web/components/ConnectionSwitcher.tsx`
 
 — Schema Explorer / 索引
+
 - 读取缓存或 mock：`apps/web/app/api/schema/tables/route.ts`（登录+userConnId 时读缓存，否则使用 `packages/introspect` mock）
 - 刷新元数据（真实库自省）：`apps/web/app/api/schema/refresh/route.ts`（只读事务 + SET LOCAL 守护 + DDL 合成）→ 写入 `apps/web/lib/schema-cache.ts`
 - 索引 API：`apps/web/app/api/schema/indexes/route.ts`（合并 `pg_indexes` 与 `pg_index` 视图信息）
 - 前端页面：`apps/web/app/schema/page.tsx`
 
 — 表数据浏览（只读执行 + SQL 预览降级）
+
 - 页面：`apps/web/app/browse/[schema]/[table]/page.tsx`（构建 AST → `/api/query/execute`，失败时降级 `/api/query/preview`）
 - 执行 API：`apps/web/app/api/query/execute/route.ts`（强制只读 withSafeSession + 限制 `MAX_ROW_LIMIT`）
 - SQL 预览 API：`apps/web/app/api/query/preview/route.ts`
@@ -132,21 +141,24 @@
 - 表格组件：`apps/web/components/SmartGrid.tsx`（排序/筛选 UI 与列推导）
 
 — Saved SQL（模板变量/导入导出/分页可选）
+
 - 列表/创建：`apps/web/app/api/user/saved-sql/route.ts`（缺表返回 501 并提供建表 SQL；兼容旧表无 `dynamic_columns` 情况）
 - 查看/更新：`apps/web/app/api/user/saved-sql/[id]/route.ts`（同上返回 501 建议 ALTER）
-- 执行：`apps/web/app/api/saved-sql/execute/route.ts`（只允许 `SELECT/WITH`，占位符编译→参数化；可选分页与计数）
+- 执行：`apps/web/app/api/saved-sql/execute/route.ts`（只允许 `SELECT/WITH`，占位符编译 → 参数化；可选分页与计数）
 - 模板编译：`apps/web/lib/sql-template.ts`（`{{name}}`→`$n` + 只读语句检查 + 预览文本渲染）
 - 导入/导出：`apps/web/lib/saved-sql-import-export.ts`（Schema v1）+ 文档 `docs/saved-sql.md`
 - 前端页面：`apps/web/app/queries/page.tsx`（树状“/”路径为文件夹，动态列为客户端 JS 计算）
 
 — 运维（只读排障）
+
 - SQL 生成：`apps/web/lib/ops/queries.ts`（长跑/阻塞链/长事务/等待锁/连接概览）
 - 执行 API：`apps/web/app/api/ops/queries/route.ts`
 - 信号 API：`apps/web/app/api/ops/signal/route.ts`（对 pid 调用 `pg_cancel_backend`/`pg_terminate_backend`，需确认）
 - 前端页面：`apps/web/app/ops/page.tsx`
 
 — 安全与会话守护
-- withSafeSession：`apps/web/lib/db.ts`（`BEGIN`→`SET LOCAL statement_timeout/idle_in_transaction_session_timeout/search_path`→用户回调→`ROLLBACK`）
+
+- withSafeSession：`apps/web/lib/db.ts`（`BEGIN`→`SET LOCAL statement_timeout/idle_in_transaction_session_timeout/search_path`→ 用户回调 →`ROLLBACK`）
 - 只读限制：
   - AST 执行路径：前端生成 AST，仅 `/api/query/execute` 执行 SELECT；行数受 `env.MAX_ROW_LIMIT` 限制。
   - Saved SQL：`isReadOnlySelect()` 限制仅允许 `SELECT/WITH` 开头。
@@ -188,7 +200,7 @@
 
 - 目标：在“应用自有 PG”中存储用户、用户的数据库连接配置（只保存加密后的 DSN）与偏好/视图等。
 - 重要约束：
-  - 浏览器端永不保存数据库连接串；仅保存“别名→连接ID”。
+  - 浏览器端永不保存数据库连接串；仅保存“别名 → 连接 ID”。
   - 服务端存储的 DSN 必须使用 `APP_ENCRYPTION_KEY`（32B base64）进行 AES-256-GCM 加密。
   - 对用户提交的 DSN 做基本校验：允许私网/本机地址；为安全起见建议 TLS（`sslmode=require`）。
 - 环境变量：
@@ -203,12 +215,12 @@
   - 初始化页面：`/install` 展示 SQL、支持切换 schema 与“表前缀”并“复制 SQL / 我已执行，重新检测”。
   - 永不在应用内执行 DDL；所有变更均由用户在 DB 客户端手工执行。
   - 规则（重要）：凡新增 APP_DB 表或对现有表做结构调整（新增列/索引等），必须同步更新安装检测：
-    1) `apps/web/lib/appdb-init.ts`：
+    1. `apps/web/lib/appdb-init.ts`：
        - 将新表加入 `expectedTableNames()`；
        - 在 `renderInitSql()` 中加入完整建表 SQL；
        - 若为“对已有表的新增列/索引”，在 `checkInitStatus()` 中增加存在性检测，并在 `suggestedSQL` 里追加相应 `ALTER` 语句，同时把说明写入 `warnings`；例如 2025-09 新增 `saved_queries.dynamic_columns` 的检测与 `ALTER`。
-    2) `/install` 页面需展示 `warnings` 并提供复制包含 `ALTER` 的 `suggestedSQL`；
-    3) 相关 API 发现缺列/缺表时返回 `501 feature_not_initialized` 并附 `suggestedSQL` 兜底。
+    2. `/install` 页面需展示 `warnings` 并提供复制包含 `ALTER` 的 `suggestedSQL`；
+    3. 相关 API 发现缺列/缺表时返回 `501 feature_not_initialized` 并附 `suggestedSQL` 兜底。
 - 代码参考：
   - `apps/web/lib/validate-dsn.ts`：DSN 校验与 SSRF 防护
   - `apps/web/lib/crypto.ts`：AES-256-GCM 加/解密
@@ -222,21 +234,24 @@
   - `lib/auth.ts` 创建实例并启用 `nextCookies()` 插件（用于 Set-Cookie 透传）
   - `app/api/auth/[...all]/route.ts`：
     ```ts
-    import { auth } from '@/lib/auth'
-    import { toNextJsHandler } from 'better-auth/next-js'
-    export const { GET, POST } = toNextJsHandler(auth.handler)
+    import { auth } from '@/lib/auth';
+    import { toNextJsHandler } from 'better-auth/next-js';
+    export const { GET, POST } = toNextJsHandler(auth.handler);
     ```
   - 中间件保护（Next 15.2+）：
     ```ts
-    import { headers } from 'next/headers'
-    import { NextResponse } from 'next/server'
-    import { auth } from '@/lib/auth'
-    export async function middleware(req){
-      const session = await auth.api.getSession({ headers: await headers() })
-      if(!session) return NextResponse.redirect(new URL('/sign-in', req.url))
-      return NextResponse.next()
+    import { headers } from 'next/headers';
+    import { NextResponse } from 'next/server';
+    import { auth } from '@/lib/auth';
+    export async function middleware(req) {
+      const session = await auth.api.getSession({ headers: await headers() });
+      if (!session) return NextResponse.redirect(new URL('/sign-in', req.url));
+      return NextResponse.next();
     }
-    export const config = { runtime: 'nodejs', matcher: ['/connections','/schema'] }
+    export const config = {
+      runtime: 'nodejs',
+      matcher: ['/connections', '/schema'],
+    };
     ```
 - 注意：登录后端与应用库（APP_DB_URL）表结构需要你执行迁移；本项目不自动变更数据库。初始化页可配置 schema 与表前缀，生成与 Better Auth 对齐的表：`<prefix>users`（password_hash）、`<prefix>sessions`、`<prefix>verification_codes`。
 
