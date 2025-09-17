@@ -10,11 +10,25 @@ import { ResultsPanel } from "./ResultsPanel";
 import { RuntimeCalcCards } from "./RuntimeCalcCards";
 import { PaginationBar } from "./PaginationBar";
 
+type QueryTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+  countMs?: number | null;
+};
+
+type CalcTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+};
+
 type CalcResultState = {
   loading?: boolean;
   value?: any;
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
+  timing?: CalcTimingState;
 };
 
 export function RunQueryPanel({
@@ -51,6 +65,7 @@ export function RunQueryPanel({
   textResult,
   gridCols,
   rows,
+  queryTiming,
   // calc
   runtimeCalcItems,
   calcResults,
@@ -86,6 +101,7 @@ export function RunQueryPanel({
   textResult: string | null;
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
+  queryTiming: QueryTimingState | null;
   runtimeCalcItems: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
@@ -137,6 +153,7 @@ export function RunQueryPanel({
         textResult={textResult}
         gridCols={gridCols}
         rows={rows}
+        timing={queryTiming}
         footer={
           <PaginationBar
             visible={pgEnabled && !textResult}

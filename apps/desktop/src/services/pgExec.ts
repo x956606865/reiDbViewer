@@ -50,6 +50,12 @@ type ExecuteOptions = {
   allowWrite?: boolean
 }
 
+type TimingInfo = {
+  connectMs?: number
+  queryMs?: number
+  countMs?: number
+}
+
 type ExecuteResult = {
   sql: string
   params: any[]
@@ -64,6 +70,7 @@ type ExecuteResult = {
   countReason?: string
   command?: string
   message?: string
+  timing?: TimingInfo
 }
 
 type PreviewResult = { previewText: string; previewInline: string }
@@ -97,7 +104,10 @@ type CalcResult = {
   rows: Array<Record<string, unknown>>
   columns: string[]
   rowCount: number
+  timing?: TimingInfo
 }
+
+const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
 
 const strip = (sql: string) => sqlTestHelpers.stripStringsAndComments(sql)
 
@@ -179,19 +189,35 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
   const dsn = await getDsnForConn(opts.userConnId)
 
   if (!isSelect) {
-    return withWritableSession<ExecuteResult>(dsn, async (db) => {
-      const res = await db.select<any[]>(execText.text, execText.values)
-      const first = res[0] ?? {}
-      return {
-        sql: execText.text,
-        params: execText.values,
-        rows: res,
-        columns: Object.keys(first ?? {}),
-        rowCount: res.length,
-        command: 'EXECUTE',
-        message: `${res.length} row(s)`
-      }
-    })
+    let connectMs: number | undefined
+    const execResult = await withWritableSession<ExecuteResult>(
+      dsn,
+      async (db) => {
+        const queryStart = now()
+        const res = await db.select<any[]>(execText.text, execText.values)
+        const queryMs = Math.round(now() - queryStart)
+        const first = res[0] ?? {}
+        return {
+          sql: execText.text,
+          params: execText.values,
+          rows: res,
+          columns: Object.keys(first ?? {}),
+          rowCount: res.length,
+          command: 'EXECUTE',
+          message: `${res.length} row(s)`,
+          timing: { queryMs },
+        }
+      },
+      {
+        onConnect: (ms) => {
+          connectMs = ms
+        },
+      },
+    )
+    if (connectMs != null) {
+      execResult.timing = { ...(execResult.timing ?? {}), connectMs }
+    }
+    return execResult
   }
 
   if (needCount && pagination.countOnly) {
@@ -208,60 +234,93 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
         countReason: 'user_sql_contains_limit_or_offset',
       }
     }
-    return withReadonlySession<ExecuteResult>(dsn, async (db) => {
-      const countRows = await db.select<Array<{ total: number | string }>>(
-        `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
-        compiled.values,
-      )
-      const totalRow = countRows[0]?.total
-      const total = typeof totalRow === 'string' ? Number(totalRow) : Number(totalRow)
-      const totalRows = Number.isFinite(total) ? total : undefined
-      return {
-        sql: compiled.text,
-        params: compiled.values,
-        rows: [],
-        columns: [],
-        rowCount: 0,
-        page,
-        pageSize,
-        totalRows: totalRows ?? undefined,
-        totalPages: totalRows ? Math.max(1, Math.ceil(totalRows / pageSize)) : undefined,
+    let connectMs: number | undefined
+    const countResult = await withReadonlySession<ExecuteResult>(
+      dsn,
+      async (db) => {
+        const countStart = now()
+        const countRows = await db.select<Array<{ total: number | string }>>(
+          `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
+          compiled.values,
+        )
+        const totalRow = countRows[0]?.total
+        const total = typeof totalRow === 'string' ? Number(totalRow) : Number(totalRow)
+        const totalRows = Number.isFinite(total) ? total : undefined
+        return {
+          sql: compiled.text,
+          params: compiled.values,
+          rows: [],
+          columns: [],
+          rowCount: 0,
+          page,
+          pageSize,
+          totalRows: totalRows ?? undefined,
+          totalPages: totalRows ? Math.max(1, Math.ceil(totalRows / pageSize)) : undefined,
+          timing: { countMs: Math.round(now() - countStart) },
+        }
+      },
+      {
+        onConnect: (ms) => {
+          connectMs = ms
+        },
+      },
+    )
+    if (connectMs != null) {
+      countResult.timing = { ...(countResult.timing ?? {}), connectMs }
+    }
+    return countResult
+  }
+
+  let connectMs: number | undefined
+  const result = await withReadonlySession<ExecuteResult>(
+    dsn,
+    async (db) => {
+      let totalRowsValue: number | undefined
+      let countMs: number | undefined
+      if (countPossible) {
+        const countStart = now()
+        const countRows = await db.select<Array<{ total: number | string }>>(
+          `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
+          compiled.values,
+        )
+        const total = countRows[0]?.total
+        const num = typeof total === 'string' ? Number(total) : Number(total)
+        if (Number.isFinite(num)) totalRowsValue = num
+        countMs = Math.round(now() - countStart)
       }
-    })
-  }
-
-  let totalRows: number | undefined
-  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
-    if (countPossible) {
-      const countRows = await db.select<Array<{ total: number | string }>>(
-        `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
-        compiled.values,
-      )
-      const total = countRows[0]?.total
-      const num = typeof total === 'string' ? Number(total) : Number(total)
-      if (Number.isFinite(num)) totalRows = num
-    }
-    return await db.select<Array<Record<string, unknown>>>(execText.text, execText.values)
-  })
-
-  const columns = Object.keys(rows[0] ?? {})
-  const result: ExecuteResult = {
-    sql: execText.text,
-    params: execText.values,
-    rows,
-    columns,
-    rowCount: rows.length,
-  }
-  if (pagination.enabled) {
-    result.page = page
-    result.pageSize = pageSize
-    if (Number.isFinite(totalRows)) {
-      result.totalRows = totalRows
-      result.totalPages = Math.max(1, Math.ceil((totalRows ?? 0) / pageSize))
-    } else if (needCount && !countPossible) {
-      result.countSkipped = true
-      result.countReason = 'user_sql_contains_limit_or_offset'
-    }
+      const queryStart = now()
+      const dataRows = await db.select<Array<Record<string, unknown>>>(execText.text, execText.values)
+      const queryMs = Math.round(now() - queryStart)
+      const columns = Object.keys(dataRows[0] ?? {})
+      const execResult: ExecuteResult = {
+        sql: execText.text,
+        params: execText.values,
+        rows: dataRows,
+        columns,
+        rowCount: dataRows.length,
+        timing: { queryMs, countMs },
+      }
+      if (pagination.enabled) {
+        execResult.page = page
+        execResult.pageSize = pageSize
+        if (Number.isFinite(totalRowsValue)) {
+          execResult.totalRows = totalRowsValue
+          execResult.totalPages = Math.max(1, Math.ceil((totalRowsValue ?? 0) / pageSize))
+        } else if (needCount && !countPossible) {
+          execResult.countSkipped = true
+          execResult.countReason = 'user_sql_contains_limit_or_offset'
+        }
+      }
+      return execResult
+    },
+    {
+      onConnect: (ms) => {
+        connectMs = ms
+      },
+    },
+  )
+  if (connectMs != null) {
+    result.timing = { ...(result.timing ?? {}), connectMs }
   }
   return result
 }
@@ -355,15 +414,33 @@ export async function computeCalcSql(opts: CalcOptions): Promise<CalcResult> {
   const finalSql = `with rdv_base as ( ${shiftParamPlaceholders(baseCompiled.text, calcCompiled.values.length)} ) ${calcCompiled.text}`
   const finalParams = [...calcCompiled.values, ...baseCompiled.values]
   const dsn = await getDsnForConn(opts.userConnId)
-  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
-    return await db.select<Array<Record<string, unknown>>>(finalSql, finalParams)
-  })
+  let connectMs: number | undefined
+  const { rows, queryMs } = await withReadonlySession<{
+    rows: Array<Record<string, unknown>>
+    queryMs: number
+  }>(
+    dsn,
+    async (db) => {
+      const queryStart = now()
+      const dataRows = await db.select<Array<Record<string, unknown>>>(finalSql, finalParams)
+      return {
+        rows: dataRows,
+        queryMs: Math.round(now() - queryStart),
+      }
+    },
+    {
+      onConnect: (ms) => {
+        connectMs = ms
+      },
+    },
+  )
   return {
     sql: finalSql,
     params: finalParams,
     rows,
     columns: Object.keys(rows[0] ?? {}),
     rowCount: rows.length,
+    timing: { queryMs, connectMs },
   }
 }
 

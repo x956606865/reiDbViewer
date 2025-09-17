@@ -7,6 +7,8 @@ const resolveTimeout = () => {
   return Math.max(1, Math.min(base, cap))
 }
 
+const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
+
 const applySessionGuards = async (db: any, readOnly: boolean) => {
   await db.execute(readOnly ? 'BEGIN READ ONLY' : 'BEGIN')
   const timeout = resolveTimeout()
@@ -15,9 +17,20 @@ const applySessionGuards = async (db: any, readOnly: boolean) => {
   await db.execute(`SET LOCAL search_path = pg_catalog, "${'$user'}"`)
 }
 
-export async function withReadonlySession<T>(dsn: string, fn: (db: any) => Promise<T>): Promise<T> {
+type SessionOptions = {
+  onConnect?: (ms: number) => void
+}
+
+export async function withReadonlySession<T>(
+  dsn: string,
+  fn: (db: any) => Promise<T>,
+  opts?: SessionOptions
+): Promise<T> {
+  const connectStart = now()
   const db = await Database.load(dsn)
   await applySessionGuards(db, true)
+  const connectMs = Math.round(now() - connectStart)
+  if (opts?.onConnect) opts.onConnect(connectMs)
   try {
     const res = await fn(db)
     await db.execute('ROLLBACK')
@@ -28,9 +41,16 @@ export async function withReadonlySession<T>(dsn: string, fn: (db: any) => Promi
   }
 }
 
-export async function withWritableSession<T>(dsn: string, fn: (db: any) => Promise<T>): Promise<T> {
+export async function withWritableSession<T>(
+  dsn: string,
+  fn: (db: any) => Promise<T>,
+  opts?: SessionOptions
+): Promise<T> {
+  const connectStart = now()
   const db = await Database.load(dsn)
   await applySessionGuards(db, false)
+  const connectMs = Math.round(now() - connectStart)
+  if (opts?.onConnect) opts.onConnect(connectMs)
   try {
     const res = await fn(db)
     await db.execute('COMMIT')
