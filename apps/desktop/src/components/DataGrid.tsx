@@ -6,7 +6,9 @@ import { Tooltip, CopyButton, ActionIcon } from '@mantine/core'
 import { IconCopy } from '@tabler/icons-react'
 import TextCell from './TextCell'
 import JsonCell from './JsonCell'
+import TimezoneCell from './TimezoneCell'
 import RowViewButton from './RowViewButton'
+import { isTimestampWithOffset } from '../lib/timezone-detect'
 
 export type DataGridProps = {
   columns: string[]
@@ -68,6 +70,9 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                 const parsed = JSON.parse(s)
                 return <JsonCell value={parsed} />
               } catch {}
+            }
+            if (isTimestampWithOffset(v)) {
+              return <TimezoneCell value={v} />
             }
             return <TextCell value={v} />
           }

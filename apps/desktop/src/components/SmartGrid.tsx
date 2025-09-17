@@ -22,6 +22,8 @@ import {
   IconPinnedOff,
 } from '@tabler/icons-react'
 import JsonCell from './JsonCell'
+import TimezoneCell from './TimezoneCell'
+import { isTimestampWithOffset } from '../lib/timezone-detect'
 
 export type SmartGridProps = {
   columns: string[]
@@ -65,10 +67,21 @@ export default function SmartGrid({
       },
       mantineTableHeadCellProps: { style: { whiteSpace: 'nowrap' } },
       mantineTableBodyCellProps: { style: { fontFamily: 'var(--mantine-font-family-monospace)' } },
-      // JSON 列使用专用渲染器
-      ...(jsonColumns && jsonColumns.includes(key)
-        ? { Cell: ({ cell }: any) => <JsonCell value={cell.getValue()} previewMax={32} /> }
-        : {}),
+      Cell: ({ cell, row }: any) => {
+        const rawValue = row?.original?.[key]
+        if (jsonColumns && jsonColumns.includes(key)) {
+          return <JsonCell value={rawValue ?? cell.getValue()} previewMax={32} />
+        }
+        const stringValue = typeof rawValue === 'string'
+          ? rawValue
+          : typeof cell.getValue() === 'string'
+            ? (cell.getValue() as string)
+            : undefined
+        if (stringValue && isTimestampWithOffset(stringValue)) {
+          return <TimezoneCell value={stringValue} />
+        }
+        return cell.getValue()
+      },
     }))
   }, [columns, jsonColumns])
 
