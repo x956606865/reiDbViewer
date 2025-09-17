@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "target": "ES2020",
+    "lib": ["DOM", "DOM.Iterable", "ES2020"],
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@site/*": ["./*"],
+      "@docusaurus/*": ["./node_modules/@docusaurus/*"],
+      "@generated/*": ["./.docusaurus/*"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "docusaurus.config.ts",
+    "sidebars.ts",
+    "docs/**/*.md",
+    "docs/**/*.mdx"
+  ]
+}
