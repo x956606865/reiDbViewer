@@ -118,6 +118,8 @@ export function VariablesEditor({
                                     ? x.options
                                     : []
                                   : undefined,
+                              optionsSql:
+                                (val as any) === "enum" ? x.optionsSql : undefined,
                             }
                           : x
                       )

@@ -32,14 +32,12 @@ const VarSchema = z
     options: z.array(z.string()).optional(),
     optionsSql: z.string().optional(),
   })
-  .superRefine((val, ctx) => {
-    if (val.type !== 'enum' && val.optionsSql) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'optionsSql 仅适用于 enum 类型',
-        path: ['optionsSql'],
-      });
+  .transform((val) => {
+    if (val.type !== 'enum') {
+      const { optionsSql, ...rest } = val;
+      return { ...rest, optionsSql: undefined };
     }
+    return val;
   });
 
 const BodySchema = z.object({
