@@ -212,6 +212,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
         onConnect: (ms) => {
           connectMs = ms
         },
+        cacheKey: opts.userConnId,
       },
     )
     if (connectMs != null) {
@@ -263,6 +264,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
         onConnect: (ms) => {
           connectMs = ms
         },
+        cacheKey: opts.userConnId,
       },
     )
     if (connectMs != null) {
@@ -317,6 +319,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
       onConnect: (ms) => {
         connectMs = ms
       },
+      cacheKey: opts.userConnId,
     },
   )
   if (connectMs != null) {
@@ -359,9 +362,13 @@ export async function explainSavedSql(opts: ExplainOptions): Promise<ExplainResu
   const dsn = await getDsnForConn(opts.userConnId)
   const format = opts.format === 'json' ? 'json' : 'text'
   const explainSql = buildExplainSQL(compiled.text, { format, analyze: opts.analyze && isReadOnlySelect(saved.sql) })
-  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
-    return await db.select<Array<Record<string, unknown>>>(explainSql, compiled.values)
-  })
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(
+    dsn,
+    async (db) => {
+      return await db.select<Array<Record<string, unknown>>>(explainSql, compiled.values)
+    },
+    { cacheKey: opts.userConnId },
+  )
   if (format === 'json') {
     return { previewInline, rows }
   }
@@ -376,9 +383,13 @@ export async function fetchEnumOptions(opts: {
     throw new QueryError('仅支持只读 SQL', { code: 'read_only_required' })
   }
   const dsn = await getDsnForConn(opts.userConnId)
-  const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
-    return await db.select<Array<Record<string, unknown>>>(opts.sql, [])
-  })
+  const rows = await withReadonlySession<Array<Record<string, unknown>>>(
+    dsn,
+    async (db) => {
+      return await db.select<Array<Record<string, unknown>>>(opts.sql, [])
+    },
+    { cacheKey: opts.userConnId },
+  )
   const seen = new Set<string>()
   const options: string[] = []
   for (const r of rows) {
@@ -432,6 +443,7 @@ export async function computeCalcSql(opts: CalcOptions): Promise<CalcResult> {
       onConnect: (ms) => {
         connectMs = ms
       },
+      cacheKey: opts.userConnId,
     },
   )
   return {

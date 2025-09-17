@@ -4,6 +4,7 @@ import { setDsnSecret, getDsnSecret, deleteDsnSecret } from '@/lib/keyring'
 import { getOrInitDeviceAesKey } from '@/lib/secret-store'
 import { aesEncryptString, aesDecryptToString, type AesCipher } from '@/lib/aes'
 import { getCurrentConnId, setCurrentConnId } from '@/lib/current-conn'
+import { invalidateSessionCache } from '@/lib/db-session'
 
 async function openLocal() {
   return await Database.load('sqlite:rdv_local.db')
@@ -122,6 +123,7 @@ export async function deleteConnectionById(id: string) {
   const db = await openLocal()
   // @ts-ignore execute is provided by the plugin
   await db.execute('DELETE FROM user_connections WHERE id = $1', [id])
+  invalidateSessionCache(id)
   try { await deleteDsnSecret(id) } catch {}
   broadcastConnectionsChanged()
 }
@@ -195,5 +197,6 @@ export async function updateConnectionDsn(id: string, alias: string | null, dsn:
       ? [cipher, meta.host, port, meta.database, meta.username, t, alias, id]
       : [cipher, meta.host, port, meta.database, meta.username, t, id]
   )
+  invalidateSessionCache(id)
   broadcastConnectionsChanged()
 }

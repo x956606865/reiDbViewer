@@ -1,6 +1,19 @@
 import Database from '@tauri-apps/plugin-sql'
 import { env } from '@/lib/env'
 
+type CacheEntry = {
+  dsn: string
+  dbPromise: Promise<any>
+}
+
+type LockEntry = {
+  tail: Promise<void>
+  next: Promise<void>
+}
+
+const dbCache = new Map<string, CacheEntry>()
+const sessionLocks = new Map<string, LockEntry>()
+
 const resolveTimeout = () => {
   const base = Math.max(1, env.QUERY_TIMEOUT_DEFAULT_MS)
   const cap = Math.max(base, env.QUERY_TIMEOUT_MAX_MS)
@@ -19,6 +32,52 @@ const applySessionGuards = async (db: any, readOnly: boolean) => {
 
 type SessionOptions = {
   onConnect?: (ms: number) => void
+  cacheKey?: string
+}
+
+async function runWithLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const prevEntry = sessionLocks.get(key)
+  const tail = prevEntry?.tail ?? Promise.resolve()
+  let release!: () => void
+  const next = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const newTail = tail.then(() => next)
+  sessionLocks.set(key, { tail: newTail, next })
+  await tail
+  try {
+    return await task()
+  } finally {
+    release()
+    const entry = sessionLocks.get(key)
+    if (entry?.next === next) {
+      sessionLocks.delete(key)
+    }
+  }
+}
+
+async function getDatabase(key: string, dsn: string): Promise<any> {
+  const existing = dbCache.get(key)
+  if (existing && existing.dsn === dsn) {
+    return existing.dbPromise
+  }
+  const wrapped = Database.load(dsn).then(
+    (db) => db,
+    (err) => {
+      const current = dbCache.get(key)
+      if (current?.dbPromise === wrapped) {
+        dbCache.delete(key)
+      }
+      throw err
+    }
+  )
+  dbCache.set(key, { dsn, dbPromise: wrapped })
+  return wrapped
+}
+
+export function invalidateSessionCache(key: string) {
+  dbCache.delete(key)
+  sessionLocks.delete(key)
 }
 
 export async function withReadonlySession<T>(
@@ -26,19 +85,27 @@ export async function withReadonlySession<T>(
   fn: (db: any) => Promise<T>,
   opts?: SessionOptions
 ): Promise<T> {
-  const connectStart = now()
-  const db = await Database.load(dsn)
-  await applySessionGuards(db, true)
-  const connectMs = Math.round(now() - connectStart)
-  if (opts?.onConnect) opts.onConnect(connectMs)
-  try {
-    const res = await fn(db)
-    await db.execute('ROLLBACK')
-    return res
-  } catch (err) {
-    try { await db.execute('ROLLBACK') } catch {}
-    throw err
-  }
+  const key = opts?.cacheKey ?? dsn
+  return await runWithLock(key, async () => {
+    const connectStart = now()
+    const db = await getDatabase(key, dsn)
+    await applySessionGuards(db, true)
+    const connectMs = Math.round(now() - connectStart)
+    if (opts?.onConnect) opts.onConnect(connectMs)
+    let finished = false
+    try {
+      const res = await fn(db)
+      await db.execute('ROLLBACK')
+      finished = true
+      return res
+    } catch (err) {
+      throw err
+    } finally {
+      if (!finished) {
+        try { await db.execute('ROLLBACK') } catch {}
+      }
+    }
+  })
 }
 
 export async function withWritableSession<T>(
@@ -46,17 +113,25 @@ export async function withWritableSession<T>(
   fn: (db: any) => Promise<T>,
   opts?: SessionOptions
 ): Promise<T> {
-  const connectStart = now()
-  const db = await Database.load(dsn)
-  await applySessionGuards(db, false)
-  const connectMs = Math.round(now() - connectStart)
-  if (opts?.onConnect) opts.onConnect(connectMs)
-  try {
-    const res = await fn(db)
-    await db.execute('COMMIT')
-    return res
-  } catch (err) {
-    try { await db.execute('ROLLBACK') } catch {}
-    throw err
-  }
+  const key = opts?.cacheKey ?? dsn
+  return await runWithLock(key, async () => {
+    const connectStart = now()
+    const db = await getDatabase(key, dsn)
+    await applySessionGuards(db, false)
+    const connectMs = Math.round(now() - connectStart)
+    if (opts?.onConnect) opts.onConnect(connectMs)
+    let committed = false
+    try {
+      const res = await fn(db)
+      await db.execute('COMMIT')
+      committed = true
+      return res
+    } catch (err) {
+      throw err
+    } finally {
+      if (!committed) {
+        try { await db.execute('ROLLBACK') } catch {}
+      }
+    }
+  })
 }

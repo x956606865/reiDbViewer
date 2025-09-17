@@ -59,9 +59,13 @@ export async function runOpsQuery(opts: {
   const { text, values } = buildOpsQuery(actionId, params)
   const dsn = await getDsnForConn(userConnId)
   try {
-    const rows = await withReadonlySession<Array<Record<string, unknown>>>(dsn, async (db) => {
-      return await db.select<Array<Record<string, unknown>>>(text, values)
-    })
+    const rows = await withReadonlySession<Array<Record<string, unknown>>>(
+      dsn,
+      async (db) => {
+        return await db.select<Array<Record<string, unknown>>>(text, values)
+      },
+      { cacheKey: userConnId },
+    )
     const columns = Object.keys(rows[0] ?? {})
     return { sql: text, rows, columns, rowCount: rows.length }
   } catch (err: any) {
@@ -80,10 +84,14 @@ export async function sendOpsSignal(opts: {
   let ok = false
   let error: string | undefined
   try {
-    ok = await withWritableSession<boolean>(dsn, async (db) => {
-      const rows = await db.select<Array<{ ok: boolean }>>(`SELECT ${fn}($1) AS ok`, [pid])
-      return Boolean(rows?.[0]?.ok)
-    })
+    ok = await withWritableSession<boolean>(
+      dsn,
+      async (db) => {
+        const rows = await db.select<Array<{ ok: boolean }>>(`SELECT ${fn}($1) AS ok`, [pid])
+        return Boolean(rows?.[0]?.ok)
+      },
+      { cacheKey: userConnId },
+    )
     return { ok }
   } catch (err: any) {
     error = String(err?.message || err)
