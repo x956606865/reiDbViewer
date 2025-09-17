@@ -44,4 +44,61 @@ describe('sql-template: enum variables', () => {
     const sql = 'select * from t where status = {{status}}'
     expect(() => compileSql(sql, vars, { status: 'canceled' })).toThrow()
   })
+
+  it('allows clearing enum to null even when default exists', () => {
+    const sql = 'select * from t where status = {{status}}'
+    const withDefault = compileSql(sql, vars, {})
+    expect(withDefault.values).toEqual(['new'])
+
+    const cleared = compileSql(sql, vars, { status: null })
+    expect(cleared.values).toEqual([null])
+  })
+})
+
+describe('sql-template: conditional blocks', () => {
+  const vars: SavedQueryVariableDef[] = [
+    { name: 'status', type: 'text' },
+    { name: 'deleted', type: 'boolean', default: false },
+  ]
+
+  it('keeps block only when variable present', () => {
+    const sql = `
+      select * from orders
+      where deleted_at is null
+      {{#when status}}
+        and status = {{status}}
+      {{/when}}
+    `
+    const compiledWith = compileSql(sql, vars, { status: 'shipped' })
+    expect(compiledWith.text).toMatch(/and status = \$1/)
+    expect(compiledWith.values).toEqual(['shipped'])
+
+    const compiledWithout = compileSql(sql, vars, {})
+    expect(compiledWithout.text).not.toMatch(/status =/)
+    expect(compiledWithout.values).toEqual([])
+  })
+
+  it('supports if/else expressions with presence', () => {
+    const sql = `
+      select * from orders
+      where deleted = {{deleted}}
+      {{#if presence(status) && status == 'new'}}
+        and status = {{status}}
+      {{else}}
+        and status is not null
+      {{/if}}
+    `
+    const compiledTrue = compileSql(sql, vars, { status: 'new' })
+    expect(compiledTrue.text).toMatch(/and status = \$2/)
+    expect(compiledTrue.values).toEqual([false, 'new'])
+
+    const compiledFalse = compileSql(sql, vars, { status: 'archived' })
+    expect(compiledFalse.text).toMatch(/and status is not null/)
+    expect(compiledFalse.values).toEqual([false])
+  })
+
+  it('throws on unterminated blocks', () => {
+    const sql = 'select 1 {{#if status}} and status = {{status}}'
+    expect(() => compileSql(sql, vars, {})).toThrowError(/Unclosed block/i)
+  })
 })

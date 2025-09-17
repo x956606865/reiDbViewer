@@ -54,4 +54,64 @@ describe('sql-template helpers', () => {
     expect(isReadOnlySelect('\n-- comment\nWITH cte AS (SELECT 1) SELECT * FROM cte')).toBe(true)
     expect(isReadOnlySelect('  insert into t values (1)')).toBe(false)
   })
+
+  it('allows clearing enum value to null even when default exists', () => {
+    const vars: SavedQueryVariableDef[] = [
+      { name: 'status', type: 'enum', options: ['active', 'disabled'], default: 'active' },
+    ]
+    const sql = 'select * from t where status = {{status}}'
+    const compiledDefault = compileSql(sql, vars, {})
+    expect(compiledDefault.values).toEqual(['active'])
+
+    const compiledCleared = compileSql(sql, vars, { status: null })
+    expect(compiledCleared.values).toEqual([null])
+  })
+})
+
+describe('sql-template conditional blocks', () => {
+  const vars: SavedQueryVariableDef[] = [
+    { name: 'status', type: 'text' },
+    { name: 'flag', type: 'boolean', default: true },
+  ]
+
+  it('includes when-block only if variables have value', () => {
+    const sql = `
+      select * from orders
+      where true
+      {{#when status}}
+        and status = {{status}}
+      {{/when}}
+    `
+    const withStatus = compileSql(sql, vars, { status: 'pending' })
+    expect(withStatus.text).toMatch(/and status = \$1/)
+    expect(withStatus.values).toEqual(['pending'])
+
+    const withoutStatus = compileSql(sql, vars, {})
+    expect(withoutStatus.text).not.toMatch(/status =/)
+    expect(withoutStatus.values).toEqual([])
+  })
+
+  it('evaluates if/else expressions using presence helper', () => {
+    const sql = `
+      select * from orders
+      where flag = {{flag}}
+      {{#if presence(status) && status == 'pending'}}
+        and status = {{status}}
+      {{else}}
+        and status is not null
+      {{/if}}
+    `
+    const trueBranch = compileSql(sql, vars, { status: 'pending' })
+    expect(trueBranch.text).toMatch(/and status = \$2/)
+    expect(trueBranch.values).toEqual([true, 'pending'])
+
+    const falseBranch = compileSql(sql, vars, { status: 'closed' })
+    expect(falseBranch.text).toMatch(/and status is not null/)
+    expect(falseBranch.values).toEqual([true])
+  })
+
+  it('throws when encountering unclosed blocks', () => {
+    const sql = 'select 1 {{#when status}} and status = {{status}}'
+    expect(() => compileSql(sql, vars, {})).toThrow(/Unclosed block/i)
+  })
 })
