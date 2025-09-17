@@ -10,17 +10,32 @@ import { ResultsPanel } from "./ResultsPanel";
 import { RuntimeCalcCards } from "./RuntimeCalcCards";
 import { PaginationBar } from "./PaginationBar";
 
+type QueryTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+  countMs?: number | null;
+};
+
+type CalcTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+};
+
 type CalcResultState = {
   loading?: boolean;
   value?: any;
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
+  timing?: CalcTimingState;
 };
 
 export function RunQueryPanel({
   // connection + vars
   userConnId,
   currentConn,
+  currentQueryName,
   vars,
   runValues,
   setRunValues,
@@ -51,6 +66,7 @@ export function RunQueryPanel({
   textResult,
   gridCols,
   rows,
+  queryTiming,
   // calc
   runtimeCalcItems,
   calcResults,
@@ -60,6 +76,7 @@ export function RunQueryPanel({
 }: {
   userConnId?: string | null;
   currentConn: { id: string; alias: string; host?: string | null } | null;
+  currentQueryName?: string | null;
   vars: SavedQueryVariableDef[];
   runValues: Record<string, any>;
   setRunValues: React.Dispatch<React.SetStateAction<Record<string, any>>>;
@@ -86,6 +103,7 @@ export function RunQueryPanel({
   textResult: string | null;
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
+  queryTiming: QueryTimingState | null;
   runtimeCalcItems: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
@@ -96,6 +114,7 @@ export function RunQueryPanel({
       <RunParamsPanel
         userConnId={userConnId}
         currentConn={currentConn}
+        currentQueryName={currentQueryName}
         vars={vars}
         runValues={runValues}
         setRunValues={setRunValues}
@@ -131,11 +150,13 @@ export function RunQueryPanel({
             items={runtimeCalcItems}
             calcResults={calcResults}
             onRunCalc={onRunCalc}
+            withContainer={false}
           />
         }
         textResult={textResult}
         gridCols={gridCols}
         rows={rows}
+        timing={queryTiming}
         footer={
           <PaginationBar
             visible={pgEnabled && !textResult}

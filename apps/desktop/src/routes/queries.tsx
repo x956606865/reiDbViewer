@@ -22,6 +22,7 @@ import type {
   DynamicColumnDef,
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
+import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 import { SavedQueriesSidebar } from '@/components/queries/SavedQueriesSidebar';
 import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
@@ -47,11 +48,25 @@ import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
 import { listConnections } from '@/lib/localStore';
 
+type QueryTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+  countMs?: number | null;
+};
+
+type CalcTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+};
+
 type CalcResultState = {
   loading?: boolean;
   value?: any;
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
+  timing?: CalcTimingState;
 };
 
 function toSavedItem(summary: SavedSqlSummary): SavedItem {
@@ -96,6 +111,12 @@ export default function QueriesPage() {
   const sqlPreviewRef = useRef<HTMLDivElement | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
+  useEffect(() => {
+    emitQueryExecutingEvent(isExecuting, 'desktop/queries');
+    return () => {
+      if (isExecuting) emitQueryExecutingEvent(false, 'desktop/queries');
+    };
+  }, [isExecuting]);
   const [pgEnabled, setPgEnabled] = useState(true);
   const [pgSize, setPgSize] = useState(20);
   const [pgPage, setPgPage] = useState(1);
@@ -103,11 +124,13 @@ export default function QueriesPage() {
   const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
   const [pgCountLoaded, setPgCountLoaded] = useState(false);
   const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
+  const [queryTiming, setQueryTiming] = useState<QueryTimingState | null>(null);
   const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
   const lastExecSignatureRef = useRef<string | null>(null);
   const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState(false);
+  const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const userConnId = useCurrentConnIdState();
   const [connItems, setConnItems] = useState<
     Array<{ id: string; alias: string; host?: string | null }>
@@ -244,6 +267,7 @@ export default function QueriesPage() {
     setCalcResults({});
     setTextResult(null);
     setInfo('已切换为新建模式。');
+    setQueryTiming(null);
     calcAutoTriggeredRef.current = {};
     lastExecSignatureRef.current = null;
   };
@@ -280,6 +304,7 @@ export default function QueriesPage() {
         setPgTotalPages(null);
         setPgCountLoaded(false);
         setCalcResults({});
+        setQueryTiming(null);
         setMode(focusMode);
         calcAutoTriggeredRef.current = {};
         lastExecSignatureRef.current = null;
@@ -396,6 +421,8 @@ export default function QueriesPage() {
     setIsExecuting(true);
     setError(null);
     setInfo(null);
+    setQueryTiming(null);
+    const start = getNow();
     try {
       const pagination = {
         enabled: pgEnabled,
@@ -412,6 +439,10 @@ export default function QueriesPage() {
         pagination,
         allowWrite: false,
       });
+      const elapsedMs = Math.round(getNow() - start);
+      const resConnectMs = res.timing?.connectMs ?? null;
+      const resQueryMs = res.timing?.queryMs ?? null;
+      const resCountMs = res.timing?.countMs ?? null;
       if (override?.countOnly) {
         if (res.totalRows != null) {
           setPgTotalRows(res.totalRows);
@@ -419,12 +450,24 @@ export default function QueriesPage() {
           setPgCountLoaded(true);
           setInfo('已刷新计数');
         }
+        setQueryTiming((prev) => ({
+          totalMs: elapsedMs,
+          connectMs: resConnectMs,
+          queryMs: prev?.queryMs ?? null,
+          countMs: resCountMs,
+        }));
         return;
       }
       setPreviewSQL(res.sql);
       setRows(res.rows);
       setGridCols(res.columns);
       setTextResult(null);
+      setQueryTiming({
+        totalMs: elapsedMs,
+        connectMs: resConnectMs,
+        queryMs: resQueryMs,
+        countMs: resCountMs,
+      });
       if (res.page) setPgPage(res.page);
       if (res.pageSize) setPgSize(res.pageSize);
       if (res.totalRows != null) {
@@ -477,7 +520,9 @@ export default function QueriesPage() {
         const ok = window.confirm('该 SQL 可能修改数据，是否继续执行？');
         if (!ok) {
           setError('已取消执行。');
+          setQueryTiming(null);
         } else {
+          const retryStart = getNow();
           try {
             const res2 = await executeSavedSql({
               savedId: currentId,
@@ -485,25 +530,34 @@ export default function QueriesPage() {
               userConnId,
               pagination: {
                 enabled: pgEnabled,
-                page: pgPage,
-                pageSize: pgSize,
-              },
+              page: pgPage,
+              pageSize: pgSize,
+            },
               allowWrite: true,
             });
+            const retryElapsed = Math.round(getNow() - retryStart);
             setPreviewSQL(res2.sql);
             setRows(res2.rows);
             setGridCols(res2.columns);
             setTextResult(null);
+            setQueryTiming({
+              totalMs: retryElapsed,
+              connectMs: res2.timing?.connectMs ?? null,
+              queryMs: res2.timing?.queryMs ?? null,
+              countMs: res2.timing?.countMs ?? null,
+            });
           } catch (ex: any) {
             const msg2 =
               ex instanceof QueryError ? ex.message : String(ex?.message || ex);
             setError(msg2);
+            setQueryTiming(null);
           }
         }
       } else {
         const msg =
           e instanceof QueryError ? e.message : String(e?.message || e);
         setError(msg);
+        setQueryTiming(null);
       }
     } finally {
       setIsExecuting(false);
@@ -521,6 +575,7 @@ export default function QueriesPage() {
     }
     setIsExecuting(true);
     setError(null);
+    setQueryTiming(null);
     try {
       const res = await explainSavedSql({
         savedId: currentId,
@@ -658,6 +713,9 @@ export default function QueriesPage() {
       const variant = (ci.kind ?? 'single') as 'single' | 'group';
       const effectiveRows = opts?.rowsOverride ?? rows;
       const pageSizeForCount = opts?.pageSizeOverride ?? pgSize;
+      const start = getNow();
+      let connectMs: number | undefined;
+      let queryMs: number | undefined;
       setCalcResults((s) => ({
         ...s,
         [key]: {
@@ -665,6 +723,7 @@ export default function QueriesPage() {
           loading: true,
           error: undefined,
           groupRows: variant === 'group' ? undefined : s[key]?.groupRows,
+          timing: undefined,
         },
       }));
       try {
@@ -678,6 +737,8 @@ export default function QueriesPage() {
             calcSql: ci.code,
           });
           const rowsRes = Array.isArray(res.rows) ? res.rows : [];
+          connectMs = res.timing?.connectMs ?? undefined;
+          queryMs = res.timing?.queryMs ?? undefined;
           if (ci.name === '__total_count__') {
             let num: number | null = null;
             if (rowsRes[0]) {
@@ -706,10 +767,21 @@ export default function QueriesPage() {
                 ? Math.max(1, Math.ceil(num / normalizedPageSize))
                 : null;
             onUpdateTotals(num, totalPages);
-            setCalcResults((s) => ({
-              ...s,
-              [key]: { value: num, loading: false },
-            }));
+            setCalcResults((s) => {
+              const totalMs = Math.round(getNow() - start);
+              return {
+                ...s,
+                [key]: {
+                  value: num,
+                  loading: false,
+                  timing: {
+                    totalMs,
+                    connectMs,
+                    queryMs,
+                  },
+                },
+              };
+            });
           } else if (variant === 'group') {
             const columns = res.columns?.length
               ? res.columns
@@ -728,14 +800,22 @@ export default function QueriesPage() {
                 value: (row as any)[valueCol as any],
               };
             });
-            setCalcResults((s) => ({
-              ...s,
-              [key]: {
-                value: groupRows,
-                groupRows,
-                loading: false,
-              },
-            }));
+            setCalcResults((s) => {
+              const totalMs = Math.round(getNow() - start);
+              return {
+                ...s,
+                [key]: {
+                  value: groupRows,
+                  groupRows,
+                  loading: false,
+                  timing: {
+                    totalMs,
+                    connectMs,
+                    queryMs,
+                  },
+                },
+              };
+            });
           } else {
             let display: any = null;
             if (rowsRes.length === 0) display = null;
@@ -745,10 +825,22 @@ export default function QueriesPage() {
                 : Object.keys(rowsRes[0] || {});
               display = cols.length === 1 ? (rowsRes[0] as any)[cols[0] as any] : rowsRes[0];
             } else display = rowsRes;
-            setCalcResults((s) => ({
-              ...s,
-              [key]: { value: display, loading: false, groupRows: undefined },
-            }));
+            setCalcResults((s) => {
+              const totalMs = Math.round(getNow() - start);
+              return {
+                ...s,
+                [key]: {
+                  value: display,
+                  loading: false,
+                  groupRows: undefined,
+                  timing: {
+                    totalMs,
+                    connectMs,
+                    queryMs,
+                  },
+                },
+              };
+            });
           }
         } else {
           const helpers = {
@@ -774,17 +866,40 @@ export default function QueriesPage() {
             `"use strict"; return ( ${ci.code} )(vars, rows, helpers)`
           ) as any;
           const val = fn(runValues, effectiveRows, helpers);
-          setCalcResults((s) => ({
-            ...s,
-            [key]: { value: val, loading: false, groupRows: undefined },
-          }));
+          setCalcResults((s) => {
+            const totalMs = Math.round(getNow() - start);
+            return {
+              ...s,
+              [key]: {
+                value: val,
+                loading: false,
+                groupRows: undefined,
+                timing: {
+                  totalMs,
+                },
+              },
+            };
+          });
         }
       } catch (e: any) {
         const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-        setCalcResults((s) => ({
-          ...s,
-          [key]: { ...s[key], error: msg, loading: false, groupRows: undefined },
-        }));
+        setCalcResults((s) => {
+          const totalMs = Math.round(getNow() - start);
+          return {
+            ...s,
+            [key]: {
+              ...s[key],
+              error: msg,
+              loading: false,
+              groupRows: undefined,
+              timing: {
+                totalMs,
+                connectMs: connectMs,
+                queryMs: queryMs,
+              },
+            },
+          };
+        });
       }
     },
     [currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
@@ -893,6 +1008,7 @@ export default function QueriesPage() {
               <RunQueryPanel
                 userConnId={userConnId}
                 currentConn={currentConn}
+                currentQueryName={name}
                 vars={vars}
                 runValues={runValues}
                 setRunValues={setRunValues}
@@ -929,6 +1045,7 @@ export default function QueriesPage() {
                 textResult={textResult}
                 gridCols={gridCols}
                 rows={rows}
+                queryTiming={queryTiming}
                 runtimeCalcItems={runtimeCalcItems}
                 calcResults={calcResults}
                 onRunCalc={(ci) => runCalcItem(ci)}

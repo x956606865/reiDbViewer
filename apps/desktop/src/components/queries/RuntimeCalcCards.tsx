@@ -4,11 +4,18 @@ import React from "react";
 import { Badge, Button, Code, Group, Paper, Text } from "@mantine/core";
 import type { CalcItemDef } from "@rei-db-view/types/appdb";
 
+type CalcTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+};
+
 type CalcResultState = {
   loading?: boolean;
   value?: any;
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
+  timing?: CalcTimingState;
 };
 
 const RUN_MODE_LABEL: Record<"always" | "initial" | "manual", string> = {
@@ -35,19 +42,33 @@ const renderValue = (value: any) => {
   return <Text size="sm">{String(value)}</Text>;
 };
 
+const formatDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`);
+
+const buildTimingLabel = (timing?: CalcTimingState) => {
+  if (!timing) return null;
+  const parts: string[] = [];
+  const { totalMs, connectMs, queryMs } = timing;
+  if (totalMs != null) parts.push(`总 ${formatDuration(Math.round(totalMs))}`);
+  if (connectMs != null) parts.push(`连接 ${formatDuration(Math.round(connectMs))}`);
+  if (queryMs != null) parts.push(`查询 ${formatDuration(Math.round(queryMs))}`);
+  return parts.length ? parts.join(' · ') : null;
+};
+
 export function RuntimeCalcCards({
   items,
   calcResults,
   onRunCalc,
+  withContainer = true,
 }: {
   items: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
+  withContainer?: boolean;
 }) {
   if (items.length === 0) return null;
-  return (
-    <Paper withBorder p="xs" mt="xs">
-      <Group gap="sm" wrap="wrap">
+
+  const content = (
+    <Group gap="sm" wrap="wrap" style={{ width: "100%" }}>
         {items.map((ci) => {
           const state = calcResults[ci.name] || {};
           const runMode = (ci.runMode ?? "manual") as "always" | "initial" | "manual";
@@ -57,12 +78,15 @@ export function RuntimeCalcCards({
           const cardStyle = isGroup
             ? { width: "100%", minWidth: "100%" }
             : { minWidth: 240 };
+          const durationLabel = !state.loading ? buildTimingLabel(state.timing) : null;
           return (
             <Paper key={ci.name} withBorder p="xs" style={cardStyle}>
-              <Group justify="space-between" align="center">
-                <Text size="sm" component="div">
-                  <b>{ci.name === "__total_count__" ? "总数" : ci.name}</b>{" "}
-                  <Group component="span" gap={6} align="center">
+              <Group justify="space-between" align="flex-start">
+                <div>
+                  <Group gap={6} align="center">
+                    <Text size="sm" fw={600}>
+                      {ci.name === "__total_count__" ? "总数" : ci.name}
+                    </Text>
                     <Badge size="xs" variant="light">
                       {ci.type.toUpperCase()}
                     </Badge>
@@ -70,7 +94,12 @@ export function RuntimeCalcCards({
                       {RUN_MODE_LABEL[runMode]}
                     </Badge>
                   </Group>
-                </Text>
+                  {durationLabel ? (
+                    <Text size="xs" c="dimmed" mt={4}>
+                      耗时 {durationLabel}
+                    </Text>
+                  ) : null}
+                </div>
                 <Button
                   size="xs"
                   variant="light"
@@ -126,6 +155,13 @@ export function RuntimeCalcCards({
           );
         })}
       </Group>
+  );
+
+  if (!withContainer) return content;
+
+  return (
+    <Paper withBorder p="xs" mt="xs">
+      {content}
     </Paper>
   );
 }

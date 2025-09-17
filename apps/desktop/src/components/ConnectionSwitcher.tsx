@@ -3,6 +3,10 @@ import { Select, Loader, rem } from '@mantine/core'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { listConnections, getCurrent, setCurrent, CONNS_CHANGED_EVENT } from '@/lib/localStore'
 import { subscribeCurrentConnId, getCurrentConnId } from '@/lib/current-conn'
+import {
+  QUERY_EXECUTING_EVENT,
+  type QueryExecutingEventDetail,
+} from '@rei-db-view/types/events'
 
 type Item = { id: string; alias: string }
 
@@ -10,6 +14,7 @@ export default function ConnectionSwitcher() {
   const [userConnId, setUserConnId] = useState<string | null>(getCurrent())
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(false)
+  const [disabled, setDisabled] = useState(false)
 
   const refresh = () => {
     setLoading(true)
@@ -35,6 +40,15 @@ export default function ConnectionSwitcher() {
 
   useEffect(() => { setCurrent(userConnId) }, [userConnId])
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<QueryExecutingEventDetail>).detail
+      setDisabled(Boolean(detail?.executing))
+    }
+    window.addEventListener(QUERY_EXECUTING_EVENT, handler)
+    return () => window.removeEventListener(QUERY_EXECUTING_EVENT, handler)
+  }, [])
+
   const data = useMemo(() => items.map((it) => ({ value: it.id, label: it.alias })), [items])
 
   if (loading) return <Loader size="xs" />
@@ -53,6 +67,7 @@ export default function ConnectionSwitcher() {
       size="sm"
       radius="md"
       variant="default"
+      disabled={disabled}
       leftSection={<IconPlugConnected size={15} stroke={1.6} />}
       leftSectionWidth={34}
       leftSectionPointerEvents="none"

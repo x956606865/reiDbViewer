@@ -22,6 +22,8 @@ import { notifications } from "@mantine/notifications";
 import { IconCheck, IconRefresh, IconTrash, IconX } from "@tabler/icons-react";
 import type { SavedQueryVariableDef } from "@rei-db-view/types/appdb";
 
+const VAR_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 const VAR_TYPES: Array<{ value: SavedQueryVariableDef["type"]; label: string }>
   = [
     { value: "text", label: "text" },
@@ -116,6 +118,8 @@ export function VariablesEditor({
                                     ? x.options
                                     : []
                                   : undefined,
+                              optionsSql:
+                                (val as any) === "enum" ? x.optionsSql : undefined,
                             }
                           : x
                       )
@@ -197,12 +201,20 @@ export function VariablesEditor({
                               return;
                             }
                             try {
+                              const payloadVars = vars.filter((item) =>
+                                VAR_NAME_RE.test(item.name || "")
+                              );
                               const res = await fetch(
                                 "/api/saved-sql/enum-options",
                                 {
                                   method: "POST",
                                   headers: { "content-type": "application/json" },
-                                  body: JSON.stringify({ userConnId, sql: sqlText }),
+                                  body: JSON.stringify({
+                                    userConnId,
+                                    sql: sqlText,
+                                    variables: payloadVars,
+                                    values: runValues,
+                                  }),
                                 }
                               );
                               const j = await res.json().catch(() => ({}));
@@ -341,4 +353,3 @@ export function VariablesEditor({
     </Paper>
   );
 }
-

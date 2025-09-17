@@ -126,7 +126,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_saved_sql_name ON saved_sql(name) WHERE is_
   - 列表/增改查删：`/api/user/saved-sql` → `savedSql.*`
   - 执行/预览/分页：`/api/saved-sql/execute` → `pgExec.executeSavedSql`
   - Explain：`/api/saved-sql/explain` → `pgExec.explainSavedSql`
-  - 枚举选项：`/api/saved-sql/enum-options` → `pgExec.fetchEnumOptions`
+  - 枚举选项：`/api/saved-sql/enum-options` → `pgExec.fetchEnumOptions`（支持 `{{var}}` 模板，占位值沿用运行面板中的变量设置）
   - 运行时计算：`/api/saved-sql/compute` → `pgExec.computeCalcSql`
 - 连接信息：使用已实现的本地 `user_connections`（M1），页面侧沿用 `useCurrentConnId()` 获取当前连接 ID，并以本地 connections service 获取 `alias/host` 用于显示。
 

@@ -40,7 +40,14 @@ export async function getUserConnPool(userId: string, id: string): Promise<any> 
   const cipher = await fetchDsnCipher(userId, id)
   if (!cipher) throw new Error('connection_not_found')
   const dsn = decryptFromBase64(cipher)
-  const pool = new Pool({ connectionString: dsn, ssl: parseSslFromUrl(dsn) })
+  const pool = new Pool({
+    connectionString: dsn,
+    ssl: parseSslFromUrl(dsn),
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 300000,
+    keepAlive: true,
+    min: 1,
+  })
   pools.set(id, pool)
   return pool
 }

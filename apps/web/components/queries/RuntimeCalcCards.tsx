@@ -44,6 +44,7 @@ export function RuntimeCalcCards({
   runValues,
   rows,
   onUpdateCount,
+  withContainer = true,
 }: {
   items: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
@@ -53,12 +54,13 @@ export function RuntimeCalcCards({
   runValues: Record<string, any>;
   rows: Array<Record<string, unknown>>;
   onUpdateCount: (total: number) => void;
+  withContainer?: boolean;
 }) {
   if (items.length === 0) return null;
-  return (
-    <Paper withBorder p="xs" mt="xs">
-      <Group gap="sm" wrap="wrap">
-        {items.map((ci) => {
+
+  const content = (
+    <Group gap="sm" wrap="wrap" style={{ width: "100%" }}>
+      {items.map((ci) => {
           const state = calcResults[ci.name] || {};
           const runMode = (ci.runMode ?? "manual") as "always" | "initial" | "manual";
           const variant = (ci.kind ?? "single") as "single" | "group";
@@ -230,6 +232,13 @@ export function RuntimeCalcCards({
           );
         })}
       </Group>
+  );
+
+  if (!withContainer) return content;
+
+  return (
+    <Paper withBorder p="xs" mt="xs">
+      {content}
     </Paper>
   );
 }

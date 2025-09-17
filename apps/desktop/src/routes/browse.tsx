@@ -60,6 +60,11 @@ export default function BrowsePage() {
   const [pageSize, setPageSize] = useState(pageSizeDefault);
   const [sorting, setSorting] = useState<any>([]);
   const [filters, setFilters] = useState<any>([]);
+  const [durationMs, setDurationMs] = useState<number | null>(null);
+
+  const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const formatDuration = (ms: number) =>
+    ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${Math.round(ms)} ms`;
 
   useEffect(() => {
     if (!userConnId) return;
@@ -172,6 +177,7 @@ export default function BrowsePage() {
     if (!userConnId || !currentTableMeta) return;
     setLoading(true);
     setError(null);
+    setDurationMs(null);
     try {
       const dsn = await getDsnForConn(userConnId);
       // build AST
@@ -212,8 +218,11 @@ export default function BrowsePage() {
       setSqlPreview(built.text);
       setParamsPreview(built.values);
       const db = await ReadonlyDb.openPostgres(dsn);
+      const start = getNow();
       const result = await db.select<any>(built.text, built.values);
+      const elapsed = Math.round(getNow() - start);
       setRows(result);
+      setDurationMs(elapsed);
     } catch (e: any) {
       const msg = String(e?.message || e);
       if (/secure storage|keyring|No matching entry/i.test(msg)) {
@@ -224,6 +233,7 @@ export default function BrowsePage() {
         setError(msg);
       }
       setRows([]);
+      setDurationMs(null);
     } finally {
       setLoading(false);
     }
@@ -319,6 +329,11 @@ export default function BrowsePage() {
           <Loader size="sm" />
           <Text c="dimmed">加载中…</Text>
         </Group>
+      )}
+      {durationMs != null && !loading && (
+        <Text size="sm" c="dimmed">
+          最后一次查询耗时 {formatDuration(durationMs)}
+        </Text>
       )}
       {error && <Text c="red">{error}</Text>}
 
