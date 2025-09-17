@@ -378,15 +378,23 @@ export async function explainSavedSql(opts: ExplainOptions): Promise<ExplainResu
 export async function fetchEnumOptions(opts: {
   userConnId: string
   sql: string
+  variables?: SavedQueryVariableDef[]
+  values?: Record<string, unknown>
 }): Promise<EnumOptionsResult> {
   if (!isReadOnlySelect(opts.sql)) {
     throw new QueryError('仅支持只读 SQL', { code: 'read_only_required' })
+  }
+  let compiled
+  try {
+    compiled = compileSql(opts.sql, opts.variables ?? [], opts.values ?? {})
+  } catch (e: any) {
+    throw new QueryError(String(e?.message || e), { code: 'compile_failed' })
   }
   const dsn = await getDsnForConn(opts.userConnId)
   const rows = await withReadonlySession<Array<Record<string, unknown>>>(
     dsn,
     async (db) => {
-      return await db.select<Array<Record<string, unknown>>>(opts.sql, [])
+      return await db.select<Array<Record<string, unknown>>>(compiled.text, compiled.values)
     },
     { cacheKey: opts.userConnId },
   )

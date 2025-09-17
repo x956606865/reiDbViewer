@@ -23,6 +23,8 @@ import { IconCheck, IconRefresh, IconTrash, IconX } from "@tabler/icons-react";
 import { fetchEnumOptions } from "@/services/pgExec";
 import type { SavedQueryVariableDef } from "@rei-db-view/types/appdb";
 
+const VAR_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 const VAR_TYPES: Array<{ value: SavedQueryVariableDef["type"]; label: string }>
   = [
     { value: "text", label: "text" },
@@ -198,9 +200,14 @@ export function VariablesEditor({
                               return;
                             }
                             try {
+                              const payloadVars = vars.filter((item) =>
+                                VAR_NAME_RE.test(item.name || "")
+                              );
                               const { options: opts } = await fetchEnumOptions({
                                 userConnId,
                                 sql: sqlText,
+                                variables: payloadVars,
+                                values: runValues,
                               });
                               setVars((vs) =>
                                 vs.map((x, idx) =>
