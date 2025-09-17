@@ -131,6 +131,7 @@ export function RunQueryPanel({
             items={runtimeCalcItems}
             calcResults={calcResults}
             onRunCalc={onRunCalc}
+            withContainer={false}
           />
         }
         textResult={textResult}

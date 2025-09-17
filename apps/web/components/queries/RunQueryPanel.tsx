@@ -142,6 +142,7 @@ export function RunQueryPanel({
               const totalPages = totalRows != null ? Math.max(1, Math.ceil(totalRows / pgSize)) : null;
               onUpdateTotal(totalRows, totalPages);
             }}
+            withContainer={false}
           />
         }
         textResult={textResult}

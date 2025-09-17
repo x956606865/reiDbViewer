@@ -39,15 +39,17 @@ export function RuntimeCalcCards({
   items,
   calcResults,
   onRunCalc,
+  withContainer = true,
 }: {
   items: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
+  withContainer?: boolean;
 }) {
   if (items.length === 0) return null;
-  return (
-    <Paper withBorder p="xs" mt="xs">
-      <Group gap="sm" wrap="wrap">
+
+  const content = (
+    <Group gap="sm" wrap="wrap" style={{ width: "100%" }}>
         {items.map((ci) => {
           const state = calcResults[ci.name] || {};
           const runMode = (ci.runMode ?? "manual") as "always" | "initial" | "manual";
@@ -126,6 +128,13 @@ export function RuntimeCalcCards({
           );
         })}
       </Group>
+  );
+
+  if (!withContainer) return content;
+
+  return (
+    <Paper withBorder p="xs" mt="xs">
+      {content}
     </Paper>
   );
 }
