@@ -4,12 +4,15 @@
   "packageManager": "pnpm@9.0.0",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "docs/*"
   ],
   "scripts": {
     "typecheck": "tsc -b -v",
     "lint": "eslint . --ext .ts,.tsx || true",
-    "test": "vitest --run"
+    "test": "vitest --run",
+    "docs:dev": "pnpm --filter @rei-db-view/docs-site start",
+    "docs:build": "pnpm --filter @rei-db-view/docs-site build"
   },
   "dependencies": {
     "@better-fetch/fetch": "^1.1.18",
