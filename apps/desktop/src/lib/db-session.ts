@@ -35,6 +35,30 @@ type SessionOptions = {
   cacheKey?: string
 }
 
+function shouldInvalidateOnError(err: unknown): boolean {
+  if (!err) return false
+  if (typeof err === 'object' && err) {
+    const code = (err as any).code
+    if (typeof code === 'string') {
+      const normalized = code.toLowerCase()
+      if (
+        normalized.includes('timeout') ||
+        normalized.includes('connection') ||
+        normalized.includes('socket') ||
+        normalized.includes('reset') ||
+        normalized.includes('closed')
+      ) {
+        return true
+      }
+    }
+  }
+  const message = typeof err === 'string' ? err : err instanceof Error ? err.message : ''
+  if (!message) return false
+  const normalized = message.toLowerCase()
+  const patterns = ['timeout', 'connection', 'socket', 'reset', 'closed', 'broken pipe', 'not open']
+  return patterns.some((keyword) => normalized.includes(keyword))
+}
+
 async function runWithLock<T>(key: string, task: () => Promise<T>): Promise<T> {
   const prevEntry = sessionLocks.get(key)
   const tail = prevEntry?.tail ?? Promise.resolve()
@@ -99,10 +123,19 @@ export async function withReadonlySession<T>(
       finished = true
       return res
     } catch (err) {
+      if (shouldInvalidateOnError(err)) {
+        invalidateSessionCache(key)
+      }
       throw err
     } finally {
       if (!finished) {
-        try { await db.execute('ROLLBACK') } catch {}
+        try {
+          await db.execute('ROLLBACK')
+        } catch (rollbackErr) {
+          if (shouldInvalidateOnError(rollbackErr)) {
+            invalidateSessionCache(key)
+          }
+        }
       }
     }
   })
@@ -127,10 +160,19 @@ export async function withWritableSession<T>(
       committed = true
       return res
     } catch (err) {
+      if (shouldInvalidateOnError(err)) {
+        invalidateSessionCache(key)
+      }
       throw err
     } finally {
       if (!committed) {
-        try { await db.execute('ROLLBACK') } catch {}
+        try {
+          await db.execute('ROLLBACK')
+        } catch (rollbackErr) {
+          if (shouldInvalidateOnError(rollbackErr)) {
+            invalidateSessionCache(key)
+          }
+        }
       }
     }
   })
