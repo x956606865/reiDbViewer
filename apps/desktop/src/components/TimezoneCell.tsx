@@ -231,7 +231,7 @@ export default function TimezoneCell({ value }: TimezoneCellProps) {
                 </Table.Thead>
                 <Table.Tbody>
                   {rows.map((row) => (
-                    <Table.Tr key={row.timeZone}>
+                    <Table.Tr key={`${row.timeZone}-${row.label}`}>
                       <Table.Td>
                         <Stack gap={0}>
                           <Text fw={500}>{row.label}</Text>
