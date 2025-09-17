@@ -35,6 +35,7 @@ export function RunQueryPanel({
   // connection + vars
   userConnId,
   currentConn,
+  currentQueryName,
   vars,
   runValues,
   setRunValues,
@@ -75,6 +76,7 @@ export function RunQueryPanel({
 }: {
   userConnId?: string | null;
   currentConn: { id: string; alias: string; host?: string | null } | null;
+  currentQueryName?: string | null;
   vars: SavedQueryVariableDef[];
   runValues: Record<string, any>;
   setRunValues: React.Dispatch<React.SetStateAction<Record<string, any>>>;
@@ -112,6 +114,7 @@ export function RunQueryPanel({
       <RunParamsPanel
         userConnId={userConnId}
         currentConn={currentConn}
+        currentQueryName={currentQueryName}
         vars={vars}
         runValues={runValues}
         setRunValues={setRunValues}

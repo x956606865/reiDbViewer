@@ -1090,6 +1090,7 @@ export default function SavedQueriesPage() {
             <RunQueryPanel
               userConnId={userConnId}
               currentConn={currentConn}
+              currentQueryName={name}
               vars={vars}
               runValues={runValues}
               setRunValues={setRunValues}

@@ -20,12 +20,14 @@ import type { SavedQueryVariableDef } from "@rei-db-view/types/appdb";
 export function RunParamsPanel({
   userConnId,
   currentConn,
+  currentQueryName,
   vars,
   runValues,
   setRunValues,
 }: {
   userConnId: string | null | undefined;
   currentConn: { alias: string; host?: string | null } | null;
+  currentQueryName?: string | null;
   vars: SavedQueryVariableDef[];
   runValues: Record<string, any>;
   setRunValues: React.Dispatch<React.SetStateAction<Record<string, any>>>;
@@ -33,6 +35,16 @@ export function RunParamsPanel({
   return (
     <Paper withBorder p="md">
       <Title order={4}>运行</Title>
+      {currentQueryName ? (
+        <Group mt="xs" gap="sm" align="center">
+          <Text size="sm" c="dimmed">
+            当前查询：
+          </Text>
+          <Badge color="blue" variant="light">
+            {currentQueryName}
+          </Badge>
+        </Group>
+      ) : null}
       <Group mt="xs" gap="sm" align="center">
         <Text size="sm" c="dimmed">
           当前连接：
@@ -134,4 +146,3 @@ export function RunParamsPanel({
     </Paper>
   );
 }
-
