@@ -40,7 +40,15 @@ const SQL_KEYWORDS = [
   'end',
 ]
 
-const COLUMN_CONTEXT_REGEX = /(?:(?<schema>"(?:""|[^"])*"|[a-zA-Z_][\w$]*)\s*\.)?(?<table>"(?:""|[^"])*"|[a-zA-Z_][\w$]*)\s*\.(?<prefix>"(?:""|[^"])*"|[a-zA-Z_][\w$]*)?$/
+const IDENTIFIER_FRAGMENT = String.raw`(?:"(?:""|[^"])*(?:"|$)|[a-zA-Z_][\w$]*)`
+const IDENTIFIER_TRIGGER_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$_'
+const TRIGGER_CHARACTERS = Array.from(new Set([' ', '.', '"', ...IDENTIFIER_TRIGGER_CHARS.split('')]))
+const COLUMN_CONTEXT_REGEX = new RegExp(
+  String.raw`(?:(?<schema>${IDENTIFIER_FRAGMENT})\s*\.)?(?<table>${IDENTIFIER_FRAGMENT})\s*\.(?<prefix>${IDENTIFIER_FRAGMENT})?$`,
+)
+const TABLE_QUALIFIER_REGEX = new RegExp(
+  String.raw`(?<schema>${IDENTIFIER_FRAGMENT})\s*\.(?<prefix>${IDENTIFIER_FRAGMENT})?$`,
+)
 
 let initialized = false
 let disposable: monacoEditor.IDisposable | null = null
@@ -156,6 +164,11 @@ type ColumnContext = {
   range: monacoEditor.IRange
 }
 
+type TableQualifierContext = {
+  schema: string
+  prefix: string
+}
+
 function detectColumnContext(
   model: monacoEditor.editor.ITextModel,
   position: monacoEditor.Position,
@@ -183,6 +196,19 @@ function detectColumnContext(
     aliasToken: tableRaw,
     prefix: prefixRaw,
     range,
+  }
+}
+
+function detectTableQualifier(fragment: string): TableQualifierContext | null {
+  const trimmed = fragment.trimEnd()
+  const match = TABLE_QUALIFIER_REGEX.exec(trimmed)
+  if (!match?.groups) return null
+  const schemaRaw = match.groups.schema
+  if (!schemaRaw) return null
+  const prefixRaw = match.groups.prefix ?? ''
+  return {
+    schema: schemaRaw,
+    prefix: prefixRaw,
   }
 }
 
@@ -264,20 +290,61 @@ function buildScopedColumnSuggestions(
   return suggestions
 }
 
+function stripQuotesForSearch(raw: string): string {
+  if (!raw) return ''
+  const trimmed = raw.trim()
+  const startsQuoted = trimmed.startsWith('"')
+  const endsQuoted = trimmed.endsWith('"')
+  const inner = trimmed.slice(startsQuoted ? 1 : 0, endsQuoted ? -1 : undefined)
+  if (!inner) return ''
+  return inner.replace(/""/g, '"')
+}
+
 function buildTableSuggestions(
   metadata: SchemaMetadataSnapshot,
   monacoInstance: typeof monacoEditor,
   range: monacoEditor.IRange,
+  currentWord: string,
+  schemaHint: string | null,
 ): monacoEditor.languages.CompletionItem[] {
+  const baseLimit = 200
   const suggestions: monacoEditor.languages.CompletionItem[] = []
-  const limit = 200
-  let count = 0
+  const matched: monacoEditor.languages.CompletionItem[] = []
+  const others: monacoEditor.languages.CompletionItem[] = []
+  const word = stripQuotesForSearch(currentWord).toLowerCase()
+  const schemaNormalized = schemaHint
+    ? normalizeIdentifierForLookup(stripQuotesForSearch(schemaHint))
+    : null
+
   for (const table of metadata.tables) {
-    if (count >= limit) break
-    count += 1
-    const schemaId = formatIdentifierIfNeeded(table.schema)
-    const tableId = formatIdentifierIfNeeded(table.name)
-    const insertText = `${schemaId}.${tableId}`
+    if (
+      schemaNormalized &&
+      normalizeIdentifierForLookup(table.schema) !== schemaNormalized
+    ) {
+      continue
+    }
+    const rawSchema = table.schema
+    const rawName = table.name
+    const schemaId = formatIdentifierIfNeeded(rawSchema)
+    const tableId = formatIdentifierIfNeeded(rawName)
+    const normalizedSchema = normalizeIdentifierForLookup(rawSchema)
+    const normalizedName = normalizeIdentifierForLookup(rawName)
+    const filterParts = new Set<string>([
+      `${rawSchema}.${rawName}`,
+      `${schemaId}.${tableId}`,
+      `${normalizedSchema}.${normalizedName}`,
+      `${normalizedSchema}${normalizedName}`,
+      rawName,
+      normalizedName,
+      rawSchema,
+      normalizedSchema,
+    ])
+    filterParts.add(`${rawSchema}${rawName}`)
+    const filterText = Array.from(filterParts)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' ')
+    const insertText = schemaNormalized ? tableId : `${schemaId}.${tableId}`
     const docParts = [`Schema: \`${table.schema}\``]
     if (table.columns.length > 0) {
       const preview = table.columns
@@ -288,16 +355,44 @@ function buildTableSuggestions(
       docParts.push(`Columns: ${preview}${suffix}`)
     }
     const documentation: monacoEditor.IMarkdownString = { value: docParts.join('\n') }
-    suggestions.push({
-      label: `${table.schema}.${table.name}`,
+    const entry: monacoEditor.languages.CompletionItem = {
+      label: `${rawSchema}.${rawName}`,
       kind: monacoInstance.languages.CompletionItemKind.Struct,
       insertText,
       range,
       detail: `${table.columns.length} cols`,
       documentation,
       sortText: `2_${table.schema}_${table.name}`,
-      filterText: `${table.schema}.${table.name} ${table.name}`,
-    })
+      filterText,
+    }
+    if (word) {
+      const haystacks = [
+        rawName,
+        `${rawSchema}.${rawName}`,
+        `${schemaId}.${tableId}`,
+        `${normalizedSchema}.${normalizedName}`,
+        `${normalizedSchema}${normalizedName}`,
+        normalizedName,
+      ]
+        .map((value) => value.toLowerCase())
+      if (haystacks.some((value) => value.includes(word))) {
+        matched.push({ ...entry, sortText: `0_${table.schema}_${table.name}` })
+        continue
+      }
+    }
+    others.push(entry)
+  }
+
+  const sortedOthers = others.slice().sort((a, b) => a.label.localeCompare(b.label))
+
+  if (word) {
+    suggestions.push(...matched)
+    const needed = Math.max(baseLimit, matched.length) - suggestions.length
+    if (needed > 0) {
+      suggestions.push(...sortedOthers.slice(0, needed))
+    }
+  } else {
+    suggestions.push(...sortedOthers.slice(0, baseLimit))
   }
   return suggestions
 }
@@ -336,9 +431,9 @@ function buildColumnCompletions(
   analysis: ContextAnalysis,
   metadata: SchemaMetadataSnapshot | null,
   monacoInstance: typeof monacoEditor,
-): monacoEditor.languages.CompletionItem[] {
+): monacoEditor.languages.CompletionItem[] | null {
   const table = resolveTableForColumnContext(context, analysis, metadata)
-  if (!table) return []
+  if (!table) return null
   return buildColumnSuggestions(table, context.range, monacoInstance)
 }
 
@@ -348,16 +443,65 @@ function buildGeneralSuggestions(
   analysis: ContextAnalysis,
   range: monacoEditor.IRange,
   mode: 'table' | 'general',
+  currentWord: string,
+  schemaHint: string | null,
 ): monacoEditor.languages.CompletionItem[] {
   const suggestions: monacoEditor.languages.CompletionItem[] = []
   if (metadata) {
     if (mode === 'general') {
       suggestions.push(...buildScopedColumnSuggestions(analysis, monacoInstance, range))
     }
-    suggestions.push(...buildTableSuggestions(metadata, monacoInstance, range))
+    suggestions.push(
+      ...buildTableSuggestions(
+        metadata,
+        monacoInstance,
+        range,
+        currentWord,
+        schemaHint,
+      ),
+    )
   }
   suggestions.push(...buildKeywordSuggestions(monacoInstance, range))
   return suggestions
+}
+
+type CompletionTarget = {
+  word: string
+  range: monacoEditor.IRange
+}
+
+function resolveCompletionTarget(
+  model: monacoEditor.editor.ITextModel,
+  position: monacoEditor.Position,
+  monacoInstance: typeof monacoEditor,
+): CompletionTarget {
+  const baseWord = model.getWordUntilPosition(position)
+  let currentWord = baseWord?.word ?? ''
+  let startColumn = baseWord?.startColumn ?? position.column
+  let endColumn = baseWord?.endColumn ?? position.column
+
+  if (!currentWord && position.column > 1) {
+    const prevChar = model.getValueInRange({
+      startLineNumber: position.lineNumber,
+      startColumn: position.column - 1,
+      endLineNumber: position.lineNumber,
+      endColumn: position.column,
+    })
+    if (prevChar === '"') {
+      const fallbackWord = model.getWordUntilPosition({
+        lineNumber: position.lineNumber,
+        column: position.column - 1,
+      } as monacoEditor.Position)
+      if (fallbackWord?.word) {
+        currentWord = fallbackWord.word
+        startColumn = fallbackWord.startColumn ?? startColumn
+        endColumn = fallbackWord.endColumn ?? endColumn
+      }
+    }
+  }
+
+  const range = new monacoInstance.Range(position.lineNumber, startColumn, position.lineNumber, endColumn)
+  return { word: currentWord, range }
 }
 
 export function initializeSqlCompletion(monacoInstance: typeof monacoEditor) {
@@ -365,14 +509,21 @@ export function initializeSqlCompletion(monacoInstance: typeof monacoEditor) {
   initialized = true
   void ensureSchemaMetadataForConnection(null).catch(() => {})
   disposable = monacoInstance.languages.registerCompletionItemProvider('sql', {
-    triggerCharacters: [' ', '.', '"'],
+    triggerCharacters: TRIGGER_CHARACTERS,
     provideCompletionItems: async (model, position) => {
       const metadata = getSchemaMetadataSnapshot()
       const analysis = collectContext(model, metadata)
       const columnContext = detectColumnContext(model, position, monacoInstance)
       if (columnContext) {
-        const columnSuggestions = buildColumnCompletions(columnContext, analysis, metadata, monacoInstance)
-        return { suggestions: columnSuggestions }
+        const columnSuggestions = buildColumnCompletions(
+          columnContext,
+          analysis,
+          metadata,
+          monacoInstance,
+        )
+        if (columnSuggestions) {
+          return { suggestions: columnSuggestions, incomplete: true }
+        }
       }
       const valueBeforeCursor = model.getValueInRange({
         startLineNumber: 1,
@@ -381,11 +532,29 @@ export function initializeSqlCompletion(monacoInstance: typeof monacoEditor) {
         endColumn: position.column,
       })
       const tokens = tokenize(valueBeforeCursor)
-      const mode = determineContext(tokens)
-      const word = model.getWordUntilPosition(position)
-      const range = new monacoInstance.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn)
-      const general = buildGeneralSuggestions(monacoInstance, metadata, analysis, range, mode)
-      return { suggestions: general }
+      const qualifier = detectTableQualifier(valueBeforeCursor)
+      const baseMode = determineContext(tokens)
+      const { word: resolvedWord, range } = resolveCompletionTarget(model, position, monacoInstance)
+      const schemaHint = qualifier?.schema ?? null
+      const searchWord = qualifier ? qualifier.prefix : resolvedWord
+      const mode = qualifier ? 'table' : baseMode
+      const general = buildGeneralSuggestions(
+        monacoInstance,
+        metadata,
+        analysis,
+        range,
+        mode,
+        searchWord,
+        schemaHint,
+      )
+      console.debug('sql-completion suggestions', {
+        mode,
+        schemaHint,
+        searchWord,
+        total: general.length,
+        labels: general.map((item) => item.label),
+      })
+      return { suggestions: general, incomplete: true }
     },
   })
 }
@@ -394,4 +563,10 @@ export function disposeSqlCompletion() {
   disposable?.dispose()
   disposable = null
   initialized = false
+}
+
+export const __test__ = {
+  buildTableSuggestions,
+  resolveCompletionTarget,
+  detectTableQualifier,
 }
