@@ -98,6 +98,11 @@ export const CodeEditor = forwardRef<StandaloneEditor | null, CodeEditorProps>(
         fixedOverflowWidgets: true,
         ...options,
       };
+      const existingScrollbar =
+        merged.scrollbar && typeof merged.scrollbar === 'object' ? merged.scrollbar : undefined;
+      merged.scrollbar = existingScrollbar
+        ? { alwaysConsumeMouseWheel: false, ...existingScrollbar }
+        : { alwaysConsumeMouseWheel: false };
       merged.readOnly = options?.readOnly ?? readOnly;
       if (merged.placeholder === undefined && placeholder) {
         merged.placeholder = placeholder;
