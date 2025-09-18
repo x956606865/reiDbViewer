@@ -28,9 +28,12 @@ export async function readSchemaCache(connId: string): Promise<{ payload: Schema
     [connId]
   )
   if (!Array.isArray(rows) || rows.length === 0) return null
+  const row = rows[0]
+  if (!row) return null
   try {
-    const payload = JSON.parse(String(rows[0].content)) as SchemaCachePayload
-    return { payload, updatedAt: Number(rows[0].updated_at || 0) }
+    const payload = JSON.parse(String(row.content)) as SchemaCachePayload
+    const updatedAt = Number(row.updated_at ?? 0)
+    return { payload, updatedAt }
   } catch {
     return null
   }
@@ -49,4 +52,3 @@ export async function writeSchemaCache(connId: string, payload: SchemaCachePaylo
     [id, connId, content, t]
   )
 }
-

@@ -194,17 +194,18 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
       dsn,
       async (db) => {
         const queryStart = now()
-        const res = await db.select<any[]>(execText.text, execText.values)
+        const res = await db.select(execText.text, execText.values)
         const queryMs = Math.round(now() - queryStart)
-        const first = res[0] ?? {}
+        const rows = Array.isArray(res) ? (res as Array<Record<string, unknown>>) : []
+        const first = rows[0] ?? {}
         return {
           sql: execText.text,
           params: execText.values,
-          rows: res,
+          rows,
           columns: Object.keys(first ?? {}),
-          rowCount: res.length,
+          rowCount: rows.length,
           command: 'EXECUTE',
-          message: `${res.length} row(s)`,
+          message: `${rows.length} row(s)`,
           timing: { queryMs },
         }
       },
@@ -240,10 +241,13 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
       dsn,
       async (db) => {
         const countStart = now()
-        const countRows = await db.select<Array<{ total: number | string }>>(
+        const rawRows = await db.select(
           `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
           compiled.values,
         )
+        const countRows = Array.isArray(rawRows)
+          ? (rawRows as Array<{ total?: number | string }>)
+          : []
         const totalRow = countRows[0]?.total
         const total = typeof totalRow === 'string' ? Number(totalRow) : Number(totalRow)
         const totalRows = Number.isFinite(total) ? total : undefined
@@ -281,17 +285,23 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
       let countMs: number | undefined
       if (countPossible) {
         const countStart = now()
-        const countRows = await db.select<Array<{ total: number | string }>>(
+        const rawRows = await db.select(
           `select count(*)::bigint as total from ( ${compiled.text} ) as _rdv_sub`,
           compiled.values,
         )
+        const countRows = Array.isArray(rawRows)
+          ? (rawRows as Array<{ total?: number | string }>)
+          : []
         const total = countRows[0]?.total
         const num = typeof total === 'string' ? Number(total) : Number(total)
         if (Number.isFinite(num)) totalRowsValue = num
         countMs = Math.round(now() - countStart)
       }
       const queryStart = now()
-      const dataRows = await db.select<Array<Record<string, unknown>>>(execText.text, execText.values)
+      const rawRows = await db.select(execText.text, execText.values)
+      const dataRows = Array.isArray(rawRows)
+        ? (rawRows as Array<Record<string, unknown>>)
+        : []
       const queryMs = Math.round(now() - queryStart)
       const columns = Object.keys(dataRows[0] ?? {})
       const execResult: ExecuteResult = {
@@ -365,7 +375,8 @@ export async function explainSavedSql(opts: ExplainOptions): Promise<ExplainResu
   const rows = await withReadonlySession<Array<Record<string, unknown>>>(
     dsn,
     async (db) => {
-      return await db.select<Array<Record<string, unknown>>>(explainSql, compiled.values)
+      const rows = await db.select(explainSql, compiled.values)
+      return Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []
     },
     { cacheKey: opts.userConnId },
   )
@@ -394,7 +405,8 @@ export async function fetchEnumOptions(opts: {
   const rows = await withReadonlySession<Array<Record<string, unknown>>>(
     dsn,
     async (db) => {
-      return await db.select<Array<Record<string, unknown>>>(compiled.text, compiled.values)
+      const rows = await db.select(compiled.text, compiled.values)
+      return Array.isArray(rows) ? (rows as Array<Record<string, unknown>>) : []
     },
     { cacheKey: opts.userConnId },
   )
@@ -441,7 +453,10 @@ export async function computeCalcSql(opts: CalcOptions): Promise<CalcResult> {
     dsn,
     async (db) => {
       const queryStart = now()
-      const dataRows = await db.select<Array<Record<string, unknown>>>(finalSql, finalParams)
+      const rawRows = await db.select(finalSql, finalParams)
+      const dataRows = Array.isArray(rawRows)
+        ? (rawRows as Array<Record<string, unknown>>)
+        : []
       return {
         rows: dataRows,
         queryMs: Math.round(now() - queryStart),

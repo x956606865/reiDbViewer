@@ -14,9 +14,10 @@ import {
   Title,
 } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
-import type { CalcItemDef, SavedQueryVariableDef } from "@rei-db-view/types/appdb";
+import type { CalcItemDef, CalcItemRunMode, SavedQueryVariableDef } from "@rei-db-view/types/appdb";
 import type { editor } from "monaco-editor";
 import { CodeEditor } from "@/components/code/CodeEditor";
+import { mergeCalcItem, normalizeCalcItem } from "@/lib/calc-item-utils";
 
 export function CalcItemsEditor({
   calcItems,
@@ -85,7 +86,9 @@ export function CalcItemsEditor({
                   value={ci.name}
                   onChange={(e) => {
                     const val = e.currentTarget.value;
-                    setCalcItems((arr) => arr.map((x, idx) => (idx === i ? { ...x, name: val } : x)));
+                    setCalcItems((arr) =>
+                      arr.map((x, idx) => (idx === i ? mergeCalcItem(x, { name: val }) : x))
+                    );
                   }}
                 />
               </Table.Td>
@@ -96,16 +99,16 @@ export function CalcItemsEditor({
                     { value: "js", label: "JS" },
                   ]}
                   value={ci.type}
-                  onChange={(v) =>
+                  onChange={(v) => {
+                    const nextType = (v as 'sql' | 'js' | null) ?? 'sql';
                     setCalcItems((arr) =>
                       arr.map((x, idx) => {
                         if (idx !== i) return x;
-                        const nextType = (v as 'sql' | 'js' | null) ?? 'sql';
-                        const nextKind = nextType === 'js' ? 'single' : (x.kind ?? 'single');
-                        return { ...x, type: nextType, kind: nextKind };
+                        const enforcedKind = nextType === 'js' ? 'single' : (x.kind ?? 'single');
+                        return mergeCalcItem(x, { type: nextType, kind: enforcedKind });
                       })
-                    )
-                  }
+                    );
+                  }}
                   disabled={(ci.kind ?? 'single') === 'group'}
                 />
               </Table.Td>
@@ -116,19 +119,18 @@ export function CalcItemsEditor({
                     { value: "group", label: "数据组" },
                   ]}
                   value={ci.kind ?? 'single'}
-                  onChange={(v) =>
+                  onChange={(v) => {
+                    const nextKind = (v as 'single' | 'group' | null) ?? 'single';
                     setCalcItems((arr) =>
                       arr.map((x, idx) => {
                         if (idx !== i) return x;
-                        const nextKind = (v as 'single' | 'group' | null) ?? 'single';
-                        return {
-                          ...x,
+                        return mergeCalcItem(x, {
                           kind: nextKind,
                           type: nextKind === 'group' ? 'sql' : x.type,
-                        };
+                        });
                       })
-                    )
-                  }
+                    );
+                  }}
                 />
               </Table.Td>
               <Table.Td>
@@ -139,13 +141,12 @@ export function CalcItemsEditor({
                     { value: "manual", label: "手动" },
                   ]}
                   value={ci.runMode ?? 'manual'}
-                  onChange={(v) =>
+                  onChange={(v) => {
+                    const nextRunMode = ((v as CalcItemRunMode | null) ?? 'manual') as CalcItemRunMode;
                     setCalcItems((arr) =>
-                      arr.map((x, idx) =>
-                        idx === i ? { ...x, runMode: ((v as any) ?? 'manual') as 'always' | 'initial' | 'manual' } : x
-                      )
-                    )
-                  }
+                      arr.map((x, idx) => (idx === i ? mergeCalcItem(x, { runMode: nextRunMode }) : x))
+                    );
+                  }}
                 />
               </Table.Td>
               <Table.Td style={{ minWidth: 420 }}>
@@ -153,7 +154,7 @@ export function CalcItemsEditor({
                   value={ci.code}
                   onChange={(val) =>
                     setCalcItems((arr) =>
-                      arr.map((x, idx) => (idx === i ? { ...x, code: val } : x))
+                      arr.map((x, idx) => (idx === i ? mergeCalcItem(x, { code: val }) : x))
                     )
                   }
                   language={ci.type === 'js' ? 'javascript' : 'sql'}
@@ -183,13 +184,13 @@ export function CalcItemsEditor({
           onClick={() =>
             setCalcItems((arr) => [
               ...arr,
-              {
+              normalizeCalcItem({
                 name: `calc_${arr.length + 1}`,
-                type: "sql",
-                code: "select count(*) as total from ({{_sql}}) t",
+                type: 'sql',
+                code: 'select count(*) as total from ({{_sql}}) t',
                 runMode: 'manual',
                 kind: 'single',
-              },
+              }),
             ])
           }
         >
@@ -202,13 +203,13 @@ export function CalcItemsEditor({
           onClick={() =>
             setCalcItems((arr) => [
               ...arr,
-              {
+              normalizeCalcItem({
                 name: `calc_group_${arr.length + 1}`,
-                type: "sql",
-                code: "select name, value from ({{_sql}}) t limit 5",
+                type: 'sql',
+                code: 'select name, value from ({{_sql}}) t limit 5',
                 runMode: 'manual',
                 kind: 'group',
-              },
+              }),
             ])
           }
         >

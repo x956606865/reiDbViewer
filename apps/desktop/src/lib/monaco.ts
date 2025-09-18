@@ -9,6 +9,7 @@ import 'monaco-editor/esm/vs/basic-languages/sql/sql.contribution';
 import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution';
 import 'monaco-editor/esm/vs/language/json/monaco.contribution';
 import 'monaco-editor/esm/vs/language/typescript/monaco.contribution';
+import { initializeSqlCompletion } from '@/lib/sql-completion';
 
 type MonacoInstance = typeof monaco;
 
@@ -16,12 +17,8 @@ type MonacoEnvironmentConfig = {
   getWorker(workerId: string, label: string): Worker;
 };
 
-declare global {
-  // eslint-disable-next-line no-var
-  var MonacoEnvironment: MonacoEnvironmentConfig | undefined;
-}
-
 if (typeof self !== 'undefined') {
+  const scope = self as typeof self & { MonacoEnvironment?: MonacoEnvironmentConfig };
   const getWorker = (_: string, label: string) => {
     if (label === 'json') return new jsonWorker();
     if (label === 'css' || label === 'scss' || label === 'less') return new cssWorker();
@@ -30,10 +27,10 @@ if (typeof self !== 'undefined') {
     return new editorWorker();
   };
 
-  self.MonacoEnvironment = {
-    ...(self.MonacoEnvironment ?? {}),
+  scope.MonacoEnvironment = {
+    ...(scope.MonacoEnvironment ?? {}),
     getWorker,
-  } satisfies MonacoEnvironmentConfig;
+  };
 }
 
 loader.config({ monaco });
@@ -47,10 +44,11 @@ function configureMonaco(instance: MonacoInstance) {
   });
   instance.languages.typescript.javascriptDefaults.setCompilerOptions({
     allowNonTsExtensions: true,
-    target: instance.languages.typescript.ScriptTarget.ES2022,
+    target: instance.languages.typescript.ScriptTarget.ESNext,
     lib: ['es2022'],
   });
   instance.languages.typescript.javascriptDefaults.setEagerModelSync(true);
+  initializeSqlCompletion(instance);
 }
 
 export async function ensureMonaco(): Promise<MonacoInstance> {

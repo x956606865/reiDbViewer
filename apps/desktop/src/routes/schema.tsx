@@ -5,12 +5,32 @@ import { getCurrent } from '@/lib/localStore'
 import { subscribeCurrentConnId, getCurrentConnId } from '@/lib/current-conn'
 import { getDsnForConn } from '@/lib/localStore'
 import { readSchemaCache, writeSchemaCache } from '@/lib/schema-cache'
+import { applySchemaMetadataPayload } from '@/lib/schema-metadata-store'
 import { introspectPostgres } from '@/lib/introspect'
 import { loadIndexes, type IndexInfo } from '@/lib/indexes'
 import { useSchemaHide } from '@/lib/schema-hide'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
+
+function asSchemaCachePayload(res: Awaited<ReturnType<typeof introspectPostgres>>) {
+  return {
+    databases: res.databases,
+    schemas: res.schemas,
+    tables: res.tables.map((table) => ({
+      schema: table.schema,
+      name: table.name,
+      columns: table.columns.map((col) => ({
+        name: col.name,
+        dataType: col.dataType,
+        nullable: col.nullable,
+        isPrimaryKey: col.isPrimaryKey,
+        ...(col.isForeignKey ? { isForeignKey: true as const, references: col.references } : {}),
+      })),
+    })),
+    ddls: res.ddls,
+  }
+}
 
 export default function SchemaPage() {
   const [userConnId, setUserConnId] = useState<string | null>(getCurrent())
@@ -53,6 +73,9 @@ export default function SchemaPage() {
           for (const d of ((res.payload as any).ddls || [])) map[`${d.schema}.${d.name}`] = d.ddl
           setDdls(map)
           setCachedAt(res.updatedAt || null)
+          if (userConnId) {
+            applySchemaMetadataPayload(userConnId, res.payload, res.updatedAt || undefined)
+          }
         } else {
           setTables([]); setSchemas([]); setDatabases([]); setDdls({}); setCachedAt(null)
         }
@@ -80,14 +103,19 @@ export default function SchemaPage() {
     try {
       const dsn = await getDsnForConn(userConnId)
       const res = await introspectPostgres(dsn)
-      await writeSchemaCache(userConnId, res)
-      setTables(res.tables || [])
-      setDatabases(res.databases || [])
-      setSchemas(res.schemas || [])
+      const payload = asSchemaCachePayload(res)
+      await writeSchemaCache(userConnId, payload)
+      setTables(payload.tables || [])
+      setDatabases(payload.databases || [])
+      setSchemas(payload.schemas || [])
       const map: Record<string, string> = {}
-      for (const d of res.ddls || []) map[`${d.schema}.${d.name}`] = d.ddl
+      for (const d of payload.ddls || []) map[`${d.schema}.${d.name}`] = d.ddl
       setDdls(map)
-      setCachedAt(Math.floor(Date.now() / 1000))
+      const nowSec = Math.floor(Date.now() / 1000)
+      setCachedAt(nowSec)
+      if (userConnId) {
+        applySchemaMetadataPayload(userConnId, payload, nowSec)
+      }
     } catch (e: any) {
       const msg = String(e?.message || e)
       if (/secure storage|keyring|No matching entry/i.test(msg)) {

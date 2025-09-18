@@ -101,7 +101,13 @@ export function EditQueryPanel({
         </Group>
       </Paper>
 
-      <SqlEditor sql={sql} onChange={setSql} onDetectVars={onDetectVars} onAddVar={onAddVar} />
+      <SqlEditor
+        sql={sql}
+        onChange={setSql}
+        onDetectVars={onDetectVars}
+        onAddVar={onAddVar}
+        userConnId={userConnId}
+      />
 
       <VariablesEditor
         vars={vars}
@@ -123,4 +129,3 @@ export function EditQueryPanel({
     </>
   );
 }
-

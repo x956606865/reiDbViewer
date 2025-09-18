@@ -8,6 +8,7 @@ import {
   SavedQueriesExport,
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export'
+import { normalizeCalcItems as normalizeCalcItemsHelper } from '@/lib/calc-item-utils'
 
 const TABLE = 'saved_sql'
 
@@ -64,14 +65,8 @@ const parseJson = <T>(value: string | null, fallback: T): T => {
   }
 }
 
-const normalizeCalcItems = (items: CalcItemDef[] | null | undefined): CalcItemDef[] => {
-  if (!Array.isArray(items)) return []
-  return items.map((ci) => ({
-    ...ci,
-    runMode: ci.runMode ?? 'manual',
-    kind: ci.kind ?? 'single',
-  }))
-}
+const normalizeCalcItems = (items: CalcItemDef[] | null | undefined): CalcItemDef[] =>
+  normalizeCalcItemsHelper(items ?? [])
 
 const rowToRecord = (row: SavedSqlRow): SavedSqlRecord => ({
   id: row.id,
@@ -100,10 +95,11 @@ const genId = () =>
 const nowMs = () => Date.now()
 
 async function ensureUniqueName(db: any, name: string, excludeId?: string) {
-  const rows = await db.select<{ id: string }[]>(
+  const rawRows = await db.select(
     `SELECT id FROM ${TABLE} WHERE name = $1 AND is_archived = 0${excludeId ? ' AND id <> $2' : ''} LIMIT 1`,
     excludeId ? [name, excludeId] : [name],
   )
+  const rows = Array.isArray(rawRows) ? (rawRows as Array<{ id?: string }>) : []
   if (rows.length > 0) {
     const err = new Error('name_exists')
     ;(err as any).code = 'name_exists'
@@ -113,20 +109,22 @@ async function ensureUniqueName(db: any, name: string, excludeId?: string) {
 
 export async function listSavedSql(): Promise<SavedSqlSummary[]> {
   const db = await openLocal()
-  const rows = await db.select<SavedSqlRow[]>(
+  const rows = await db.select(
     `SELECT id, name, description, sql, variables, dynamic_columns, calc_items, is_archived, created_at, updated_at FROM ${TABLE} WHERE is_archived = 0 ORDER BY updated_at DESC, name ASC`,
   )
-  return rows.map(rowToSummary)
+  const list = Array.isArray(rows) ? (rows as SavedSqlRow[]) : []
+  return list.map(rowToSummary)
 }
 
 export async function getSavedSql(id: string): Promise<SavedSqlRecord | null> {
   const db = await openLocal()
-  const rows = await db.select<SavedSqlRow[]>(
+  const rows = await db.select(
     `SELECT id, name, description, sql, variables, dynamic_columns, calc_items, is_archived, created_at, updated_at FROM ${TABLE} WHERE id = $1 LIMIT 1`,
     [id],
   )
-  if (rows.length === 0) return null
-  return rowToRecord(rows[0]!)
+  const list = Array.isArray(rows) ? (rows as SavedSqlRow[]) : []
+  if (list.length === 0) return null
+  return rowToRecord(list[0]!)
 }
 
 export async function createSavedSql(input: {
@@ -214,17 +212,29 @@ export async function removeSavedSql(id: string): Promise<void> {
 
 export async function exportAllSavedSql(): Promise<SavedQueriesExport> {
   const db = await openLocal()
-  const rows = await db.select<SavedSqlRow[]>(
+  const rows = await db.select(
     `SELECT id, name, description, sql, variables, dynamic_columns, calc_items, is_archived, created_at, updated_at FROM ${TABLE} WHERE is_archived = 0 ORDER BY name ASC`,
   )
-  const items = rows.map((row) => ({
-    name: row.name,
-    description: row.description,
-    sql: row.sql,
-    variables: parseJson<SavedQueryVariableDef[]>(row.variables, []),
-    dynamicColumns: parseJson<DynamicColumnDef[]>(row.dynamic_columns, []),
-    calcItems: parseJson<CalcItemDef[]>(row.calc_items, []),
-  }))
+  const list = Array.isArray(rows) ? (rows as SavedSqlRow[]) : []
+  const items = list.map((row) => {
+    const variables = parseJson<SavedQueryVariableDef[]>(row.variables, [])
+    const dynamicColumns = parseJson<DynamicColumnDef[]>(row.dynamic_columns, [])
+    const calcItems = normalizeCalcItems(parseJson<CalcItemDef[]>(row.calc_items, []))
+    return {
+      name: row.name,
+      description: row.description,
+      sql: row.sql,
+      variables,
+      dynamicColumns,
+      calcItems: calcItems.map((ci) => ({
+        name: ci.name,
+        type: ci.type,
+        code: ci.code,
+        runMode: ci.runMode ?? 'manual',
+        kind: ci.kind ?? 'single',
+      })),
+    }
+  })
   return {
     version: 'rdv.saved-sql.v1',
     exportedAt: new Date().toISOString(),
@@ -248,10 +258,11 @@ export async function importSavedSql(
       skipped += 1
       continue
     }
-    const existing = await db.select<SavedSqlRow[]>(
+    const existingRows = await db.select(
       `SELECT id, name, description, sql, variables, dynamic_columns, calc_items, is_archived, created_at, updated_at FROM ${TABLE} WHERE name = $1 LIMIT 1`,
       [name],
     )
+    const existing = Array.isArray(existingRows) ? (existingRows as SavedSqlRow[]) : []
     if (existing.length > 0) {
       if (!opts.overwrite) {
         skipped += 1

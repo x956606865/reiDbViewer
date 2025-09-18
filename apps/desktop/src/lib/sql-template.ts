@@ -136,7 +136,7 @@ function parseTemplate(template: string): TemplateNode[] {
 
   const currentNodes = (): TemplateNode[] => {
     if (stack.length === 0) return root
-    const top = stack[stack.length - 1]
+    const top = stack[stack.length - 1]!
     if (top.inElse) {
       if (!top.node.elseBody) top.node.elseBody = []
       return top.node.elseBody
@@ -206,7 +206,7 @@ function parseTemplate(template: string): TemplateNode[] {
   }
 
   if (stack.length > 0) {
-    const open = stack[stack.length - 1]
+    const open = stack[stack.length - 1]!
     throw new Error(`Unclosed block: ${open.node.type}`)
   }
 
@@ -269,34 +269,41 @@ function computePresence(value: any): boolean {
 
 function evaluateExpression(expr: ExpressionNode, ctx: RenderContext): boolean {
   const evalNode = (node: ExpressionNode): any => {
-    switch (node.type) {
-      case 'literal':
-        return node.value
-      case 'variable':
-        if (!ctx.hasVariable(node.name)) throw new Error(`Undefined variable: ${node.name}`)
-        return ctx.getValue(node.name)
-      case 'unary':
-        if (node.op === '!') return !toBoolean(evalNode(node.argument))
-        throw new Error(`Unsupported unary operator: ${node.op}`)
-      case 'binary':
-        return evaluateBinary(node.op, evalNode(node.left), evalNode(node.right))
-      case 'in': {
-        const left = evalNode(node.value)
-        return node.options.some(opt => valueEquals(evalNode(opt), left))
-      }
-      case 'call': {
-        if (node.callee !== 'presence') {
-          throw new Error(`Unsupported function: ${node.callee}`)
-        }
-        if (node.args.length !== 1) throw new Error('presence() expects exactly one argument')
-        const arg = node.args[0]
-        if (arg.type !== 'variable') {
-          throw new Error('presence() argument must be a variable name')
-        }
-        if (!ctx.hasVariable(arg.name)) throw new Error(`Undefined variable: ${arg.name}`)
-        return ctx.presenceOf(arg.name)
-      }
+    if (node.type === 'literal') {
+      return node.value
     }
+    if (node.type === 'variable') {
+      if (!ctx.hasVariable(node.name)) throw new Error(`Undefined variable: ${node.name}`)
+      return ctx.getValue(node.name)
+    }
+    if (node.type === 'unary') {
+      const unaryNode = node as Extract<ExpressionNode, { type: 'unary' }>
+      if (unaryNode.op !== '!') {
+        throw new Error(`Unsupported unary operator: ${unaryNode.op}`)
+      }
+      return !toBoolean(evalNode(unaryNode.argument))
+    }
+    if (node.type === 'binary') {
+      return evaluateBinary(node.op, evalNode(node.left), evalNode(node.right))
+    }
+    if (node.type === 'in') {
+      const left = evalNode(node.value)
+      return node.options.some((opt) => valueEquals(evalNode(opt), left))
+    }
+    if (node.type === 'call') {
+      if (node.callee !== 'presence') {
+        throw new Error(`Unsupported function: ${node.callee}`)
+      }
+      if (node.args.length !== 1) throw new Error('presence() expects exactly one argument')
+      const arg = node.args[0]
+      if (!arg || arg.type !== 'variable') {
+        throw new Error('presence() argument must be a variable name')
+      }
+      const target = arg.name
+      if (!ctx.hasVariable(target)) throw new Error(`Undefined variable: ${target}`)
+      return ctx.presenceOf(target)
+    }
+    throw new Error(`Unsupported expression node: ${(node as any).type ?? 'unknown'}`)
   }
   return toBoolean(evalNode(expr))
 }
@@ -525,45 +532,57 @@ function tokenizeExpression(input: string): ExprToken[] {
   const isIdentifierStart = (c: string) => /[a-zA-Z_]/.test(c)
   const isIdentifierPart = (c: string) => /[a-zA-Z0-9_]/.test(c)
 
+  const charAt = (index: number) => input.charAt(index)
+
   while (i < len) {
-    const ch = input[i]
+    const ch = charAt(i)
+    if (!ch) break
     if (/\s/.test(ch)) {
-      i++
+      i += 1
       continue
     }
     if (ch === '"' || ch === "'") {
       const quote = ch
-      i++
+      i += 1
       let value = ''
       let closed = false
       while (i < len) {
-        const c = input[i]
+        const c = charAt(i)
         if (c === '\\') {
-          const next = input[i + 1]
-          if (next === undefined) throw new Error('Invalid escape sequence in string literal')
+          const next = charAt(i + 1)
+          if (!next) throw new Error('Invalid escape sequence in string literal')
           value += next
           i += 2
           continue
         }
         if (c === quote) {
           closed = true
-          i++
+          i += 1
           break
         }
         value += c
-        i++
+        i += 1
       }
       if (!closed) throw new Error('Unterminated string literal')
       tokens.push({ type: 'string', value })
       continue
     }
-    if (/[0-9]/.test(ch) || (ch === '-' && /[0-9]/.test(input[i + 1] ?? ''))) {
+    const nextChar = charAt(i + 1)
+    if (/[0-9]/.test(ch) || (ch === '-' && /[0-9]/.test(nextChar))) {
       const start = i
-      i++
-      while (i < len && /[0-9]/.test(input[i])) i++
-      if (input[i] === '.') {
-        i++
-        while (i < len && /[0-9]/.test(input[i])) i++
+      i += 1
+      while (i < len) {
+        const digit = charAt(i)
+        if (!/[0-9]/.test(digit)) break
+        i += 1
+      }
+      if (charAt(i) === '.') {
+        i += 1
+        while (i < len) {
+          const digit = charAt(i)
+          if (!/[0-9]/.test(digit)) break
+          i += 1
+        }
       }
       const raw = input.slice(start, i)
       const num = Number(raw)
@@ -571,82 +590,84 @@ function tokenizeExpression(input: string): ExprToken[] {
       tokens.push({ type: 'number', value: num })
       continue
     }
-    if (ch === '&' && input[i + 1] === '&') {
+    if (ch === '&' && nextChar === '&') {
       tokens.push({ type: 'operator', value: '&&' })
       i += 2
       continue
     }
-    if (ch === '|' && input[i + 1] === '|') {
+    if (ch === '|' && nextChar === '|') {
       tokens.push({ type: 'operator', value: '||' })
       i += 2
       continue
     }
-    if (ch === '=' && input[i + 1] === '=') {
+    if (ch === '=' && nextChar === '=') {
       tokens.push({ type: 'operator', value: '==' })
       i += 2
       continue
     }
-    if (ch === '!' && input[i + 1] === '=') {
+    if (ch === '!' && nextChar === '=') {
       tokens.push({ type: 'operator', value: '!=' })
       i += 2
       continue
     }
     if (ch === '!') {
       tokens.push({ type: 'operator', value: '!' })
-      i++
+      i += 1
       continue
     }
-    if (ch === '>' && input[i + 1] === '=') {
+    if (ch === '>' && nextChar === '=') {
       tokens.push({ type: 'operator', value: '>=' })
       i += 2
       continue
     }
-    if (ch === '<' && input[i + 1] === '=') {
+    if (ch === '<' && nextChar === '=') {
       tokens.push({ type: 'operator', value: '<=' })
       i += 2
       continue
     }
     if (ch === '>') {
       tokens.push({ type: 'operator', value: '>' })
-      i++
+      i += 1
       continue
     }
     if (ch === '<') {
       tokens.push({ type: 'operator', value: '<' })
-      i++
+      i += 1
       continue
     }
     if (ch === '(') {
       tokens.push({ type: 'lparen' })
-      i++
+      i += 1
       continue
     }
     if (ch === ')') {
       tokens.push({ type: 'rparen' })
-      i++
+      i += 1
       continue
     }
     if (ch === '[') {
       tokens.push({ type: 'lbracket' })
-      i++
+      i += 1
       continue
     }
     if (ch === ']') {
       tokens.push({ type: 'rbracket' })
-      i++
+      i += 1
       continue
     }
     if (ch === ',') {
       tokens.push({ type: 'comma' })
-      i++
+      i += 1
       continue
     }
     if (isIdentifierStart(ch)) {
       let ident = ch
-      i++
-      while (i < len && isIdentifierPart(input[i])) {
-        ident += input[i]
-        i++
+      i += 1
+      while (i < len) {
+        const part = charAt(i)
+        if (!isIdentifierPart(part)) break
+        ident += part
+        i += 1
       }
       if (ident === 'true') {
         tokens.push({ type: 'boolean', value: true })
@@ -695,7 +716,8 @@ export function extractVarNames(sql: string): string[] {
     const names = new Set<string>()
     let m: RegExpExecArray | null
     while ((m = varNameRe.exec(cleaned))) {
-      if (m[1] && m[1] !== 'else') names.add(m[1]!)
+      const candidate = m[1]
+      if (candidate && candidate !== 'else') names.add(candidate)
     }
     return Array.from(names)
   }

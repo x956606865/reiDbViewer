@@ -91,8 +91,9 @@ export default function BrowsePage() {
           setSchema(String(target.schema));
           setTable(String(target.table));
         } else {
-          if (schs.length && !schema) setSchema(schs[0]);
-          const t0 = tbs.find((t) => t.schema === (schs[0] || ''));
+          const firstSchema = schs[0];
+          if (firstSchema && !schema) setSchema(firstSchema);
+          const t0 = firstSchema ? tbs.find((t) => t.schema === firstSchema) : undefined;
           if (t0 && !table) setTable(t0.name);
         }
       })

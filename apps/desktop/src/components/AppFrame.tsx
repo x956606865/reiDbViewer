@@ -1,4 +1,4 @@
-import { Avatar, Badge, Box, Group, Tabs, Text, Title } from '@mantine/core';
+import { Avatar, Box, Group, Tabs, Text, Title, type MantineTheme } from '@mantine/core';
 import {
   IconDatabase,
   IconTable,
@@ -54,16 +54,16 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
             }}
             variant="pills"
             radius="md"
-            vars={(theme) => ({
+            vars={(theme: MantineTheme) => ({
               root: {
                 '--tabs-color': theme.colors.blue[0],
+                '--tabs-text-color': theme.colors.blue[9],
               },
             })}
-            styles={{
-              root: (theme) => ({
+            styles={(theme) => ({
+              root: {
                 '--tabs-text-color': theme.colors.blue[9],
-              }),
-              indicator: { display: 'none' },
+              },
               list: {
                 gap: '6px',
                 paddingBottom: 0,
@@ -75,8 +75,6 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
                 fontSize: '17px',
                 border: 0,
                 color: 'var(--mantine-color-gray-7)',
-                // borderRadius: '8px',
-                // paddingInline: '12px',
                 paddingBlock: '10px',
                 transition: 'background-color 80ms ease',
                 '--tab-hover-color': 'var(--mantine-color-blue-0)',
@@ -89,7 +87,7 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
               tabSection: {
                 marginRight: '6px',
               },
-            }}
+            })}
           >
             <Tabs.List>
               {NAV_ITEMS.map(({ value, label, icon: Icon }) => (

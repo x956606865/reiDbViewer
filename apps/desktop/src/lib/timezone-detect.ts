@@ -37,6 +37,7 @@ export function normalizeTimestampWithOffset(value: string): string | null {
   const match = trimmed.match(TIMESTAMP_WITH_OFFSET)
   if (!match) return null
   const [, datePart, timePartRaw, offsetRaw] = match
+  if (!datePart || !offsetRaw) return null
   const timePart = normalizeTimePart(timePartRaw)
   const offsetPart = normalizeOffset(offsetRaw)
   if (!timePart || !offsetPart) return null

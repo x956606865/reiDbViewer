@@ -1,21 +1,24 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Button, Code, Group, Paper, Title } from "@mantine/core";
 import { IconPlus, IconScan } from "@tabler/icons-react";
 import type { editor } from "monaco-editor";
 import { CodeEditor } from "@/components/code/CodeEditor";
+import { ensureSchemaMetadataForConnection } from "@/lib/schema-metadata-store";
 
 export function SqlEditor({
   sql,
   onChange,
   onDetectVars,
   onAddVar,
+  userConnId,
 }: {
   sql: string;
   onChange: (value: string) => void;
   onDetectVars: () => void;
   onAddVar: () => void;
+  userConnId?: string | null;
 }) {
   const options = useMemo<editor.IStandaloneEditorConstructionOptions>(
     () => ({
@@ -25,6 +28,10 @@ export function SqlEditor({
     }),
     [],
   );
+
+  useEffect(() => {
+    void ensureSchemaMetadataForConnection(userConnId ?? null).catch(() => {});
+  }, [userConnId]);
 
   return (
     <Paper withBorder p="md">
