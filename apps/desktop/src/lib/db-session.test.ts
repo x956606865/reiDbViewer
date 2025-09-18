@@ -12,7 +12,12 @@ describe('db-session select fallback', () => {
 
   it('builds fallback query by stripping trailing semicolons', () => {
     const q = __test__.buildJsonFallbackQuery('SELECT 1;')
-    expect(q).toBe(`SELECT to_jsonb(${alias}) AS ${alias} FROM ( SELECT 1 ) ${alias}`)
+    expect(q).toBe(`SELECT to_jsonb(${alias}) AS ${alias} FROM (\nSELECT 1\n) ${alias}`)
+  })
+
+  it('builds fallback query and removes trailing line comments', () => {
+    const q = __test__.buildJsonFallbackQuery('SELECT 1; -- label')
+    expect(q).toBe(`SELECT to_jsonb(${alias}) AS ${alias} FROM (\nSELECT 1\n) ${alias}`)
   })
 
   it('retries select with json fallback when encountering unsupported datatype errors', async () => {
@@ -32,11 +37,14 @@ describe('db-session select fallback', () => {
     expect(calls[1]).toContain('to_jsonb')
   })
 
-  it('rethrows original error if fallback also fails', async () => {
+  it('rethrows original error if fallback also fails, preserving instance', async () => {
+    const original = new Error('unsupported datatype: JSONB[]')
     const baseSelect = vi.fn().mockImplementation(async () => {
-      throw new Error('unsupported datatype: JSONB[]')
+      throw original
     })
     const wrapped = __test__.wrapSelectWithFallback({ select: baseSelect })
-    await expect(wrapped.select('SELECT foo', [])).rejects.toThrow('unsupported datatype: JSONB[]')
+    await expect(wrapped.select('SELECT foo', [])).rejects.toBe(original)
+    expect(original.message).toBe('unsupported datatype: JSONB[] (fallback failed: unsupported datatype: JSONB[])')
+    expect((original as any).cause).toBeUndefined()
   })
 })

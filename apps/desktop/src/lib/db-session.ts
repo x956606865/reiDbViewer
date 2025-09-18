@@ -33,13 +33,25 @@ function isUnsupportedDatatypeError(err: unknown): boolean {
 }
 
 function stripTrailingSemicolons(sql: string): string {
-  return sql.replace(/;+\s*$/, '')
+  let result = sql
+  const trailingCommentPattern = /;?\s*--[^\n]*\s*$/
+
+  while (true) {
+    const next = result.replace(trailingCommentPattern, '')
+    if (next === result) {
+      break
+    }
+    result = next
+  }
+
+  result = result.replace(/;+\s*$/, '')
+  return result.replace(/\s+$/, '')
 }
 
 function buildJsonFallbackQuery(sql: string): string {
   const cleaned = stripTrailingSemicolons(sql).trim()
   if (!cleaned) return ''
-  return `SELECT to_jsonb(${JSON_FALLBACK_ALIAS}) AS ${JSON_FALLBACK_ALIAS} FROM ( ${cleaned} ) ${JSON_FALLBACK_ALIAS}`
+  return `SELECT to_jsonb(${JSON_FALLBACK_ALIAS}) AS ${JSON_FALLBACK_ALIAS} FROM (\n${cleaned}\n) ${JSON_FALLBACK_ALIAS}`
 }
 
 function parseJsonFallbackRow(row: Record<string, unknown>): Record<string, unknown> {
@@ -78,7 +90,17 @@ function wrapSelectWithFallback(db: any): any {
       } catch (fallbackErr) {
         const originalMsg = extractMessage(err)
         const fallbackMsg = extractMessage(fallbackErr)
-        throw new Error(`${originalMsg}${fallbackMsg ? ` (fallback failed: ${fallbackMsg})` : ''}`)
+        if (err instanceof Error) {
+          err.message = `${originalMsg}${fallbackMsg ? ` (fallback failed: ${fallbackMsg})` : ''}`
+          if (fallbackErr instanceof Error && fallbackErr !== err) {
+            ;(err as any).cause = fallbackErr
+          }
+          throw err
+        }
+        const composed = `${originalMsg}${fallbackMsg ? ` (fallback failed: ${fallbackMsg})` : ''}` || 'fallback failed'
+        throw new Error(composed, {
+          cause: fallbackErr instanceof Error ? fallbackErr : undefined,
+        })
       }
     }
   }
