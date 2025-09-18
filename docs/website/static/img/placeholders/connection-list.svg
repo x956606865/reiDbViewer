@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d141f"/>
+  <rect x="64" y="120" width="1152" height="480" fill="#161f2d" stroke="#30405c" stroke-width="4" stroke-dasharray="10 6"/>
+  <text x="640" y="90" fill="#7f9ac2" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Connections List Placeholder</text>
+  <text x="640" y="360" fill="#92abd1" font-size="30" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: My Connections table with filters</text>
+</svg>

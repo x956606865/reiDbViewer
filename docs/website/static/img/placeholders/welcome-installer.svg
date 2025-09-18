@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#10131a"/>
+  <rect x="40" y="40" width="1200" height="640" fill="none" stroke="#2f3b52" stroke-width="4" stroke-dasharray="16 12"/>
+  <text x="640" y="200" fill="#7a8cab" font-size="48" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Installer Placeholder</text>
+  <text x="640" y="360" fill="#8aa0c4" font-size="32" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Replace with desktop onboarding screenshot</text>
+</svg>

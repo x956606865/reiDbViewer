@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0c141f"/>
+  <rect x="72" y="120" width="1136" height="480" fill="#182232" stroke="#2e3c55" stroke-width="4"/>
+  <line x1="160" y1="200" x2="1120" y2="200" stroke="#3a4b66" stroke-dasharray="16 10" stroke-width="4"/>
+  <line x1="160" y1="320" x2="1120" y2="320" stroke="#3a4b66" stroke-dasharray="16 10" stroke-width="4"/>
+  <line x1="160" y1="440" x2="1120" y2="440" stroke="#3a4b66" stroke-dasharray="16 10" stroke-width="4"/>
+  <text x="640" y="96" fill="#8ea4cb" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Task Guide Placeholder</text>
+  <text x="640" y="640" fill="#9fb5d8" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Replace with step-by-step spotlight screenshot</text>
+</svg>

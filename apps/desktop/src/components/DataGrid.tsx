@@ -106,7 +106,17 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
               {hg.headers.map((h) => {
                 const isActions = h.column.id === '__rdv_actions' || h.column.id === 'actions'
                 const base: React.CSSProperties = { textAlign: 'left', padding: 0, borderBottom: '1px solid #e5e7eb', background: '#f9fafb', whiteSpace: 'nowrap' }
-                const innerBase: React.CSSProperties = { padding: '8px 10px', fontWeight: 600 }
+                const innerBase: React.CSSProperties = {
+                  padding: '8px 10px',
+                  fontWeight: 600,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  display: 'block',
+                  maxWidth: '100%',
+                }
+                const headerContent = flexRender(h.column.columnDef.header, h.getContext())
+                const headerTitle = typeof headerContent === 'string' ? headerContent : undefined
                 return (
                   <th
                     key={h.id}
@@ -125,8 +135,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                         : { ...base }
                     }
                   >
-                    <div style={innerBase}>
-                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    <div style={innerBase} title={headerTitle}>
+                      {headerContent}
                     </div>
                   </th>
                 )

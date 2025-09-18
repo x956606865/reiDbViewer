@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d151f"/>
+  <rect x="96" y="112" width="1088" height="496" fill="#182233" stroke="#2f3d55" stroke-width="4"/>
+  <rect x="128" y="144" width="1024" height="128" fill="#1f2b3d" stroke="#39506b" stroke-dasharray="11 7"/>
+  <rect x="128" y="304" width="1024" height="272" fill="#1f2b3d" stroke="#39506b" stroke-dasharray="11 7"/>
+  <text x="640" y="96" fill="#8da3ca" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Ops Center Placeholder</text>
+  <text x="640" y="640" fill="#9eb4d7" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: long-running query diagnostics</text>
+</svg>

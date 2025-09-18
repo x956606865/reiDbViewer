@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0f1724"/>
+  <rect x="80" y="120" width="1120" height="480" fill="#182233" stroke="#31405b" stroke-width="4"/>
+  <rect x="120" y="160" width="280" height="400" fill="#1d283b" stroke="#3a4c69" stroke-dasharray="12 8"/>
+  <rect x="432" y="160" width="720" height="400" fill="#1d283b" stroke="#3a4c69" stroke-dasharray="12 8"/>
+  <text x="640" y="96" fill="#8ea4cb" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Schema Explorer Placeholder</text>
+  <text x="640" y="640" fill="#9db4d8" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: table metadata & refresh banner</text>
+</svg>

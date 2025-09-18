@@ -14,6 +14,99 @@ type LockEntry = {
 const dbCache = new Map<string, CacheEntry>()
 const sessionLocks = new Map<string, LockEntry>()
 
+const JSON_FALLBACK_ALIAS = '__rdv_row_json__'
+
+function extractMessage(err: unknown): string {
+  if (!err) return ''
+  if (typeof err === 'string') return err
+  if (err instanceof Error) return err.message || ''
+  if (typeof err === 'object' && err && 'message' in err) {
+    const msg = (err as Record<string, unknown>).message
+    return typeof msg === 'string' ? msg : ''
+  }
+  return ''
+}
+
+function isUnsupportedDatatypeError(err: unknown): boolean {
+  const msg = extractMessage(err).toLowerCase()
+  return msg.includes('unsupported datatype') || msg.includes('unsupported data type')
+}
+
+function stripTrailingSemicolons(sql: string): string {
+  let result = sql
+  const trailingCommentPattern = /;?\s*--[^\n]*\s*$/
+
+  while (true) {
+    const next = result.replace(trailingCommentPattern, '')
+    if (next === result) {
+      break
+    }
+    result = next
+  }
+
+  result = result.replace(/;+\s*$/, '')
+  return result.replace(/\s+$/, '')
+}
+
+function buildJsonFallbackQuery(sql: string): string {
+  const cleaned = stripTrailingSemicolons(sql).trim()
+  if (!cleaned) return ''
+  return `SELECT to_jsonb(${JSON_FALLBACK_ALIAS}) AS ${JSON_FALLBACK_ALIAS} FROM (\n${cleaned}\n) ${JSON_FALLBACK_ALIAS}`
+}
+
+function parseJsonFallbackRow(row: Record<string, unknown>): Record<string, unknown> {
+  if (!row) return {}
+  const payload = (row as any)[JSON_FALLBACK_ALIAS]
+  if (payload == null) return {}
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload)
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>
+      return { value: parsed as unknown }
+    } catch (err) {
+      throw new Error(`fallback_parse_failed: ${(err as Error)?.message || err}`)
+    }
+  }
+  if (typeof payload === 'object') {
+    return payload as Record<string, unknown>
+  }
+  return { value: payload }
+}
+
+function wrapSelectWithFallback(db: any): any {
+  if (!db || typeof db.select !== 'function' || (db as any).__rdvSelectWrapped) return db
+  const baseSelect = db.select.bind(db)
+  Object.defineProperty(db, '__rdvSelectWrapped', { value: true, enumerable: false })
+  db.select = async (sql: string, params: unknown[] = []) => {
+    try {
+      return await baseSelect(sql, params)
+    } catch (err) {
+      if (!isUnsupportedDatatypeError(err)) throw err
+      const fallbackSql = buildJsonFallbackQuery(sql)
+      if (!fallbackSql) throw err
+      try {
+        const rows = await baseSelect(fallbackSql, params)
+        return rows.map((row: Record<string, unknown>) => parseJsonFallbackRow(row))
+      } catch (fallbackErr) {
+        const originalMsg = extractMessage(err)
+        const fallbackMsg = extractMessage(fallbackErr)
+        if (err instanceof Error) {
+          err.message = `${originalMsg}${fallbackMsg ? ` (fallback failed: ${fallbackMsg})` : ''}`
+          if (fallbackErr instanceof Error && fallbackErr !== err) {
+            ;(err as any).cause = fallbackErr
+          }
+          throw err
+        }
+        const composed = `${originalMsg}${fallbackMsg ? ` (fallback failed: ${fallbackMsg})` : ''}` || 'fallback failed'
+        throw new Error(composed, {
+          cause: fallbackErr instanceof Error ? fallbackErr : undefined,
+        })
+      }
+    }
+  }
+  return db
+}
+
 const resolveTimeout = () => {
   const base = Math.max(1, env.QUERY_TIMEOUT_DEFAULT_MS)
   const cap = Math.max(base, env.QUERY_TIMEOUT_MAX_MS)
@@ -86,7 +179,7 @@ async function getDatabase(key: string, dsn: string): Promise<any> {
     return existing.dbPromise
   }
   const wrapped = Database.load(dsn).then(
-    (db) => db,
+    (db) => wrapSelectWithFallback(db),
     (err) => {
       const current = dbCache.get(key)
       if (current?.dbPromise === wrapped) {
@@ -176,4 +269,13 @@ export async function withWritableSession<T>(
       }
     }
   })
+}
+
+export const __test__ = {
+  extractMessage,
+  isUnsupportedDatatypeError,
+  stripTrailingSemicolons,
+  buildJsonFallbackQuery,
+  parseJsonFallbackRow,
+  wrapSelectWithFallback,
 }

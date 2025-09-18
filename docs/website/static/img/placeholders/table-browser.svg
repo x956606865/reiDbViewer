@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0e151f"/>
+  <rect x="64" y="120" width="1152" height="480" fill="#192232" stroke="#31405a" stroke-width="4"/>
+  <rect x="96" y="152" width="1088" height="128" fill="#1f2a3d" stroke="#3c4d68" stroke-dasharray="14 8"/>
+  <rect x="96" y="304" width="1088" height="264" fill="#1f2a3d" stroke="#3c4d68" stroke-dasharray="14 8"/>
+  <text x="640" y="96" fill="#8ea3c8" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Data Browser Placeholder</text>
+  <text x="640" y="640" fill="#9db2d9" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: keyset pagination controls</text>
+</svg>
