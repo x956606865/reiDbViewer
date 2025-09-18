@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0c1119"/>
+  <rect x="96" y="120" width="1088" height="480" fill="#172130" stroke="#2f3f58" stroke-width="4"/>
+  <rect x="128" y="152" width="320" height="176" fill="#1f2a3c" stroke="#3a4c67" stroke-dasharray="10 6"/>
+  <rect x="480" y="152" width="672" height="384" fill="#1f2a3c" stroke="#3a4c67" stroke-dasharray="10 6"/>
+  <text x="640" y="90" fill="#8aa2c8" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Dashboard Placeholder</text>
+  <text x="640" y="640" fill="#93aed4" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Replace with home dashboard widgets screenshot</text>
+</svg>

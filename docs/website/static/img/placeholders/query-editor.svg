@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d1420"/>
+  <rect x="96" y="120" width="1088" height="480" fill="#192335" stroke="#304059" stroke-width="4"/>
+  <rect x="128" y="152" width="1024" height="192" fill="#1f2c40" stroke="#3a4c67" stroke-dasharray="15 8"/>
+  <rect x="128" y="360" width="1024" height="208" fill="#1f2c40" stroke="#3a4c67" stroke-dasharray="15 8"/>
+  <text x="640" y="96" fill="#8ca3cb" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Query Editor Placeholder</text>
+  <text x="640" y="640" fill="#9eb4d7" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: template variables + preview pane</text>
+</svg>

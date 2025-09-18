@@ -5,19 +5,42 @@ const sidebars: SidebarsConfig = {
     'intro',
     {
       type: 'category',
-      label: '快速开始',
+      label: '欢迎与快速入门',
       collapsed: false,
-      items: ['getting-started/quickstart', 'getting-started/pages-setup'],
+      items: ['welcome/welcome-getting-started'],
     },
     {
       type: 'category',
-      label: '架构与安全',
-      items: ['architecture/overview', 'architecture/security'],
+      label: '界面与导航',
+      items: ['ui/ui-overview'],
     },
     {
       type: 'category',
-      label: '功能指南',
-      items: ['guides/schema-explorer', 'guides/query-execution'],
+      label: '核心功能指南',
+      items: [
+        'connections/connections-management',
+        'dashboard/dashboard-home',
+        'schema/schema-explorer-guide',
+        'data/data-browser',
+        'saved-sql/saved-sql-guide',
+        'ops/ops-toolkit',
+        'settings/settings-preferences',
+      ],
+    },
+    {
+      type: 'category',
+      label: '任务导向',
+      items: ['tasks/task-playbooks'],
+    },
+    {
+      type: 'category',
+      label: '安全与合规',
+      items: ['security/security-compliance'],
+    },
+    {
+      type: 'category',
+      label: '版本与附录',
+      items: ['releases/releases-notes', 'appendix/appendix-resources'],
     },
   ],
 };

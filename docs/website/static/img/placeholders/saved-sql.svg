@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d131e"/>
+  <rect x="80" y="112" width="1120" height="496" fill="#182131" stroke="#2f3b54" stroke-width="4"/>
+  <rect x="120" y="152" width="1040" height="200" fill="#1e293b" stroke="#3a4c66" stroke-dasharray="12 7"/>
+  <rect x="120" y="376" width="1040" height="184" fill="#1e293b" stroke="#3a4c66" stroke-dasharray="12 7"/>
+  <text x="640" y="96" fill="#89a0c6" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Saved SQL Placeholder</text>
+  <text x="640" y="640" fill="#9db3d8" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Capture: folder tree and dynamic columns</text>
+</svg>

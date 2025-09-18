@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d141f"/>
+  <rect x="96" y="120" width="1088" height="480" fill="#182233" stroke="#2f3e56" stroke-width="4"/>
+  <text x="640" y="96" fill="#90a6cc" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Appendix Placeholder</text>
+  <text x="640" y="360" fill="#a1b6da" font-size="30" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Replace with glossary or FAQ screenshot</text>
+</svg>

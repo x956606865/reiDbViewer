@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#0d151f"/>
+  <rect x="96" y="120" width="1088" height="480" fill="#182233" stroke="#2f3c55" stroke-width="4"/>
+  <path d="M320 240h640v320H320z" fill="none" stroke="#3b4d67" stroke-width="6" stroke-dasharray="20 12"/>
+  <path d="M640 200c88 0 120-64 120-116 0-4-0.2-8-0.6-12H520.6c-0.4 4-0.6 8-0.6 12 0 52 32 116 120 116z" fill="#1f2c40" stroke="#3b4d67" stroke-width="6"/>
+  <text x="640" y="96" fill="#8ea4cb" font-size="42" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Security Placeholder</text>
+  <text x="640" y="640" fill="#9fb5d8" font-size="28" font-family="Arial, Helvetica, sans-serif" text-anchor="middle">Replace with read-only session policy screenshot</text>
+</svg>
