@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
   ActionIcon,
   Button,
@@ -10,12 +10,13 @@ import {
   Select,
   Table,
   Text,
-  Textarea,
   TextInput,
   Title,
 } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { CalcItemDef, SavedQueryVariableDef } from "@rei-db-view/types/appdb";
+import type { editor } from "monaco-editor";
+import { CodeEditor } from "@/components/code/CodeEditor";
 
 export function CalcItemsEditor({
   calcItems,
@@ -28,6 +29,16 @@ export function CalcItemsEditor({
   vars: SavedQueryVariableDef[];
   setRunValues: React.Dispatch<React.SetStateAction<Record<string, any>>>;
 }) {
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      tabSize: 2,
+      insertSpaces: true,
+      wordWrap: "on",
+      minimap: { enabled: false },
+    }),
+    [],
+  );
+
   return (
     <Paper withBorder p="md">
       <Title order={4}>计算数据</Title>
@@ -62,8 +73,13 @@ export function CalcItemsEditor({
               </Table.Td>
             </Table.Tr>
           )}
-          {calcItems.map((ci, i) => (
-            <Table.Tr key={i}>
+          {calcItems.map((ci, i) => {
+            const placeholder =
+              ci.type === 'js'
+                ? '// 编写 JS 计算逻辑，例如 return rows.length'
+                : '-- 编写只读 SQL，可引用 {{_sql}}';
+            return (
+              <Table.Tr key={i}>
               <Table.Td>
                 <TextInput
                   value={ci.name}
@@ -132,16 +148,21 @@ export function CalcItemsEditor({
                   }
                 />
               </Table.Td>
-              <Table.Td>
-                <Textarea
+              <Table.Td style={{ minWidth: 420 }}>
+                <CodeEditor
                   value={ci.code}
-                  onChange={(e) => {
-                    const val = e.currentTarget.value;
-                    setCalcItems((arr) => arr.map((x, idx) => (idx === i ? { ...x, code: val } : x)));
-                  }}
-                  autosize
-                  minRows={3}
-                  styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+                  onChange={(val) =>
+                    setCalcItems((arr) =>
+                      arr.map((x, idx) => (idx === i ? { ...x, code: val } : x))
+                    )
+                  }
+                  language={ci.type === 'js' ? 'javascript' : 'sql'}
+                  height={ci.kind === 'group' ? 200 : 160}
+                  minHeight={140}
+                  options={editorOptions}
+                  ariaLabel={`Calc item code ${ci.name ?? i}`}
+                  modelPath={`file:///calc-items/${i}.${ci.type === 'js' ? 'js' : 'sql'}`}
+                  placeholder={placeholder}
                 />
               </Table.Td>
               <Table.Td>
@@ -150,7 +171,8 @@ export function CalcItemsEditor({
                 </ActionIcon>
               </Table.Td>
             </Table.Tr>
-          ))}
+          );
+          })}
         </Table.Tbody>
       </Table>
       <Group mt="xs" gap="xs">

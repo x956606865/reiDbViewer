@@ -1,8 +1,10 @@
 "use client";
 
-import React from "react";
-import { Button, Code, Group, Paper, Textarea, Title } from "@mantine/core";
+import React, { useMemo } from "react";
+import { Button, Code, Group, Paper, Title } from "@mantine/core";
 import { IconPlus, IconScan } from "@tabler/icons-react";
+import type { editor } from "monaco-editor";
+import { CodeEditor } from "@/components/code/CodeEditor";
 
 export function SqlEditor({
   sql,
@@ -15,18 +17,29 @@ export function SqlEditor({
   onDetectVars: () => void;
   onAddVar: () => void;
 }) {
+  const options = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      tabSize: 2,
+      insertSpaces: true,
+      suggestOnTriggerCharacters: true,
+    }),
+    [],
+  );
+
   return (
     <Paper withBorder p="md">
       <Title order={4}>SQL</Title>
-      <Textarea
-        mt="sm"
+      <CodeEditor
         value={sql}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        autosize
-        minRows={8}
-        styles={{
-          input: { fontFamily: "var(--mantine-font-family-monospace)" },
-        }}
+        onChange={onChange}
+        language="sql"
+        height={320}
+        minHeight={280}
+        options={options}
+        ariaLabel="SQL editor"
+        modelPath="file:///saved-sql.sql"
+        fallbackEditable
+        placeholder="-- 在此编写 SQL 查询，可使用 {{变量}} 占位符"
       />
       <Group gap="xs" mt="xs">
         <Button
@@ -49,4 +62,3 @@ export function SqlEditor({
     </Paper>
   );
 }
-
