@@ -43,11 +43,28 @@ export default function SmartGrid({
   onColumnFiltersChange,
   onApplyFilters,
 }: SmartGridProps) {
+  const headerLabelStyle: React.CSSProperties = React.useMemo(
+    () => ({
+      display: 'block',
+      minWidth: 0,
+      maxWidth: '100%',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    }),
+    [],
+  );
+
   const colDefs = React.useMemo<
     MRT_ColumnDef<Record<string, unknown>>[]
   >(() => {
     return columns.map((key) => ({
       header: key,
+      Header: () => (
+        <span style={headerLabelStyle} title={key}>
+          {key}
+        </span>
+      ),
       accessorKey: key,
       enableSorting: true,
       enableColumnFilter: true,
@@ -65,12 +82,19 @@ export default function SmartGrid({
         }
         return String(v);
       },
-      mantineTableHeadCellProps: { style: { whiteSpace: 'nowrap' } },
+      mantineTableHeadCellProps: {
+        style: {
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        },
+        title: key,
+      },
       mantineTableBodyCellProps: {
         style: { fontFamily: 'var(--mantine-font-family-monospace)' },
       },
     }));
-  }, [columns]);
+  }, [columns, headerLabelStyle]);
 
   // 统一化的轻量中性色图标：固定在 16x16 盒内，垂直居中，避免不同 glyph 视盒差异造成的错位
   const gray = 'var(--mantine-color-dimmed)';
@@ -178,6 +202,10 @@ export default function SmartGrid({
         lineHeight: '16px', // 与图标容器 16px 匹配，文本与图标同基线
         paddingTop: 6,
         paddingBottom: 6,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        paddingRight: 12,
       },
     },
     mantineTableBodyCellProps: {
