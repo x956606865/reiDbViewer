@@ -105,6 +105,16 @@ export const CodeEditor = forwardRef<StandaloneEditor | null, CodeEditorProps>(
       return merged;
     }, [options, placeholder, readOnly]);
 
+    const resolvedReadOnly = editorOptions.readOnly ?? false;
+
+    const handleFallbackChange = useCallback(
+      (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+        if (resolvedReadOnly) return;
+        onChange(event.currentTarget.value);
+      },
+      [onChange, resolvedReadOnly],
+    );
+
     const handleChange = useCallback(
       (nextValue: string | undefined) => {
         onChange(nextValue ?? '');
@@ -138,11 +148,12 @@ export const CodeEditor = forwardRef<StandaloneEditor | null, CodeEditorProps>(
       return (
         <Textarea
           value={value}
-          onChange={(event) => onChange(event.currentTarget.value)}
+          onChange={handleFallbackChange}
           autosize
           minRows={8}
           className={className}
           styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+          readOnly={resolvedReadOnly}
           aria-label={ariaLabel}
           placeholder={placeholder}
         />

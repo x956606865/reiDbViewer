@@ -55,10 +55,16 @@ function configureMonaco(instance: MonacoInstance) {
 
 export async function ensureMonaco(): Promise<MonacoInstance> {
   if (!initPromise) {
-    initPromise = loader.init().then((instance) => {
-      configureMonaco(instance);
-      return instance;
-    });
+    initPromise = loader
+      .init()
+      .then((instance) => {
+        configureMonaco(instance);
+        return instance;
+      })
+      .catch((error) => {
+        initPromise = null;
+        throw error;
+      });
   }
   return initPromise;
 }
