@@ -58,14 +58,20 @@ function toChunks(messageId: string, content: string): UIMessageChunk[] {
 
 export type DesktopChatTransportOptions = {
   fallback?: ChatTransport<UIMessage>
+  onFallback?: (error: unknown) => void
+  onSuccess?: () => void
 }
 
 export class DesktopChatTransport implements ChatTransport<UIMessage> {
   private contextChunks: AssistantContextChunk[] = []
   private readonly fallback: ChatTransport<UIMessage>
+  private readonly onFallback?: (error: unknown) => void
+  private readonly onSuccess?: () => void
 
   constructor(options: DesktopChatTransportOptions = {}) {
     this.fallback = options.fallback ?? new MockChatTransport()
+    this.onFallback = options.onFallback
+    this.onSuccess = options.onSuccess
   }
 
   setContextChunks(chunks: AssistantContextChunk[]) {
@@ -91,7 +97,9 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
   async sendMessages({ messages }: Parameters<ChatTransport<UIMessage>['sendMessages']>[0]) {
     try {
       const request = this.buildRequest(messages)
+      console.info('[assistant] sending request payload', request)
       const response = await invoke<DesktopChatResponse>('assistant_chat', { payload: request })
+      this.onSuccess?.()
       const messageId = generateId()
       const chunks = toChunks(messageId, response.message)
       return simulateReadableStream({
@@ -100,6 +108,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
         chunkDelayInMs: STREAM_DELAY_MS,
       })
     } catch (err) {
+      this.onFallback?.(err)
       console.warn('assistant_chat failed, falling back to mock transport', err)
       return this.fallback.sendMessages({ messages })
     }

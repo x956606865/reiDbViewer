@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Box, Group, Paper, Stack, Text } from '@mantine/core'
+import { shallow } from 'zustand/shallow'
+import type { UIMessage } from 'ai'
+import { ConversationToolbar } from '@/components/assistant/ConversationToolbar'
 import { ContextSidebar } from '@/components/assistant/ContextSidebar'
 import { PromptLibrary } from '@/components/assistant/PromptLibrary'
-import { ChatPanel } from '@/components/assistant/ChatPanel'
+import { ChatPanel, INITIAL_MESSAGES } from '@/components/assistant/ChatPanel'
 import {
   getSchemaMetadataSnapshot,
   subscribeSchemaMetadata,
@@ -20,6 +23,9 @@ import {
   type AssistantContextSection,
 } from '@/lib/assistant/context-chunks'
 import { DesktopChatTransport } from '@/lib/assistant/desktop-transport'
+import { useAssistantSessions } from '@/lib/assistant/session-store'
+import type { AssistantConversationMessage, AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
+import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn'
 
 function useSchemaMetadata(): SchemaMetadataSnapshot | null {
   const [snapshot, setSnapshot] = useState<SchemaMetadataSnapshot | null>(() => getSchemaMetadataSnapshot())
@@ -32,12 +38,88 @@ function useSchemaMetadata(): SchemaMetadataSnapshot | null {
   return snapshot
 }
 
+function useCurrentConnectionId(): string | null {
+  const [connId, setConnId] = useState<string | null>(() => getCurrentConnId())
+  useEffect(() => {
+    return subscribeCurrentConnId((value) => setConnId(value))
+  }, [])
+  return connId
+}
+
+function toUiMessages(messages: AssistantConversationMessage[] | undefined): UIMessage[] {
+  if (!messages || messages.length === 0) return INITIAL_MESSAGES
+  return messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    parts: [
+      {
+        type: 'text',
+        text: message.text ?? '',
+      },
+    ],
+    createdAt: new Date(message.createdAt || Date.now()),
+  }))
+}
+
 export default function AssistantPage() {
   const schemaSnapshot = useSchemaMetadata()
+  const currentConnId = useCurrentConnectionId()
   const [savedSql, setSavedSql] = useState<SavedSqlSummary[]>([])
   const [recentQueries, setRecentQueries] = useState<RecentQueryEntry[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
+  const [transportNotice, setTransportNotice] = useState<string | null>(null)
+
+  const {
+    ready,
+    initialize,
+    createConversation,
+    ensureConversation,
+    selectConversation,
+    conversations,
+    archivedConversations,
+    activeId,
+    persistMessages,
+    renameConversation,
+    archiveConversation,
+    deleteConversation,
+    restoreConversation,
+    recordAssistantMetrics,
+  } = useAssistantSessions(
+    (state) => ({
+      ready: state.ready,
+      initialize: state.initialize,
+      createConversation: state.createConversation,
+      ensureConversation: state.ensureConversation,
+      selectConversation: state.selectConversation,
+      conversations: state.conversations,
+      archivedConversations: state.archivedConversations,
+      activeId: state.activeId,
+      persistMessages: state.persistMessages,
+      renameConversation: state.renameConversation,
+      archiveConversation: state.archiveConversation,
+      deleteConversation: state.deleteConversation,
+      restoreConversation: state.restoreConversation,
+      recordAssistantMetrics: state.recordAssistantMetrics,
+    }),
+    shallow,
+  )
+
+  useEffect(() => {
+    void initialize()
+  }, [initialize])
+
+  useEffect(() => {
+    if (!ready) return
+    void ensureConversation({ connectionId: currentConnId ?? null })
+  }, [ready, ensureConversation, currentConnId])
+
+  const activeConversation = useMemo(
+    () => conversations.find((conv) => conv.id === activeId) ?? null,
+    [conversations, activeId],
+  )
+
+  const initialMessages = useMemo(() => toUiMessages(activeConversation?.messages), [activeConversation?.messages])
 
   const refreshSavedSql = useCallback(async () => {
     try {
@@ -96,7 +178,24 @@ export default function AssistantPage() {
     }
     return chunks
   }, [sections, selectedIds])
-  const transport = useMemo(() => new DesktopChatTransport(), [])
+
+  const transport = useMemo(
+    () =>
+      new DesktopChatTransport({
+        onFallback: (error) => {
+          const reason = error instanceof Error ? error.message : String(error ?? '')
+          setTransportNotice(
+            reason
+              ? `无法连接到桌面后端，已使用本地模拟回答：${reason}`
+              : '无法连接到桌面后端，已使用本地模拟回答。',
+          )
+        },
+        onSuccess: () => {
+          setTransportNotice(null)
+        },
+      }),
+    [],
+  )
 
   useEffect(() => {
     transport.setContextChunks(contextChunks)
@@ -110,8 +209,87 @@ export default function AssistantPage() {
     setPendingPrompt(null)
   }, [])
 
+  const handleSelectConversation = useCallback(
+    (id: string | null) => {
+      if (id) {
+        selectConversation(id)
+      } else {
+        void createConversation({ connectionId: currentConnId ?? null })
+      }
+    },
+    [selectConversation, createConversation, currentConnId],
+  )
+
+  const handlePersistMessages = useCallback(
+    async (messages: UIMessage[], opts?: { updatedAt?: number }) => {
+      if (!activeId) return
+      await persistMessages({
+        conversationId: activeId,
+        messages,
+        contextChunks,
+        connectionId: currentConnId ?? null,
+        updatedAt: opts?.updatedAt,
+      })
+    },
+    [activeId, persistMessages, contextChunks, currentConnId],
+  )
+
+  const handleRecordAssistantMetrics = useCallback(
+    async (messageId: string, metrics: AssistantMessageMetrics) => {
+      if (!activeId) return
+      await recordAssistantMetrics(activeId, messageId, metrics)
+    },
+    [activeId, recordAssistantMetrics],
+  )
+
+  const handleCreateConversation = useCallback(() => {
+    void createConversation({ connectionId: currentConnId ?? null })
+  }, [createConversation, currentConnId])
+
+  const handleArchiveConversation = useCallback(
+    (id: string) => {
+      void archiveConversation(id)
+    },
+    [archiveConversation],
+  )
+
+  const handleDeleteConversation = useCallback(
+    (id: string) => {
+      void deleteConversation(id)
+    },
+    [deleteConversation],
+  )
+
+  const handleRestoreConversation = useCallback(
+    (id: string) => {
+      void restoreConversation(id)
+    },
+    [restoreConversation],
+  )
+
+  const handleRenameConversation = useCallback(
+    (id: string, title: string) => {
+      void renameConversation(id, title)
+    },
+    [renameConversation],
+  )
+
+  const metrics = activeConversation?.metrics ?? null
+
   return (
     <Stack gap="md" h="100%">
+      <ConversationToolbar
+        activeId={activeId}
+        conversations={conversations}
+        archivedConversations={archivedConversations}
+        metrics={metrics}
+        onSelect={handleSelectConversation}
+        onCreate={handleCreateConversation}
+        onRename={handleRenameConversation}
+        onArchive={handleArchiveConversation}
+        onDelete={handleDeleteConversation}
+        onRestore={handleRestoreConversation}
+      />
       <Group align="flex-start" gap="md" wrap="nowrap" style={{ flex: 1, width: '100%', height: '100%' }}>
         <Box style={{ width: 280, height: '100%' }}>
           <ContextSidebar
@@ -150,10 +328,16 @@ export default function AssistantPage() {
           )}
           <Box style={{ flex: 1, minHeight: 0 }}>
             <ChatPanel
+              conversationId={activeConversation?.id ?? null}
               transport={transport}
               contextChunks={contextChunks}
               pendingPrompt={pendingPrompt}
               onPromptConsumed={handlePromptConsumed}
+              initialMessages={initialMessages}
+              onPersistMessages={handlePersistMessages}
+              onAssistantMetrics={handleRecordAssistantMetrics}
+              transportNotice={transportNotice}
+              onDismissTransportNotice={() => setTransportNotice(null)}
             />
           </Box>
         </Box>

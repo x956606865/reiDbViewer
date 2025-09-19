@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Alert, Box, Button, Group, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
 import { sanitizeMarkdownText } from '@/lib/assistant/markdown-sanitize'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
+import { estimateTokenUsage, type AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
 
-const INITIAL_MESSAGES: UIMessage[] = [
+export const INITIAL_MESSAGES: UIMessage[] = [
   {
     id: 'assistant-welcome',
     role: 'assistant',
@@ -28,24 +29,73 @@ function isTextPart(part: MessagePart): part is TextPart {
   return part.type === 'text'
 }
 
+function extractText(message: UIMessage): string {
+  return message.parts.filter(isTextPart).map((part) => part.text).join('')
+}
+
 function withText(messages: UIMessage[]): MessageWithText[] {
   return messages.map((message) => ({
     ...message,
-    text: message.parts.filter(isTextPart).map((part) => part.text).join(''),
+    text: extractText(message),
   }))
 }
 
 export type ChatPanelProps = {
+  conversationId: string | null
   transport: ChatTransport<UIMessage>
   contextChunks: AssistantContextChunk[]
   pendingPrompt: string | null
   onPromptConsumed: () => void
+  initialMessages: UIMessage[]
+  onPersistMessages: (messages: UIMessage[], opts?: { updatedAt?: number }) => void | Promise<void>
+  onAssistantMetrics: (messageId: string, metrics: AssistantMessageMetrics) => void | Promise<void>
+  transportNotice?: string | null
+  onDismissTransportNotice?: () => void
 }
 
-export function ChatPanel({ transport, contextChunks, pendingPrompt, onPromptConsumed }: ChatPanelProps) {
+export function ChatPanel({
+  conversationId,
+  transport,
+  contextChunks,
+  pendingPrompt,
+  onPromptConsumed,
+  initialMessages,
+  onPersistMessages,
+  onAssistantMetrics,
+  transportNotice,
+  onDismissTransportNotice,
+}: ChatPanelProps) {
+  const chatId = conversationId ?? 'assistant-default'
+  const activeRequestRef = useRef<{
+    startedAt: number
+    inputTokens?: number
+    contextTokens?: number
+    contextBytes?: number
+  } | null>(null)
+  const lastPersistRef = useRef<{ conversationId: string | null; userId?: string; assistantId?: string; signature?: string }>({
+    conversationId: null,
+  })
   const { messages, sendMessage, status, stop, error, clearError } = useChat({
+    id: chatId,
+    initialMessages,
     transport,
-    messages: INITIAL_MESSAGES,
+    onFinish(message, options) {
+      const meta = activeRequestRef.current
+      activeRequestRef.current = null
+      const latencyMs = meta ? Math.max(0, performance.now() - meta.startedAt) : undefined
+      const text = extractText(message)
+      const metrics: AssistantMessageMetrics = {
+        latencyMs,
+        inputTokens: options.usage?.promptTokens ?? meta?.inputTokens,
+        outputTokens: options.usage?.completionTokens ?? estimateTokenUsage(text),
+        contextTokens: meta?.contextTokens,
+        contextBytes: meta?.contextBytes,
+      }
+      void onAssistantMetrics(message.id, metrics)
+    },
+    onError() {
+      activeRequestRef.current = null
+    },
   })
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -65,16 +115,69 @@ export function ChatPanel({ transport, contextChunks, pendingPrompt, onPromptCon
     }
   }, [pendingPrompt, onPromptConsumed])
 
+  useEffect(() => {
+    if (lastPersistRef.current.conversationId !== conversationId) {
+      lastPersistRef.current = { conversationId }
+    }
+  }, [conversationId])
+
+  useEffect(() => {
+    if (!conversationId) return
+    const lastState = lastPersistRef.current
+    if (lastState.conversationId !== conversationId) {
+      lastPersistRef.current = { conversationId }
+    }
+    const persist = (opts?: { updatedAt?: number }) => {
+      void onPersistMessages(messages, opts)
+    }
+    const latestUser = [...messages].filter((message) => message.role === 'user').at(-1)
+    if (status === 'submitted' && latestUser && lastPersistRef.current.userId !== latestUser.id) {
+      persist()
+      lastPersistRef.current.userId = latestUser.id
+    }
+    if ((status === 'idle' || status === 'error') && messages.length > 0) {
+      const latestAssistant = [...messages].filter((message) => message.role === 'assistant').at(-1)
+      if (latestAssistant && lastPersistRef.current.assistantId !== latestAssistant.id) {
+        persist({ updatedAt: Date.now() })
+        lastPersistRef.current.assistantId = latestAssistant.id
+        lastPersistRef.current.signature = messages.map((msg) => `${msg.id}:${extractText(msg)}`).join('|')
+      } else {
+        const signature = messages.map((msg) => `${msg.id}:${extractText(msg)}`).join('|')
+        if (signature !== lastPersistRef.current.signature) {
+          persist({ updatedAt: Date.now() })
+          lastPersistRef.current.signature = signature
+        }
+      }
+    }
+  }, [messages, status, conversationId, onPersistMessages])
+
+  const dismissNotice = useCallback(() => {
+    onDismissTransportNotice?.()
+  }, [onDismissTransportNotice])
+
   const enhancedMessages = useMemo(() => withText(messages), [messages])
   const isStreaming = status === 'submitted' || status === 'streaming'
 
-  const handleSubmit = (event?: FormEvent<HTMLFormElement>) => {
-    event?.preventDefault()
-    const value = input.trim()
-    if (!value) return
-    void sendMessage({ text: value })
-    setInput('')
-  }
+  const handleSubmit = useCallback(
+    (event?: FormEvent<HTMLFormElement>) => {
+      event?.preventDefault()
+      const value = input.trim()
+      if (!value) return
+      const startedAt = performance.now()
+      const contextPayload = contextChunks.length > 0 ? JSON.stringify(contextChunks) : ''
+      const contextBytes = contextPayload.length
+      const contextTokens = contextBytes > 0 ? Math.ceil(contextBytes / 4) : 0
+      activeRequestRef.current = {
+        startedAt,
+        inputTokens: estimateTokenUsage(value),
+        contextTokens,
+        contextBytes,
+      }
+      void sendMessage({ text: value })
+      setInput('')
+    },
+    [input, contextChunks, sendMessage],
+  )
 
   return (
     <Stack gap="md" h="100%">
