@@ -6,6 +6,7 @@ import { ConversationToolbar } from '@/components/assistant/ConversationToolbar'
 import { ContextSidebar } from '@/components/assistant/ContextSidebar'
 import { PromptLibrary } from '@/components/assistant/PromptLibrary'
 import { ChatPanel, INITIAL_MESSAGES } from '@/components/assistant/ChatPanel'
+import { AssistantSettingsModal } from '@/components/assistant/AssistantSettingsModal'
 import {
   getSchemaMetadataSnapshot,
   subscribeSchemaMetadata,
@@ -26,6 +27,14 @@ import { DesktopChatTransport } from '@/lib/assistant/desktop-transport'
 import { useAssistantSessions } from '@/lib/assistant/session-store'
 import type { AssistantConversationMessage, AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn'
+import {
+  DEFAULT_ASSISTANT_SETTINGS,
+  loadAssistantSettings,
+  type AssistantProviderSettings,
+} from '@/lib/assistant/provider-settings'
+import { hasAssistantApiKey } from '@/lib/assistant/api-key-store'
+
+const MAX_CONTEXT_CHUNKS = 6
 
 function useSchemaMetadata(): SchemaMetadataSnapshot | null {
   const [snapshot, setSnapshot] = useState<SchemaMetadataSnapshot | null>(() => getSchemaMetadataSnapshot())
@@ -69,6 +78,9 @@ export default function AssistantPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
   const [transportNotice, setTransportNotice] = useState<string | null>(null)
+  const [settingsOpened, setSettingsOpened] = useState(false)
+  const [providerSettings, setProviderSettings] = useState<AssistantProviderSettings>(DEFAULT_ASSISTANT_SETTINGS)
+  const [apiKeyReady, setApiKeyReady] = useState<boolean | null>(null)
 
   const {
     ready,
@@ -147,6 +159,7 @@ export default function AssistantPage() {
     void refreshRecentQueries()
   }, [refreshRecentQueries])
 
+  const selectedCount = selectedIds.size
   const sections = useMemo<AssistantContextSection[]>(
     () =>
       buildContextSections({
@@ -167,16 +180,15 @@ export default function AssistantPage() {
   }, [])
 
   const contextChunks = useMemo(() => {
-    const chunks: AssistantContextChunk[] = []
-    const selected = selectedIds
+    const selectedChunks: AssistantContextChunk[] = []
     for (const section of sections) {
       for (const item of section.items) {
-        if (selected.has(item.id)) {
-          chunks.push(item.chunk)
+        if (selectedIds.has(item.id)) {
+          selectedChunks.push(item.chunk)
         }
       }
     }
-    return chunks
+    return selectedChunks.slice(0, MAX_CONTEXT_CHUNKS)
   }, [sections, selectedIds])
 
   const transport = useMemo(
@@ -196,6 +208,26 @@ export default function AssistantPage() {
       }),
     [],
   )
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const loaded = await loadAssistantSettings()
+        setProviderSettings(loaded)
+        transport.setProviderSettings(loaded)
+        const keyPresent = await hasAssistantApiKey(loaded.provider)
+        const ready = loaded.provider === 'lmstudio' ? true : Boolean(keyPresent)
+        setApiKeyReady(ready)
+      } catch (error) {
+        console.warn('failed to load assistant provider settings', error)
+        setApiKeyReady(false)
+      }
+    })()
+  }, [transport])
+
+  useEffect(() => {
+    transport.setProviderSettings(providerSettings)
+  }, [transport, providerSettings])
 
   useEffect(() => {
     transport.setContextChunks(contextChunks)
@@ -240,6 +272,14 @@ export default function AssistantPage() {
       await recordAssistantMetrics(activeId, messageId, metrics)
     },
     [activeId, recordAssistantMetrics],
+  )
+
+  const handleSettingsSaved = useCallback(
+    (settings: AssistantProviderSettings) => {
+      setProviderSettings(settings)
+      transport.setProviderSettings(settings)
+    },
+    [transport],
   )
 
   const handleCreateConversation = useCallback(() => {
@@ -289,6 +329,8 @@ export default function AssistantPage() {
         onArchive={handleArchiveConversation}
         onDelete={handleDeleteConversation}
         onRestore={handleRestoreConversation}
+        onOpenSettings={() => setSettingsOpened(true)}
+        apiKeyReady={apiKeyReady ?? false}
       />
       <Group align="flex-start" gap="md" wrap="nowrap" style={{ flex: 1, width: '100%', height: '100%' }}>
         <Box style={{ width: 280, height: '100%' }}>
@@ -298,6 +340,8 @@ export default function AssistantPage() {
             onToggle={handleToggleContext}
             onRefreshSavedSql={refreshSavedSql}
             onRefreshRecentQueries={refreshRecentQueries}
+            selectedCount={selectedCount}
+            maxContextChunks={MAX_CONTEXT_CHUNKS}
           />
         </Box>
         <Box style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -345,6 +389,12 @@ export default function AssistantPage() {
           <PromptLibrary onInsert={handlePromptInsert} />
         </Box>
       </Group>
+      <AssistantSettingsModal
+        opened={settingsOpened}
+        onClose={() => setSettingsOpened(false)}
+        onSettingsSaved={handleSettingsSaved}
+        onApiKeyChange={(value) => setApiKeyReady(value)}
+      />
     </Stack>
   )
 }

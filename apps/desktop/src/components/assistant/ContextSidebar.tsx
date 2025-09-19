@@ -8,10 +8,13 @@ export type ContextSidebarProps = {
   onToggle: (chunk: AssistantContextChunk, checked: boolean) => void
   onRefreshSavedSql: () => void
   onRefreshRecentQueries: () => void
+  selectedCount: number
+  maxContextChunks: number
 }
 
 export function ContextSidebar(props: ContextSidebarProps) {
   const sections = props.sections
+  const { selectedCount, maxContextChunks } = props
 
   return (
     <Stack gap="md" h="100%">
@@ -26,6 +29,11 @@ export function ContextSidebar(props: ContextSidebarProps) {
           </Button>
         </Group>
       </Group>
+      <Text size="xs" c="dimmed">
+        {selectedCount > maxContextChunks
+          ? `已选择 ${selectedCount} 个上下文，发送请求时仅使用前 ${maxContextChunks} 个。`
+          : `最多可选择 ${maxContextChunks} 个上下文参与请求，超出部分会被忽略。`}
+      </Text>
       <ScrollArea style={{ flex: 1 }} offsetScrollbars scrollbarSize={6}>
         <Stack gap="md">
           {sections.map((section) => {

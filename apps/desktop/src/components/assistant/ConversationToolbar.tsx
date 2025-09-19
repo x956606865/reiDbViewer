@@ -13,7 +13,7 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { IconArchive, IconEdit, IconPlus, IconRecycle, IconTrash } from '@tabler/icons-react'
+import { IconArchive, IconEdit, IconKey, IconPlus, IconRecycle, IconTrash } from '@tabler/icons-react'
 import type { AssistantConversationRecord } from '@/lib/assistant/session-store'
 import type { ConversationMetricsSummary } from '@/lib/assistant/conversation-utils'
 
@@ -28,6 +28,8 @@ export type ConversationToolbarProps = {
   onArchive: (id: string) => void
   onDelete: (id: string) => void
   onRestore: (id: string) => void
+  onOpenSettings: () => void
+  apiKeyReady: boolean | null
 }
 
 export function ConversationToolbar({
@@ -41,6 +43,8 @@ export function ConversationToolbar({
   onArchive,
   onDelete,
   onRestore,
+  onOpenSettings,
+  apiKeyReady,
 }: ConversationToolbarProps) {
   const [renameOpened, setRenameOpened] = useState(false)
   const [archivedOpened, setArchivedOpened] = useState(false)
@@ -131,6 +135,19 @@ export function ConversationToolbar({
             <Button variant="default" onClick={() => setArchivedOpened(true)}>
               已归档 ({archivedConversations.length})
             </Button>
+            <Tooltip
+              label={apiKeyReady ? 'API key 已配置' : '未配置 API key，助手将使用模拟回复'}
+              withArrow
+            >
+              <ActionIcon
+                variant={apiKeyReady ? 'light' : 'outline'}
+                color={apiKeyReady ? 'teal' : 'yellow'}
+                onClick={onOpenSettings}
+                aria-label="助手设置"
+              >
+                <IconKey size={16} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         </Group>
         {metricsBadges.length > 0 ? (

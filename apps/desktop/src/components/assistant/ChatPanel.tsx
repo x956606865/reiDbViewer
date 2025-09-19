@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Alert, Box, Button, Group, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
+import { Alert, Badge, Box, Button, Group, Paper, Stack, Table, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
 import { sanitizeMarkdownText } from '@/lib/assistant/markdown-sanitize'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
 import { estimateTokenUsage, type AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
+import type { AssistantTransportMetadata, AssistantTransportUsage } from '@/lib/assistant/desktop-transport'
+import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
+import type { SimulatedToolCall } from '@/lib/assistant/tooling'
+import { IconX } from '@tabler/icons-react'
 
 export const INITIAL_MESSAGES: UIMessage[] = [
   {
@@ -30,7 +34,12 @@ function isTextPart(part: MessagePart): part is TextPart {
 }
 
 function extractText(message: UIMessage): string {
-  return message.parts.filter(isTextPart).map((part) => part.text).join('')
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  if (parts.length === 0) {
+    const fallback = (message as any).content || (message as any).text
+    return typeof fallback === 'string' ? fallback : ''
+  }
+  return parts.filter(isTextPart).map((part) => part.text).join('')
 }
 
 function withText(messages: UIMessage[]): MessageWithText[] {
@@ -84,20 +93,30 @@ export function ChatPanel({
       activeRequestRef.current = null
       const latencyMs = meta ? Math.max(0, performance.now() - meta.startedAt) : undefined
       const text = extractText(message)
+      const usage = options?.usage
       const metrics: AssistantMessageMetrics = {
         latencyMs,
-        inputTokens: options.usage?.promptTokens ?? meta?.inputTokens,
-        outputTokens: options.usage?.completionTokens ?? estimateTokenUsage(text),
+        inputTokens: usage?.promptTokens ?? meta?.inputTokens,
+        outputTokens: usage?.completionTokens ?? estimateTokenUsage(text),
         contextTokens: meta?.contextTokens,
         contextBytes: meta?.contextBytes,
       }
       void onAssistantMetrics(message.id, metrics)
+      if (typeof (transport as any)?.consumeLastMetadata === 'function') {
+        const metadata = (transport as any).consumeLastMetadata() as AssistantTransportMetadata
+        setToolCalls(metadata.toolCalls)
+        setSafetyInfo(metadata.safety)
+        setUsage(metadata.usage ?? null)
+      }
     },
     onError() {
       activeRequestRef.current = null
     },
   })
   const [input, setInput] = useState('')
+  const [toolCalls, setToolCalls] = useState<SimulatedToolCall[]>([])
+  const [safetyInfo, setSafetyInfo] = useState<SafetyEvaluation | null>(null)
+  const [usage, setUsage] = useState<AssistantTransportUsage | null>(null)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -157,6 +176,78 @@ export function ChatPanel({
 
   const enhancedMessages = useMemo(() => withText(messages), [messages])
   const isStreaming = status === 'submitted' || status === 'streaming'
+  const usageBadges = useMemo(() => {
+    if (!usage) return []
+    const items: string[] = []
+    if (usage.promptTokens) items.push(`Prompt ${usage.promptTokens}`)
+    if (usage.completionTokens) items.push(`Output ${usage.completionTokens}`)
+    if (usage.totalTokens && usage.totalTokens !== usage.promptTokens && usage.totalTokens !== usage.completionTokens) {
+      items.push(`Total ${usage.totalTokens}`)
+    }
+    return items
+  }, [usage])
+
+  const shouldShowSafetyAlert = useMemo(() => {
+    if (!safetyInfo) return false
+    if (safetyInfo.severity === 'none') return false
+    return safetyInfo.triggers.length > 0
+  }, [safetyInfo])
+
+  const toolCallCards = useMemo(() => {
+    if (!toolCalls || toolCalls.length === 0) return null
+    return toolCalls.map((call) => {
+      const isSuccess = call.status === 'success'
+      return (
+        <Paper key={call.id} withBorder radius="md" p="sm">
+          <Stack gap="xs">
+            <Group justify="space-between" align="flex-start">
+              <Stack gap={0}>
+                <Text size="sm" fw={600}>
+                  Tool: {call.name}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Preview for SQL (read-only): {call.input.sql.slice(0, 120)}{call.input.sql.length > 120 ? '…' : ''}
+                </Text>
+              </Stack>
+              <Badge color={isSuccess ? 'teal' : 'yellow'} variant={isSuccess ? 'light' : 'outline'}>
+                {call.status === 'success' ? 'Simulated' : 'Needs attention'}
+              </Badge>
+            </Group>
+            {isSuccess && call.result ? (
+              <Table striped withColumnBorders>
+                <Table.Thead>
+                  <Table.Tr>
+                    {call.result.columns.map((column) => (
+                      <Table.Th key={column}>{column}</Table.Th>
+                    ))}
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {call.result.rows.map((row, index) => (
+                    <Table.Tr key={index}>
+                      {call.result.columns.map((column) => (
+                        <Table.Td key={column}>{String((row as Record<string, unknown>)[column] ?? '')}</Table.Td>
+                      ))}
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            ) : null}
+            {!isSuccess && call.message ? (
+              <Alert color="yellow" variant="light" icon={<IconX size={16} />}> 
+                {call.message}
+              </Alert>
+            ) : null}
+            {isSuccess && call.result?.summary ? (
+              <Text size="xs" c="dimmed">
+                {call.result.summary}
+              </Text>
+            ) : null}
+          </Stack>
+        </Paper>
+      )
+    })
+  }, [toolCalls])
 
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
@@ -173,6 +264,9 @@ export function ChatPanel({
         contextTokens,
         contextBytes,
       }
+      setToolCalls([])
+      setSafetyInfo(null)
+      setUsage(null)
       void sendMessage({ text: value })
       setInput('')
     },
@@ -218,6 +312,36 @@ export function ChatPanel({
             <div ref={messagesEndRef} />
           </Stack>
         </Box>
+        {shouldShowSafetyAlert && safetyInfo ? (
+          <Alert
+            color={safetyInfo.severity === 'block' ? 'red' : 'yellow'}
+            variant="light"
+            mx="md"
+            mb="sm"
+            title={safetyInfo.severity === 'block' ? 'Response blocked for safety' : 'Sensitive content detected'}
+          >
+            <Stack gap={4}>
+              <Text size="sm">
+                The assistant detected the following patterns and adjusted the reply:
+              </Text>
+              {safetyInfo.triggers.slice(0, 5).map((trigger, index) => (
+                <Text key={`${trigger.pattern}-${index}`} size="xs" c="dimmed">
+                  • {trigger.kind}: {trigger.match}
+                </Text>
+              ))}
+              {safetyInfo.triggers.length > 5 ? (
+                <Text size="xs" c="dimmed">
+                  + {safetyInfo.triggers.length - 5} more triggers
+                </Text>
+              ) : null}
+            </Stack>
+          </Alert>
+        ) : null}
+        {toolCallCards ? (
+          <Stack gap="sm" mx="md" mb="sm">
+            {toolCallCards}
+          </Stack>
+        ) : null}
         {error ? (
           <Alert color="red" title="Assistant error" mx="md" mb="sm">
             <Group justify="space-between" wrap="nowrap">
@@ -244,6 +368,11 @@ export function ChatPanel({
                 {isStreaming ? 'Streaming response…' : 'Ready for your prompt.'}
               </Text>
               <Group gap="xs">
+                {usageBadges.map((badge) => (
+                  <Badge key={badge} variant="light">
+                    {badge}
+                  </Badge>
+                ))}
                 {isStreaming ? (
                   <Button variant="light" onClick={() => stop()}>
                     Stop

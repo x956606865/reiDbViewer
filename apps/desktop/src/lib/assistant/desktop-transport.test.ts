@@ -28,6 +28,14 @@ const chunk = (overrides: Partial<AssistantContextChunk> = {}): AssistantContext
   content: overrides.content ?? { columns: 2 },
 })
 
+const providerSettings = {
+  provider: 'openai' as const,
+  model: 'gpt-4o-mini',
+  temperature: 0.3,
+  maxTokens: 2048,
+  baseUrl: 'https://api.openai.com/v1',
+}
+
 beforeEach(() => {
   invokeMock.mockReset()
 })
@@ -40,11 +48,15 @@ describe('DesktopChatTransport', () => {
       reconnectToStream: vi.fn(),
     }
     const transport = new DesktopChatTransport({ fallback })
+    transport.setProviderSettings(providerSettings)
     transport.setContextChunks([chunk({ id: 'ctx_1' })])
     await transport.sendMessages({ messages: [sampleMessage] })
     expect(invokeMock).toHaveBeenCalledTimes(1)
-    const args = invokeMock.mock.calls[0]?.[1] as { payload: { context_chunks: Array<{ id: string }> } }
+    const args = invokeMock.mock.calls[0]?.[1] as {
+      payload: { context_chunks: Array<{ id: string }>; provider?: typeof providerSettings }
+    }
     expect(args.payload.context_chunks[0]?.id).toBe('ctx_1')
+    expect(args.payload.provider).toEqual(providerSettings)
   })
 
   it('falls back to mock transport when invoke fails', async () => {

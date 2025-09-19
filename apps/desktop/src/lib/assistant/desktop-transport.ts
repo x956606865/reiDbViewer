@@ -8,6 +8,9 @@ import {
 } from 'ai'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
 import { MockChatTransport } from '@/lib/assistant/mock-transport'
+import { DEFAULT_ASSISTANT_SETTINGS, type AssistantProviderSettings } from '@/lib/assistant/provider-settings'
+import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
+import type { SimulatedToolCall } from '@/lib/assistant/tooling'
 
 const STREAM_DELAY_MS = 45
 
@@ -20,10 +23,30 @@ type DesktopChatRequest = {
     summary: string
     content: unknown
   }>
+  provider: AssistantProviderSettings
 }
 
 type DesktopChatResponse = {
   message: string
+  tool_calls?: SimulatedToolCall[]
+  safety?: SafetyEvaluation
+  usage?: {
+    prompt_tokens?: number
+    completion_tokens?: number
+    total_tokens?: number
+  }
+}
+
+export type AssistantTransportUsage = {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}
+
+export type AssistantTransportMetadata = {
+  toolCalls: SimulatedToolCall[]
+  safety: SafetyEvaluation | null
+  usage: AssistantTransportUsage | null
 }
 
 type MessagePart = UIMessage['parts'][number]
@@ -67,6 +90,12 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
   private readonly fallback: ChatTransport<UIMessage>
   private readonly onFallback?: (error: unknown) => void
   private readonly onSuccess?: () => void
+  private providerSettings: AssistantProviderSettings = DEFAULT_ASSISTANT_SETTINGS
+  private lastMetadata: AssistantTransportMetadata = {
+    toolCalls: [],
+    safety: null,
+    usage: null,
+  }
 
   constructor(options: DesktopChatTransportOptions = {}) {
     this.fallback = options.fallback ?? new MockChatTransport()
@@ -76,6 +105,16 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
 
   setContextChunks(chunks: AssistantContextChunk[]) {
     this.contextChunks = chunks
+  }
+
+  setProviderSettings(settings: AssistantProviderSettings) {
+    this.providerSettings = settings
+  }
+
+  consumeLastMetadata(): AssistantTransportMetadata {
+    const snapshot = { ...this.lastMetadata }
+    this.lastMetadata = { toolCalls: [], safety: null, usage: null }
+    return snapshot
   }
 
   private buildRequest(messages: UIMessage[]): DesktopChatRequest {
@@ -91,6 +130,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
         summary: chunk.summary,
         content: chunk.content,
       })),
+      provider: this.providerSettings,
     }
   }
 
@@ -98,8 +138,24 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
     try {
       const request = this.buildRequest(messages)
       console.info('[assistant] sending request payload', request)
+      try {
+        console.debug('[assistant] payload json', JSON.stringify(request, null, 2))
+      } catch (stringifyError) {
+        console.warn('[assistant] failed to stringify payload', stringifyError)
+      }
       const response = await invoke<DesktopChatResponse>('assistant_chat', { payload: request })
       this.onSuccess?.()
+      this.lastMetadata = {
+        toolCalls: response.tool_calls ?? [],
+        safety: response.safety ?? null,
+        usage: response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens,
+              completionTokens: response.usage.completion_tokens,
+              totalTokens: response.usage.total_tokens,
+            }
+          : null,
+      }
       const messageId = generateId()
       const chunks = toChunks(messageId, response.message)
       return simulateReadableStream({
@@ -110,6 +166,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
     } catch (err) {
       this.onFallback?.(err)
       console.warn('assistant_chat failed, falling back to mock transport', err)
+      this.lastMetadata = { toolCalls: [], safety: null, usage: null }
       return this.fallback.sendMessages({ messages })
     }
   }
