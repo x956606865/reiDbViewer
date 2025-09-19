@@ -3,6 +3,7 @@ import { Alert, Box, Button, Group, Paper, Stack, Text, Textarea, Title } from '
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
+import { sanitizeMarkdownText } from '@/lib/assistant/markdown-sanitize'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
 
 const INITIAL_MESSAGES: UIMessage[] = [
@@ -88,6 +89,7 @@ export function ChatPanel({ transport, contextChunks, pendingPrompt, onPromptCon
           <Stack gap="sm">
             {enhancedMessages.map((message) => {
               const isUser = message.role === 'user'
+              const sanitized = sanitizeMarkdownText(message.text)
               return (
                 <Stack
                   key={message.id}
@@ -105,7 +107,7 @@ export function ChatPanel({ transport, contextChunks, pendingPrompt, onPromptCon
                     bg={isUser ? 'var(--mantine-color-blue-0)' : 'var(--mantine-color-gray-0)'}
                     style={{ maxWidth: '720px', width: '100%' }}
                   >
-                    {message.text ? <Streamdown>{message.text}</Streamdown> : null}
+                    {sanitized ? <Streamdown>{sanitized}</Streamdown> : null}
                   </Paper>
                 </Stack>
               )

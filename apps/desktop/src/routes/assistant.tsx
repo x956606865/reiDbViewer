@@ -14,7 +14,11 @@ import {
   loadRecentQueries,
   type RecentQueryEntry,
 } from '@/lib/assistant/recent-queries-store'
-import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
+import {
+  buildContextSections,
+  type AssistantContextChunk,
+  type AssistantContextSection,
+} from '@/lib/assistant/context-chunks'
 import { DesktopChatTransport } from '@/lib/assistant/desktop-transport'
 
 function useSchemaMetadata(): SchemaMetadataSnapshot | null {
@@ -32,7 +36,7 @@ export default function AssistantPage() {
   const schemaSnapshot = useSchemaMetadata()
   const [savedSql, setSavedSql] = useState<SavedSqlSummary[]>([])
   const [recentQueries, setRecentQueries] = useState<RecentQueryEntry[]>([])
-  const [selectedChunks, setSelectedChunks] = useState<Map<string, AssistantContextChunk>>(new Map())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
 
   const refreshSavedSql = useCallback(async () => {
@@ -61,17 +65,37 @@ export default function AssistantPage() {
     void refreshRecentQueries()
   }, [refreshRecentQueries])
 
+  const sections = useMemo<AssistantContextSection[]>(
+    () =>
+      buildContextSections({
+        schema: schemaSnapshot,
+        savedSql,
+        recentQueries,
+      }),
+    [schemaSnapshot, savedSql, recentQueries],
+  )
+
   const handleToggleContext = useCallback((chunk: AssistantContextChunk, checked: boolean) => {
-    setSelectedChunks((prev) => {
-      const next = new Map(prev)
-      if (checked) next.set(chunk.id, chunk)
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(chunk.id)
       else next.delete(chunk.id)
       return next
     })
   }, [])
 
-  const contextChunks = useMemo(() => Array.from(selectedChunks.values()), [selectedChunks])
-  const selectedIds = useMemo(() => new Set(selectedChunks.keys()), [selectedChunks])
+  const contextChunks = useMemo(() => {
+    const chunks: AssistantContextChunk[] = []
+    const selected = selectedIds
+    for (const section of sections) {
+      for (const item of section.items) {
+        if (selected.has(item.id)) {
+          chunks.push(item.chunk)
+        }
+      }
+    }
+    return chunks
+  }, [sections, selectedIds])
   const transport = useMemo(() => new DesktopChatTransport(), [])
 
   useEffect(() => {
@@ -91,9 +115,7 @@ export default function AssistantPage() {
       <Group align="flex-start" gap="md" wrap="nowrap" style={{ flex: 1, width: '100%', height: '100%' }}>
         <Box style={{ width: 280, height: '100%' }}>
           <ContextSidebar
-            schemaSnapshot={schemaSnapshot}
-            savedSql={savedSql}
-            recentQueries={recentQueries}
+            sections={sections}
             selectedIds={selectedIds}
             onToggle={handleToggleContext}
             onRefreshSavedSql={refreshSavedSql}

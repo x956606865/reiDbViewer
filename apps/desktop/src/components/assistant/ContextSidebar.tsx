@@ -1,19 +1,9 @@
-import { useMemo } from 'react'
 import { Badge, Box, Button, Checkbox, Group, ScrollArea, Stack, Text, Title } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
-import type { SchemaMetadataSnapshot } from '@/lib/schema-metadata-store'
-import type { SavedSqlSummary } from '@/services/savedSql'
-import type { RecentQueryEntry } from '@/lib/assistant/recent-queries-store'
-import {
-  buildContextSections,
-  type AssistantContextChunk,
-  type AssistantContextSection,
-} from '@/lib/assistant/context-chunks'
+import type { AssistantContextChunk, AssistantContextSection } from '@/lib/assistant/context-chunks'
 
 export type ContextSidebarProps = {
-  schemaSnapshot: SchemaMetadataSnapshot | null
-  savedSql: SavedSqlSummary[]
-  recentQueries: RecentQueryEntry[]
+  sections: AssistantContextSection[]
   selectedIds: Set<string>
   onToggle: (chunk: AssistantContextChunk, checked: boolean) => void
   onRefreshSavedSql: () => void
@@ -21,15 +11,7 @@ export type ContextSidebarProps = {
 }
 
 export function ContextSidebar(props: ContextSidebarProps) {
-  const sections = useMemo(
-    () =>
-      buildContextSections({
-        schema: props.schemaSnapshot,
-        savedSql: props.savedSql,
-        recentQueries: props.recentQueries,
-      }),
-    [props.schemaSnapshot, props.savedSql, props.recentQueries],
-  )
+  const sections = props.sections
 
   return (
     <Stack gap="md" h="100%">

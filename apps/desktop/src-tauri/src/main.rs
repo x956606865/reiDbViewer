@@ -4,6 +4,12 @@ mod migrations;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+fn sanitize_markdown_text(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+}
+
 #[derive(Debug, Deserialize)]
 struct AssistantChatMessage {
     role: String,
@@ -52,7 +58,7 @@ fn delete_secret(account: String) -> Result<(), String> {
 
 #[tauri::command]
 fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatResponse, String> {
-    let last_user_message = payload
+    let last_user_message_raw = payload
         .messages
         .iter()
         .rev()
@@ -60,9 +66,15 @@ fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatResponse
         .map(|message| message.text.trim().to_string())
         .unwrap_or_else(|| "(no user question provided)".to_string());
 
+    let last_user_message = sanitize_markdown_text(&last_user_message_raw);
+
     let mut summary_lines: Vec<String> = Vec::new();
     for chunk in payload.context_chunks.iter() {
-        summary_lines.push(format!("- {}: {}", chunk.title, chunk.summary));
+        summary_lines.push(format!(
+            "- {}: {}",
+            sanitize_markdown_text(&chunk.title),
+            sanitize_markdown_text(&chunk.summary)
+        ));
     }
 
     let context_summary = if summary_lines.is_empty() {
