@@ -17,7 +17,7 @@ export function ContextSidebar(props: ContextSidebarProps) {
   const { selectedCount, maxContextChunks } = props
 
   return (
-    <Stack gap="md" h="100%">
+    <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
       <Group justify="space-between">
         <Title order={4}>Context</Title>
         <Group gap="xs">
@@ -34,7 +34,7 @@ export function ContextSidebar(props: ContextSidebarProps) {
           ? `已选择 ${selectedCount} 个上下文，发送请求时仅使用前 ${maxContextChunks} 个。`
           : `最多可选择 ${maxContextChunks} 个上下文参与请求，超出部分会被忽略。`}
       </Text>
-      <ScrollArea style={{ flex: 1 }} offsetScrollbars scrollbarSize={6}>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} offsetScrollbars scrollbarSize={6}>
         <Stack gap="md">
           {sections.map((section) => {
             const items = section.items

@@ -1,8 +1,21 @@
 "use client";
 
 import React from "react";
-import { Code, Group, LoadingOverlay, Paper, ScrollArea, Stack, Text, Title } from "@mantine/core";
+import {
+  ActionIcon,
+  Code,
+  CopyButton,
+  Group,
+  LoadingOverlay,
+  Paper,
+  ScrollArea,
+  Stack,
+  Text,
+  Title,
+  Tooltip,
+} from "@mantine/core";
 import { DataGrid } from "../../components/DataGrid";
+import { IconCopy } from "@tabler/icons-react";
 
 type TimingState = {
   totalMs?: number | null;
@@ -42,6 +55,10 @@ export function ResultsPanel({
   timing?: TimingState | null;
 }) {
   const durationLabel = buildTimingLabel(timing);
+  const textPlaceholder = "（无返回）";
+  const trimmedText = (textResult ?? "").trim();
+  const hasCopyableText = trimmedText.length > 0;
+  const displayText = textResult && textResult.length > 0 ? textResult : textPlaceholder;
 
   return (
     <div style={{ position: "relative" }}>
@@ -65,8 +82,46 @@ export function ResultsPanel({
           <div style={{ marginTop: 8 }}>
             {textResult ? (
               <Paper withBorder p="sm">
-                <ScrollArea h={320}>
-                  <Code block>{textResult || "（无返回）"}</Code>
+                <Group justify="space-between" align="center" gap="xs">
+                  <Text fw={600} size="sm">
+                    文本输出
+                  </Text>
+                  {hasCopyableText ? (
+                    <CopyButton value={textResult} timeout={1200}>
+                      {({ copied, copy }) => (
+                        <Tooltip label={copied ? "已复制" : "复制结果"}>
+                          <ActionIcon
+                            size="sm"
+                            variant="light"
+                            color={copied ? "teal" : "gray"}
+                            onClick={copy}
+                            aria-label="复制结果"
+                          >
+                            <IconCopy size={14} />
+                          </ActionIcon>
+                        </Tooltip>
+                      )}
+                    </CopyButton>
+                  ) : (
+                    <Tooltip label="暂无文本可复制">
+                      <ActionIcon
+                        size="sm"
+                        variant="light"
+                        color="gray"
+                        aria-label="暂无文本可复制"
+                        disabled
+                      >
+                        <IconCopy size={14} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </Group>
+                <ScrollArea
+                  h={320}
+                  type="auto"
+                  style={{ marginTop: "var(--mantine-spacing-xs)" }}
+                >
+                  <Code block>{displayText}</Code>
                 </ScrollArea>
               </Paper>
             ) : (

@@ -317,7 +317,7 @@ export default function AssistantPage() {
   const metrics = activeConversation?.metrics ?? null
 
   return (
-    <Stack gap="md" h="100%">
+    <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
       <ConversationToolbar
         activeId={activeId}
         conversations={conversations}
@@ -332,8 +332,13 @@ export default function AssistantPage() {
         onOpenSettings={() => setSettingsOpened(true)}
         apiKeyReady={apiKeyReady ?? false}
       />
-      <Group align="flex-start" gap="md" wrap="nowrap" style={{ flex: 1, width: '100%', height: '100%' }}>
-        <Box style={{ width: 280, height: '100%' }}>
+      <Group
+        align="flex-start"
+        gap="md"
+        wrap="nowrap"
+        style={{ flex: 1, width: '100%', height: '100%', minHeight: 0 }}
+      >
+        <Box style={{ width: 280, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <ContextSidebar
             sections={sections}
             selectedIds={selectedIds}
@@ -344,7 +349,16 @@ export default function AssistantPage() {
             maxContextChunks={MAX_CONTEXT_CHUNKS}
           />
         </Box>
-        <Box style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <Box
+          style={{
+            flex: 1,
+            height: '100%',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+          }}
+        >
           {contextChunks.length > 0 ? (
             <Paper withBorder p="sm" radius="md">
               <Stack gap={4}>
@@ -385,7 +399,7 @@ export default function AssistantPage() {
             />
           </Box>
         </Box>
-        <Box style={{ width: 320, height: '100%' }}>
+        <Box style={{ width: 320, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <PromptLibrary onInsert={handlePromptInsert} />
         </Box>
       </Group>

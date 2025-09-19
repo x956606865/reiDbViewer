@@ -275,15 +275,20 @@ export function ChatPanel({
   )
 
   return (
-    <Stack gap="md" h="100%">
+    <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
       <Box>
         <Title order={3}>Assistant</Title>
         <Text size="sm" c="dimmed">
           Context chunks selected: {contextChunks.length}
         </Text>
       </Box>
-      <Paper withBorder radius="md" shadow="xs" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <Box style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+      <Paper
+        withBorder
+        radius="md"
+        shadow="xs"
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
+      >
+        <Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' }}>
           <Stack gap="sm">
             {enhancedMessages.map((message) => {
               const isUser = message.role === 'user'
@@ -305,7 +310,11 @@ export function ChatPanel({
                     bg={isUser ? 'var(--mantine-color-blue-0)' : 'var(--mantine-color-gray-0)'}
                     style={{ maxWidth: '720px', width: '100%' }}
                   >
-                    {sanitized ? <Streamdown>{sanitized}</Streamdown> : null}
+                    {sanitized ? (
+                      <div className="assistant-markdown">
+                        <Streamdown>{sanitized}</Streamdown>
+                      </div>
+                    ) : null}
                   </Paper>
                 </Stack>
               )

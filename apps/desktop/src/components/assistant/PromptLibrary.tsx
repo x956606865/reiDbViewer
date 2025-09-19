@@ -131,14 +131,14 @@ export function PromptLibrary({ onInsert }: PromptLibraryProps) {
   const isFormValid = formState.body.trim().length > 0
 
   return (
-    <Stack gap="md" h="100%">
+    <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
       <Group justify="space-between">
         <Title order={4}>Prompt Library</Title>
         <Button leftSection={<IconPlus size={16} />} onClick={() => setFormOpened(true)}>
           New prompt
         </Button>
       </Group>
-      <ScrollArea style={{ flex: 1 }} scrollbarSize={6} offsetScrollbars>
+      <ScrollArea style={{ flex: 1, minHeight: 0 }} scrollbarSize={6} offsetScrollbars>
         <Stack gap="sm">
           <Stack gap="xs">
             <Text size="sm" fw={600} c="dimmed">
