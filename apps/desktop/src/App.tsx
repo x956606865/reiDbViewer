@@ -6,6 +6,7 @@ import SchemaPage from '@/routes/schema'
 import BrowsePage from '@/routes/browse'
 import QueriesPage from '@/routes/queries'
 import OpsPage from '@/routes/ops'
+import AssistantPage from '@/routes/assistant'
 
 function useHashRoute() {
   const [hash, setHash] = useState<string>(() => (typeof location !== 'undefined' ? location.hash : ''))
@@ -29,6 +30,7 @@ export default function App() {
         <AppFrame active={currentRoute} onNavigate={handleNavigate} />
       </AppShell.Header>
       <AppShell.Main>
+        {currentRoute === 'assistant' ? <AssistantPage /> : null}
         {currentRoute === 'schema' ? <SchemaPage /> : null}
         {currentRoute === 'browse' ? <BrowsePage /> : null}
         {currentRoute === 'queries' ? <QueriesPage /> : null}

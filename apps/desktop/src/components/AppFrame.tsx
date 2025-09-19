@@ -5,6 +5,7 @@ import {
   IconCodeDots,
   IconPlugConnected,
   IconHeartbeat,
+  IconSparkles,
 } from '@tabler/icons-react';
 import ConnectionSwitcher from '@/components/ConnectionSwitcher';
 import appIcon from '../../src-tauri/icons/icon.png';
@@ -15,6 +16,7 @@ type AppFrameProps = {
 };
 
 const NAV_ITEMS = [
+  { value: 'assistant', label: 'Assistant', icon: IconSparkles },
   { value: 'schema', label: 'Schema', icon: IconDatabase },
   // { value: 'browse', label: 'Browse', icon: IconTable },
   { value: 'queries', label: 'Queries', icon: IconCodeDots },

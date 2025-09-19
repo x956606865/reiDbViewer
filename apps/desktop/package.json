@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/react": "^2.0.45",
     "@emotion/react": "^11.13.0",
     "@mantine/core": "^7.13.2",
     "@mantine/form": "^7.13.2",
@@ -26,11 +27,13 @@
     "@tanstack/react-query": "^5.50.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
+    "ai": "^5.0.45",
     "mantine-react-table": "2.0.0-beta.9",
     "monaco-editor": "^0.52.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-json-view": "^1.21.3",
+    "streamdown": "^1.3.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

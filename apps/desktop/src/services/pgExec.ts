@@ -8,6 +8,7 @@ import {
   __test__ as sqlTestHelpers,
 } from '@/lib/sql-template'
 import { withReadonlySession, withWritableSession } from '@/lib/db-session'
+import { recordRecentQuery } from '@/lib/assistant/recent-queries-store'
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
@@ -156,6 +157,18 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
   ensureVarsDefined(saved.sql, saved.variables)
   const compiled = compileSql(saved.sql, saved.variables, opts.values)
   const previewInline = renderSqlPreview(compiled, saved.variables)
+  const captureRecentQuery = () => {
+    void recordRecentQuery({
+      sql: saved.sql,
+      preview: previewInline,
+      title: saved.name,
+      executedAt: Date.now(),
+      source: 'saved-sql',
+      referenceId: saved.id,
+    }).catch((err) => {
+      console.warn('failed to record recent query', err)
+    })
+  }
   const pagination = opts.pagination ?? { enabled: false, page: 1, pageSize: 50, withCount: false, countOnly: false }
   const pageSize = capPageSize(pagination.pageSize)
   const page = Math.max(1, pagination.page ?? 1)
@@ -219,6 +232,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
     if (connectMs != null) {
       execResult.timing = { ...(execResult.timing ?? {}), connectMs }
     }
+    captureRecentQuery()
     return execResult
   }
 
@@ -274,6 +288,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
     if (connectMs != null) {
       countResult.timing = { ...(countResult.timing ?? {}), connectMs }
     }
+    captureRecentQuery()
     return countResult
   }
 
@@ -335,6 +350,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
   if (connectMs != null) {
     result.timing = { ...(result.timing ?? {}), connectMs }
   }
+  captureRecentQuery()
   return result
 }
 
