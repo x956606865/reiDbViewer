@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql'
+import { parseJsonColumn } from '@/lib/sqlite-text'
 
 export type AssistantProvider = 'openai' | 'lmstudio'
 
@@ -108,8 +109,7 @@ export async function loadAssistantSettings(): Promise<AssistantProviderSettings
     // @ts-ignore select is available at runtime
     const rows = await db.select<any[]>(`SELECT v FROM app_prefs WHERE k = $1`, [STORAGE_KEY])
     const raw = Array.isArray(rows) ? rows[0]?.v : undefined
-    if (!raw) return DEFAULT_ASSISTANT_SETTINGS
-    const parsed = JSON.parse(String(raw)) as StoredPayload | null
+    const parsed = parseJsonColumn<StoredPayload | null>(raw, null)
     if (!parsed || parsed.version !== 1 || !parsed.settings) return DEFAULT_ASSISTANT_SETTINGS
     return normalizeAssistantSettings(parsed.settings)
   } catch (err) {

@@ -59,13 +59,40 @@ function mergeMessageMetrics(
   }
 }
 
+type MessagePart = UIMessage['parts'][number]
+
+function isTextPart(part: MessagePart | null | undefined): part is Extract<MessagePart, { type: 'text'; text: string }> {
+  return Boolean(part && typeof part === 'object' && 'type' in part && part.type === 'text' && typeof part.text === 'string')
+}
+
+function extractMessageText(message: UIMessage): string {
+  if (!message) return ''
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  const textFromParts = parts.map((part) => (isTextPart(part) ? part.text : '')).join('')
+  if (textFromParts) return textFromParts
+
+  const content = (message as any).content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const textFromContent = content
+      .map((item) => {
+        const candidate = item as MessagePart | undefined
+        return isTextPart(candidate) ? candidate.text : ''
+      })
+      .join('')
+    if (textFromContent) return textFromContent
+  }
+
+  const fallback = (message as any).text
+  if (typeof fallback === 'string') return fallback
+  return ''
+}
+
 function toConversationMessages(messages: UIMessage[]): AssistantConversationMessage[] {
   const result: AssistantConversationMessage[] = []
   for (const message of messages) {
     if (!message) continue
-    const text = message.parts
-      .map((part) => ('type' in part && part.type === 'text' ? part.text : ''))
-      .join('')
+    const text = extractMessageText(message)
     result.push({
       id: message.id,
       role: message.role,
@@ -364,3 +391,12 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
     await persist(get)
   },
 }))
+
+if (typeof window !== 'undefined') {
+  ;(window as any).__assistantSessions = useAssistantSessions
+}
+
+export const __test__ = {
+  toConversationMessages,
+  extractMessageText,
+}

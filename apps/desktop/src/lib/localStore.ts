@@ -5,6 +5,7 @@ import { getOrInitDeviceAesKey } from '@/lib/secret-store'
 import { aesEncryptString, aesDecryptToString, type AesCipher } from '@/lib/aes'
 import { getCurrentConnId, setCurrentConnId } from '@/lib/current-conn'
 import { invalidateSessionCache } from '@/lib/db-session'
+import { decodeSqliteText } from '@/lib/sqlite-text'
 
 async function openLocal() {
   return await Database.load('sqlite:rdv_local.db')
@@ -162,7 +163,9 @@ export async function getDsnForConn(id: string): Promise<string> {
     if (r.dsn_cipher) {
       try {
         const key = await getOrInitDeviceAesKey()
-        const cipher = JSON.parse(String(r.dsn_cipher)) as AesCipher
+        const cipherText = decodeSqliteText(r.dsn_cipher)
+        if (!cipherText) throw new Error('empty_cipher_payload')
+        const cipher = JSON.parse(cipherText) as AesCipher
         return await aesDecryptToString(key, cipher)
       } catch (e: any) {
         throw new Error('local_cipher_decrypt_failed: ' + String(e?.message || e))

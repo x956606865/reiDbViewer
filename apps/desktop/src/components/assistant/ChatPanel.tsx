@@ -86,7 +86,7 @@ export function ChatPanel({
   })
   const { messages, sendMessage, status, stop, error, clearError } = useChat({
     id: chatId,
-    initialMessages,
+    messages: initialMessages,
     transport,
     onFinish(message, options) {
       const meta = activeRequestRef.current
@@ -154,7 +154,8 @@ export function ChatPanel({
       persist()
       lastPersistRef.current.userId = latestUser.id
     }
-    if ((status === 'idle' || status === 'error') && messages.length > 0) {
+    const isResponseSettled = status === 'idle' || status === 'ready' || status === 'error'
+    if (isResponseSettled && messages.length > 0) {
       const latestAssistant = [...messages].filter((message) => message.role === 'assistant').at(-1)
       if (latestAssistant && lastPersistRef.current.assistantId !== latestAssistant.id) {
         persist({ updatedAt: Date.now() })

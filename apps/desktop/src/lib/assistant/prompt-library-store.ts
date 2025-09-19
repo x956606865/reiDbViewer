@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql'
+import { parseJsonColumn } from '@/lib/sqlite-text'
 
 const STORAGE_KEY = 'assistant.prompts.v1'
 const builtinTimestamp = 0
@@ -83,8 +84,7 @@ async function loadStored(): Promise<StoredPrompt[]> {
     // @ts-ignore select exists at runtime
     const rows = await db.select<any[]>(`SELECT v FROM app_prefs WHERE k = $1`, [STORAGE_KEY])
     const raw = Array.isArray(rows) ? rows[0]?.v : undefined
-    if (!raw) return []
-    const parsed = JSON.parse(String(raw)) as StoredPayload | null
+    const parsed = parseJsonColumn<StoredPayload | null>(raw, null)
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.items)) return []
     return parsed.items.map((item) => ({
       ...item,

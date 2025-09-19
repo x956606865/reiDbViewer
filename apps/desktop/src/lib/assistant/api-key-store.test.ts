@@ -1,66 +1,121 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { webcrypto } from 'node:crypto'
 import { deleteAssistantApiKey, getAssistantApiKey, hasAssistantApiKey, setAssistantApiKey } from './api-key-store'
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+const store = new Map<string, string>()
 
-const invokeMock = vi.mocked((await import('@tauri-apps/api/core')).invoke)
+vi.mock('@tauri-apps/plugin-sql', () => {
+  class MockDatabase {
+    static async load(): Promise<MockDatabase> {
+      return new MockDatabase()
+    }
 
-describe('assistant api key store', () => {
+    async select(query: string, params?: unknown[]): Promise<any[]> {
+      if (query.includes('FROM app_prefs')) {
+        const key = Array.isArray(params) ? (params[0] as string) : undefined
+        if (!key || !store.has(key)) return []
+        return [{ v: store.get(key) }]
+      }
+      throw new Error(`Unexpected select query: ${query}`)
+    }
+
+    async execute(query: string, params?: unknown[]): Promise<void> {
+      if (query.includes('INSERT INTO app_prefs')) {
+        const key = Array.isArray(params) ? (params[0] as string) : undefined
+        const value = Array.isArray(params) ? (params[1] as string) : undefined
+        if (!key) throw new Error('Missing key parameter')
+        store.set(key, value ?? '')
+        return
+      }
+      throw new Error(`Unexpected execute query: ${query}`)
+    }
+  }
+
+  return {
+    default: MockDatabase,
+  }
+})
+
+vi.mock('@/lib/secret-store', () => {
+  let cachedKey: CryptoKey | null = null
+  return {
+    getOrInitDeviceAesKey: vi.fn(async () => {
+      if (!cachedKey) {
+        cachedKey = await webcrypto.subtle.generateKey(
+          {
+            name: 'AES-GCM',
+            length: 256,
+          },
+          true,
+          ['encrypt', 'decrypt'],
+        )
+      }
+      return cachedKey
+    }),
+  }
+})
+
+vi.mock('@/lib/sqlite-text', async () => {
+  const mod = await import('../sqlite-text')
+  return mod
+})
+
+vi.mock('@/lib/aes', async () => {
+  const mod = await import('../aes')
+  return mod
+})
+
+describe('assistant api key store (sqlite)', () => {
   const originalWindow = global.window
+  const originalCrypto = global.crypto
+
+  beforeAll(() => {
+    Object.defineProperty(global, 'crypto', {
+      configurable: true,
+      value: webcrypto,
+    })
+  })
 
   beforeEach(() => {
-    invokeMock.mockReset()
-    // Provide minimal Tauri runtime markers
+    store.clear()
     global.window = {
       __TAURI__: {},
     } as unknown as Window & typeof globalThis
   })
 
-  afterEach(() => {
-    // @ts-ignore allow clean up for Node test env
-    delete global.window
+  afterAll(() => {
+    Object.defineProperty(global, 'crypto', {
+      configurable: true,
+      value: originalCrypto,
+    })
     if (originalWindow) {
       global.window = originalWindow
+    } else {
+      // @ts-ignore allow cleanup
+      delete global.window
     }
   })
 
-  it('sets api key using tauri secret storage', async () => {
+  it('stores and retrieves API key for a provider', async () => {
     await setAssistantApiKey('openai', 'sk-test-123')
-    expect(invokeMock).toHaveBeenCalledWith('set_secret', {
-      account: 'assistant:openai',
-      secret: 'sk-test-123',
-    })
+    expect(await hasAssistantApiKey('openai')).toBe(true)
+    await expect(getAssistantApiKey('openai')).resolves.toBe('sk-test-123')
   })
 
-  it('gets api key', async () => {
-    invokeMock.mockResolvedValue('sk-secret')
-    const result = await getAssistantApiKey('openai')
-    expect(result).toBe('sk-secret')
-    expect(invokeMock).toHaveBeenCalledWith('get_secret', {
-      account: 'assistant:openai',
-    })
+  it('indicates absence when key not stored', async () => {
+    expect(await hasAssistantApiKey('lmstudio')).toBe(false)
+    await expect(getAssistantApiKey('lmstudio')).rejects.toThrow(/assistant_api_key_missing/)
   })
 
-  it('deletes api key', async () => {
+  it('removes stored key', async () => {
+    await setAssistantApiKey('openai', 'sk-test-456')
     await deleteAssistantApiKey('openai')
-    expect(invokeMock).toHaveBeenCalledWith('delete_secret', {
-      account: 'assistant:openai',
-    })
+    expect(await hasAssistantApiKey('openai')).toBe(false)
   })
 
-  it('checks api key existence without returning secret', async () => {
-    invokeMock.mockResolvedValueOnce(true)
-    const result = await hasAssistantApiKey('openai')
-    expect(result).toBe(true)
-    expect(invokeMock).toHaveBeenCalledWith('has_secret', {
-      account: 'assistant:openai',
-    })
-  })
-
-  it('throws when runtime not tauri', async () => {
-    // Remove runtime markers to trigger guard
-    // @ts-ignore intentionally override for test
-    delete (global.window as any).__TAURI__
-    await expect(setAssistantApiKey('openai', 'sk')).rejects.toThrow(/Tauri runtime/)
+  it('requires tauri runtime markers', async () => {
+    // @ts-ignore intentionally remove marker
+    delete global.window.__TAURI__
+    await expect(setAssistantApiKey('openai', 'sk')).rejects.toThrow(/Tauri runtime not detected/)
   })
 })

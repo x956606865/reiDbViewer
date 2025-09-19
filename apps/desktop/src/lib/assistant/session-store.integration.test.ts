@@ -1,0 +1,65 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UIMessage } from 'ai'
+
+vi.mock('./conversation-storage', () => ({
+  loadConversationPayload: vi.fn().mockResolvedValue({ version: 1, activeId: null, conversations: [] }),
+  saveConversationPayload: vi.fn().mockResolvedValue(undefined),
+}))
+
+// eslint-disable-next-line import/first
+import { useAssistantSessions } from './session-store'
+
+const sampleUser: UIMessage = {
+  id: 'user-1',
+  role: 'user',
+  parts: [
+    {
+      type: 'text',
+      text: 'Hello there',
+    },
+  ],
+  createdAt: new Date('2025-01-01T00:00:00Z'),
+}
+
+const sampleAssistant: UIMessage = {
+  id: 'assistant-1',
+  role: 'assistant',
+  parts: [
+    {
+      type: 'text',
+      text: 'Hi, how can I help?',
+    },
+  ],
+  createdAt: new Date('2025-01-01T00:00:01Z'),
+}
+
+function resetStore() {
+  useAssistantSessions.setState({
+    ready: true,
+    loading: false,
+    activeId: null,
+    conversations: [],
+    archivedConversations: [],
+  })
+}
+
+describe('assistant session store persistence', () => {
+  beforeEach(() => {
+    resetStore()
+  })
+
+  it('captures assistant messages when persisting', async () => {
+    const { createConversation, persistMessages } = useAssistantSessions.getState()
+    const conversation = await createConversation({ title: 'Test conversation' })
+    await persistMessages({
+      conversationId: conversation.id,
+      messages: [sampleUser, sampleAssistant],
+    })
+    const stored = useAssistantSessions
+      .getState()
+      .conversations.find((conv) => conv.id === conversation.id)
+    expect(stored).toBeTruthy()
+    expect(stored?.messages.filter((msg) => msg.role === 'assistant')).toHaveLength(1)
+    expect(stored?.messages.find((msg) => msg.role === 'assistant')?.text).toBe('Hi, how can I help?')
+  })
+})

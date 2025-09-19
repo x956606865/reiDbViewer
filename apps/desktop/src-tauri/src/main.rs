@@ -612,7 +612,8 @@ async fn has_secret(account: String) -> Result<bool, String> {
         Ok(secret) => Ok(!secret.is_empty()),
         Err(err) => {
             let msg = err.to_string();
-            if msg.contains("No entry found") {
+            let lowered = msg.to_lowercase();
+            if lowered.contains("no entry found") || lowered.contains("no matching entry found") {
                 Ok(false)
             } else {
                 Err(msg)

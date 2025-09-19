@@ -1,6 +1,7 @@
 import Database from '@tauri-apps/plugin-sql'
 import type { AssistantContextChunk } from './context-chunks'
 import type { AssistantConversationMessage, AssistantMessageMetrics } from './conversation-utils'
+import { parseJsonColumn } from '@/lib/sqlite-text'
 
 const STORAGE_KEY = 'assistant.conversations.v1'
 const MAX_CONVERSATIONS = 40
@@ -166,8 +167,7 @@ export async function loadConversationPayload(): Promise<ConversationStoragePayl
     // @ts-ignore select exists at runtime
     const rows = await db.select<any[]>(`SELECT v FROM app_prefs WHERE k = $1`, [STORAGE_KEY])
     const raw = Array.isArray(rows) ? rows[0]?.v : undefined
-    if (!raw) return DEFAULT_PAYLOAD
-    const parsed = JSON.parse(String(raw)) as ConversationStoragePayload | null
+    const parsed = parseJsonColumn<ConversationStoragePayload | null>(raw, null)
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.conversations)) return DEFAULT_PAYLOAD
     const sanitizedConversations: StoredAssistantConversation[] = []
     for (const item of parsed.conversations) {

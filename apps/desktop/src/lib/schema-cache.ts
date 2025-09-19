@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql'
+import { decodeSqliteText } from '@/lib/sqlite-text'
 
 export type SchemaCacheRecord = {
   id: string
@@ -31,7 +32,9 @@ export async function readSchemaCache(connId: string): Promise<{ payload: Schema
   const row = rows[0]
   if (!row) return null
   try {
-    const payload = JSON.parse(String(row.content)) as SchemaCachePayload
+    const text = decodeSqliteText(row.content)
+    if (!text) return null
+    const payload = JSON.parse(text) as SchemaCachePayload
     const updatedAt = Number(row.updated_at ?? 0)
     return { payload, updatedAt }
   } catch {

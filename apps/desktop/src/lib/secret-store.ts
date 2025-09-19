@@ -3,6 +3,7 @@
 
 import Database from '@tauri-apps/plugin-sql'
 import { importAesKey } from '@/lib/aes'
+import { decodeSqliteText } from '@/lib/sqlite-text'
 
 const KEY_NAME = 'device_aes_key_base64'
 
@@ -32,8 +33,9 @@ export async function getOrInitDeviceKeyBase64(): Promise<string> {
   const rows = await db.select<any[]>(`SELECT v FROM app_prefs WHERE k = $1`, [KEY_NAME])
   if (Array.isArray(rows) && rows.length > 0) {
     const first = rows[0]
-    const v = String(first?.v || '').trim()
-    if (v.length >= 44) return v
+    const text = decodeSqliteText(first?.v)
+    const trimmed = text?.trim() ?? ''
+    if (trimmed.length >= 44) return trimmed
   }
   const cryptoApi = getCrypto()
   const raw = cryptoApi.getRandomValues(new Uint8Array(32))

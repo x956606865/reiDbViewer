@@ -13,3 +13,39 @@
   background-color: transparent !important;
 }
 
+[data-code-block-container] {
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-gray-3);
+  background-color: var(--mantine-color-gray-0);
+}
+
+[data-code-block-header] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background-color: var(--mantine-color-gray-1);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+[data-code-block-header] button {
+  border-radius: var(--mantine-radius-sm);
+}
+
+[data-code-block-header] button[title='Download file'] {
+  display: none;
+}
+
+[data-code-block] pre {
+  background: transparent !important;
+  padding: 12px 16px;
+  font-size: 13px;
+}
+
+[data-code-block] code {
+  font-family: var(--mantine-font-family-monospace);
+}
