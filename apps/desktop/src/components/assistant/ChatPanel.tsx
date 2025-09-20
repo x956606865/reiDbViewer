@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Alert, Badge, Box, Button, Group, Paper, Select, Stack, Table, Text, Textarea, Title } from '@mantine/core'
+import { Alert, Badge, Box, Button, Group, Modal, Paper, Select, Stack, Table, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
 import { sanitizeMarkdownText } from '@/lib/assistant/markdown-sanitize'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
 import { estimateTokenUsage, type AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
+import { formatContextSummary } from '@/lib/assistant/context-summary'
 import type { AssistantTransportMetadata, AssistantTransportUsage } from '@/lib/assistant/desktop-transport'
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
 import type { SimulatedToolCall } from '@/lib/assistant/tooling'
-import { IconX } from '@tabler/icons-react'
+import { IconGhost, IconX } from '@tabler/icons-react'
 import { shouldSubmitOnShiftEnter } from './shortcut-utils'
 
 export const INITIAL_MESSAGES: UIMessage[] = [
@@ -54,10 +55,15 @@ export type ChatPanelProps = {
   conversationId: string | null
   transport: ChatTransport<UIMessage>
   contextChunks: AssistantContextChunk[]
+  contextSummaries: Record<string, string | null | undefined>
   pendingPrompt: string | null
   onPromptConsumed: () => void
   initialMessages: UIMessage[]
-  onPersistMessages: (messages: UIMessage[], opts?: { updatedAt?: number }) => void | Promise<void>
+  onPersistMessages: (
+    messages: UIMessage[],
+    opts?: { updatedAt?: number },
+    contextSummaries?: Record<string, string | null | undefined>,
+  ) => void | Promise<void>
   onAssistantMetrics: (messageId: string, metrics: AssistantMessageMetrics) => void | Promise<void>
   transportNotice?: string | null
   onDismissTransportNotice?: () => void
@@ -75,6 +81,7 @@ export function ChatPanel({
   conversationId,
   transport,
   contextChunks,
+  contextSummaries,
   pendingPrompt,
   onPromptConsumed,
   initialMessages,
@@ -97,6 +104,7 @@ export function ChatPanel({
     inputTokens?: number
     contextTokens?: number
     contextBytes?: number
+    contextSummary?: string | null
   } | null>(null)
   const lastPersistRef = useRef<{ conversationId: string | null; userId?: string; assistantId?: string; signature?: string }>({
     conversationId: null,
@@ -134,6 +142,11 @@ export function ChatPanel({
   const [toolCalls, setToolCalls] = useState<SimulatedToolCall[]>([])
   const [safetyInfo, setSafetyInfo] = useState<SafetyEvaluation | null>(null)
   const [usage, setUsage] = useState<AssistantTransportUsage | null>(null)
+  const [contextPreview, setContextPreview] = useState<{ messageId: string | null; summary: string }>({
+    messageId: null,
+    summary: '',
+  })
+  const [contextPreviewOpened, setContextPreviewOpened] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -163,12 +176,17 @@ export function ChatPanel({
     if (lastState.conversationId !== conversationId) {
       lastPersistRef.current = { conversationId }
     }
-    const persist = (opts?: { updatedAt?: number }) => {
-      void onPersistMessages(messages, opts)
+    const persist = (
+      opts?: { updatedAt?: number },
+      overrides?: Record<string, string | null | undefined>,
+    ) => {
+      void onPersistMessages(messages, opts, overrides)
     }
     const latestUser = [...messages].filter((message) => message.role === 'user').at(-1)
     if (status === 'submitted' && latestUser && lastPersistRef.current.userId !== latestUser.id) {
-      persist()
+      const pendingSummary = activeRequestRef.current?.contextSummary
+      const overrides = pendingSummary !== undefined ? { [latestUser.id]: pendingSummary } : undefined
+      persist(undefined, overrides)
       lastPersistRef.current.userId = latestUser.id
     }
     const isResponseSettled = status === 'idle' || status === 'ready' || status === 'error'
@@ -302,11 +320,13 @@ export function ChatPanel({
       const contextPayload = contextChunks.length > 0 ? JSON.stringify(contextChunks) : ''
       const contextBytes = contextPayload.length
       const contextTokens = contextBytes > 0 ? Math.ceil(contextBytes / 4) : 0
+      const contextSummary = formatContextSummary(contextChunks)
       activeRequestRef.current = {
         startedAt,
         inputTokens: estimateTokenUsage(value),
         contextTokens,
         contextBytes,
+        contextSummary,
       }
       setToolCalls([])
       setSafetyInfo(null)
@@ -337,12 +357,22 @@ export function ChatPanel({
   return (
     <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
       <Group justify="space-between" align="center" wrap="nowrap">
-        <Box>
+        <Stack gap={4}>
           <Title order={3}>Assistant</Title>
-          <Text size="sm" c="dimmed">
-            Context chunks selected: {contextChunks.length}
-          </Text>
-        </Box>
+          {usageBadges.length > 0 ? (
+            <Group gap="xs">
+              {usageBadges.map((badge) => (
+                <Badge key={badge} variant="light">
+                  {badge}
+                </Badge>
+              ))}
+            </Group>
+          ) : (
+            <Text size="sm" c="dimmed">
+              发送请求后会显示 token 统计。
+            </Text>
+          )}
+        </Stack>
         <Button
           variant={apiKeyReady ? 'light' : 'filled'}
           color={apiKeyReady ? 'teal' : 'yellow'}
@@ -363,6 +393,8 @@ export function ChatPanel({
             {enhancedMessages.map((message) => {
               const isUser = message.role === 'user'
               const sanitized = sanitizeMarkdownText(message.text)
+              const contextSummary = contextSummaries[message.id] ?? null
+              const hasContextSummary = typeof contextSummary === 'string' && contextSummary.trim().length > 0
               const isLastAssistantMessage = !isUser && message.id === lastAssistantMessageId
               const shouldRenderToolCalls = isLastAssistantMessage && !!toolCallCards
               const hasContent = Boolean(sanitized) || shouldRenderToolCalls
@@ -394,6 +426,19 @@ export function ChatPanel({
                       </Stack>
                     ) : null}
                   </Paper>
+                  {isUser && hasContextSummary ? (
+                    <Button
+                      variant="subtle"
+                      size="xs"
+                      leftSection={<IconGhost size={14} />}
+                      onClick={() => {
+                        setContextPreview({ messageId: message.id, summary: contextSummary ?? '' })
+                        setContextPreviewOpened(true)
+                      }}
+                    >
+                      查看 Context summary
+                    </Button>
+                  ) : null}
                 </Stack>
               )
             })}
@@ -435,6 +480,21 @@ export function ChatPanel({
             </Group>
           </Alert>
         ) : null}
+        <Modal
+          opened={contextPreviewOpened}
+          onClose={() => setContextPreviewOpened(false)}
+          title="Context summary"
+          size="lg"
+        >
+          <Stack gap="sm">
+            <Text size="sm" c="dimmed">
+              发送该条消息时附带的上下文概要如下：
+            </Text>
+            <div className="assistant-markdown">
+              <Streamdown>{contextPreview.summary}</Streamdown>
+            </div>
+          </Stack>
+        </Modal>
         <Box component="form" onSubmit={handleSubmit} style={{ padding: '12px 16px', borderTop: '1px solid var(--mantine-color-gray-3)' }}>
           <Stack gap="xs">
             <Textarea
@@ -472,11 +532,6 @@ export function ChatPanel({
                   comboboxProps={{ withinPortal: true }}
                   disabled={modelOptions.length === 0 || isStreaming}
                 />
-                {usageBadges.map((badge) => (
-                  <Badge key={badge} variant="light">
-                    {badge}
-                  </Badge>
-                ))}
                 {isStreaming ? (
                   <Button variant="light" onClick={() => stop()}>
                     Stop

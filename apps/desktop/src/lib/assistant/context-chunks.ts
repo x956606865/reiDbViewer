@@ -61,6 +61,16 @@ function buildSchemaItems(snapshot: SchemaMetadataSnapshot | null | undefined): 
           isForeignKey: col.isForeignKey ?? false,
           references: col.references ?? null,
         })),
+        ddl: (() => {
+          const parts: string[] = []
+          if (table.ddl) parts.push(table.ddl.trimEnd())
+          for (const index of table.indexes) {
+            const definition = index.definition?.trim()
+            if (definition) parts.push(definition)
+          }
+          if (parts.length === 0) return null
+          return parts.join('\n')
+        })(),
       },
     }
     return {

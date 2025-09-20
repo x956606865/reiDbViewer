@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActionIcon, Badge, Button, Code, Group, Loader, Modal, Paper, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Badge, Button, Code, Group, Loader, Modal, Pagination, Paper, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { IconX, IconEyeOff } from '@tabler/icons-react'
 import { getCurrent } from '@/lib/localStore'
 import { subscribeCurrentConnId, getCurrentConnId } from '@/lib/current-conn'
@@ -12,6 +12,8 @@ import { useSchemaHide } from '@/lib/schema-hide'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
+
+const PAGE_SIZE_OPTIONS = [20, 50, 100] as const
 
 function asSchemaCachePayload(res: Awaited<ReturnType<typeof introspectPostgres>>) {
   return {
@@ -62,9 +64,12 @@ export default function SchemaPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedSchema, setSelectedSchema] = useState<string>('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0])
   const searchRef = useRef<HTMLInputElement>(null)
   const indexCacheRef = useRef<Record<string, IndexInfo[]>>({})
   const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
+  const hideSignature = useMemo(() => `${rules.prefixes.join('|')}::${rules.tables.join('|')}`, [rules.prefixes, rules.tables])
 
   const applyPayload = useCallback((payload: SchemaCachePayload | null, updated: number | null) => {
     if (!payload) {
@@ -141,6 +146,10 @@ export default function SchemaPage() {
       .finally(() => setLoading(false))
   }, [userConnId, applyPayload])
 
+  useEffect(() => {
+    setPage(1)
+  }, [selectedSchema, search, userConnId, hideSignature])
+
   // keyboard shortcuts: '/' focus, Esc clear
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -192,6 +201,17 @@ export default function SchemaPage() {
         return true
       })
   ), [tables, selectedSchema, searchLower, rules])
+  const totalTables = filteredTables.length
+  const totalPages = Math.max(1, Math.ceil(totalTables / pageSize))
+  const paginatedTables = useMemo(() => (
+    filteredTables.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+  ), [filteredTables, page, pageSize])
+  const startIndex = totalTables === 0 ? 0 : (page - 1) * pageSize + 1
+  const endIndex = totalTables === 0 ? 0 : Math.min(totalTables, page * pageSize)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   // indexes modal
   const [idxOpen, setIdxOpen] = useState(false)
@@ -246,7 +266,7 @@ export default function SchemaPage() {
               label="筛选 Schema"
               placeholder="全部"
               value={selectedSchema}
-              onChange={(v) => setSelectedSchema(v || '')}
+              onChange={(v) => { setSelectedSchema(v || ''); setPage(1) }}
               data={[{ value: '', label: '全部 Schema' }, ...schemas.map((s) => ({ value: s, label: s }))]}
               styles={{ root: { width: 240 } }}
             />
@@ -254,7 +274,7 @@ export default function SchemaPage() {
               label="搜索表"
               placeholder="输入表名或 schema.table"
               value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
+              onChange={(e) => { setSearch(e.currentTarget.value); setPage(1) }}
               ref={searchRef}
               rightSection={search ? (
                 <ActionIcon size="sm" variant="subtle" onClick={() => setSearch('')} aria-label="清空搜索">
@@ -298,6 +318,29 @@ export default function SchemaPage() {
           </Group>
         </div>
 
+        {totalTables > 0 && (
+          <Group justify="space-between" align="center">
+            <Text c="dimmed" size="sm">当前显示第 {startIndex}-{endIndex} 张表，共 {totalTables} 张</Text>
+            <Group gap="xs" align="center">
+              <Select
+                size="sm"
+                aria-label="每页数量"
+                value={String(pageSize)}
+                data={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: `${size} / 页` }))}
+                onChange={(value) => {
+                  const next = value ? Number(value) : PAGE_SIZE_OPTIONS[0]
+                  setPageSize(next)
+                  setPage(1)
+                }}
+                styles={{ root: { width: 140 } }}
+              />
+              {totalPages > 1 && (
+                <Pagination value={page} onChange={setPage} total={totalPages} size="sm" />
+              )}
+            </Group>
+          </Group>
+        )}
+
         {!loading && error && (
           <Text c="red">加载失败：{error}</Text>
         )}
@@ -307,7 +350,7 @@ export default function SchemaPage() {
           </Paper>
         )}
 
-        {filteredTables.map((t) => (
+        {paginatedTables.map((t) => (
           <Paper withBorder p="sm" key={`${t.schema}.${t.name}`}>
             <Group justify="space-between" align="center">
               <Title order={5}>

@@ -69,6 +69,12 @@ function sanitizeMessage(raw: any): StoredAssistantMessage | null {
   const createdAt = Number.isFinite(raw.createdAt) ? Number(raw.createdAt) : Date.now()
   const error = typeof raw.error === 'string' ? raw.error : null
   const metrics = sanitizeMetrics(raw.metrics)
+  const contextSummary =
+    typeof raw.contextSummary === 'string'
+      ? raw.contextSummary
+      : raw.contextSummary === null
+        ? null
+        : undefined
   return {
     id,
     role: role as StoredAssistantMessage['role'],
@@ -76,6 +82,7 @@ function sanitizeMessage(raw: any): StoredAssistantMessage | null {
     createdAt,
     error,
     metrics,
+    contextSummary,
   }
 }
 

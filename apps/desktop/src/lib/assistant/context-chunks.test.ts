@@ -12,6 +12,24 @@ function table(overrides: Partial<SchemaMetadataTable> = {}): SchemaMetadataTabl
       { name: 'email', dataType: 'text' },
     ],
     columnMap: overrides.columnMap ?? new Map(),
+    ddl: overrides.ddl ?? 'CREATE TABLE public.users (id uuid PRIMARY KEY, email text);',
+    indexes:
+      overrides.indexes ?? [
+        {
+          name: 'users_email_idx',
+          definition: 'CREATE INDEX users_email_idx ON public.users USING btree (email);',
+          method: 'btree',
+          isUnique: false,
+          isPrimary: false,
+          isValid: true,
+          isPartial: false,
+          idxScan: 0,
+          idxTupRead: 0,
+          idxTupFetch: 0,
+          sizeBytes: 0,
+          sizePretty: '0 B',
+        },
+      ],
   }
 }
 
@@ -31,6 +49,8 @@ describe('buildContextSections', () => {
     const item = schemaSection!.items[0]!
     expect(item.chunk.kind).toBe('schema-table')
     expect(item.chunk.content.columns).toHaveLength(2)
+    expect(item.chunk.content.ddl).toContain('CREATE TABLE')
+    expect(item.chunk.content.ddl).toContain('CREATE INDEX')
   })
 
   it('creates saved SQL section with variable summary', () => {

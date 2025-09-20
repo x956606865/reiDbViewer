@@ -62,4 +62,19 @@ describe('assistant session store persistence', () => {
     expect(stored?.messages.filter((msg) => msg.role === 'assistant')).toHaveLength(1)
     expect(stored?.messages.find((msg) => msg.role === 'assistant')?.text).toBe('Hi, how can I help?')
   })
+
+  it('stores context summary for user messages when provided', async () => {
+    const { createConversation, persistMessages } = useAssistantSessions.getState()
+    const conversation = await createConversation({ title: 'Test conversation' })
+    const contextSummary = 'Context summary:\n1. Table "public"."users" — 3 columns'
+    await persistMessages({
+      conversationId: conversation.id,
+      messages: [sampleUser],
+      contextSummaries: { [sampleUser.id]: contextSummary },
+    })
+    const stored = useAssistantSessions
+      .getState()
+      .conversations.find((conv) => conv.id === conversation.id)
+    expect(stored?.messages.find((msg) => msg.id === sampleUser.id)?.contextSummary).toBe(contextSummary)
+  })
 })

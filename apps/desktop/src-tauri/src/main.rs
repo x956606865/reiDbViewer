@@ -90,6 +90,8 @@ struct AssistantChatRequest {
     messages: Vec<AssistantChatMessage>,
     #[serde(default)]
     context_chunks: Vec<AssistantContextChunkPayload>,
+    #[serde(default)]
+    context_summary: Option<String>,
     provider: AssistantProviderSettings,
     #[serde(default, rename = "apiKey")]
     api_key: Option<String>,
@@ -434,7 +436,16 @@ fn build_openai_messages(payload: &AssistantChatRequest) -> Vec<OpenAiMessage> {
         role: "system".to_string(),
         content: SYSTEM_PROMPT.to_string(),
     });
-    if let Some(context) = format_context_chunks(&payload.context_chunks) {
+    if let Some(summary) = payload
+        .context_summary
+        .as_ref()
+        .and_then(|text| if text.trim().is_empty() { None } else { Some(text.clone()) })
+    {
+        messages.push(OpenAiMessage {
+            role: "system".to_string(),
+            content: summary,
+        });
+    } else if let Some(context) = format_context_chunks(&payload.context_chunks) {
         messages.push(OpenAiMessage {
             role: "system".to_string(),
             content: context,

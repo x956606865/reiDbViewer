@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Box, Group, Paper, Stack, Text } from '@mantine/core'
+import { Box, Group, Stack } from '@mantine/core'
 import { shallow } from 'zustand/shallow'
 import type { UIMessage } from 'ai'
 import { ContextSidebar } from '@/components/assistant/ContextSidebar'
@@ -10,12 +10,6 @@ import {
   subscribeSchemaMetadata,
   type SchemaMetadataSnapshot,
 } from '@/lib/schema-metadata-store'
-import type { SavedSqlSummary } from '@/services/savedSql'
-import { listSavedSql } from '@/services/savedSql'
-import {
-  loadRecentQueries,
-  type RecentQueryEntry,
-} from '@/lib/assistant/recent-queries-store'
 import {
   buildContextSections,
   type AssistantContextChunk,
@@ -74,8 +68,6 @@ function toUiMessages(messages: AssistantConversationMessage[] | undefined): UIM
 export default function AssistantPage() {
   const schemaSnapshot = useSchemaMetadata()
   const currentConnId = useCurrentConnectionId()
-  const [savedSql, setSavedSql] = useState<SavedSqlSummary[]>([])
-  const [recentQueries, setRecentQueries] = useState<RecentQueryEntry[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
   const [transportNotice, setTransportNotice] = useState<string | null>(null)
@@ -146,42 +138,15 @@ export default function AssistantPage() {
 
   const initialMessages = useMemo(() => toUiMessages(activeConversation?.messages), [activeConversation?.messages])
 
-  const refreshSavedSql = useCallback(async () => {
-    try {
-      const list = await listSavedSql()
-      setSavedSql(list)
-    } catch (err) {
-      console.warn('failed to load saved sql', err)
-    }
-  }, [])
-
-  const refreshRecentQueries = useCallback(async () => {
-    try {
-      const items = await loadRecentQueries(20)
-      setRecentQueries(items)
-    } catch (err) {
-      console.warn('failed to load recent queries', err)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refreshSavedSql()
-  }, [refreshSavedSql])
-
-  useEffect(() => {
-    void refreshRecentQueries()
-  }, [refreshRecentQueries])
-
   const selectedCount = selectedIds.size
-  const sections = useMemo<AssistantContextSection[]>(
-    () =>
-      buildContextSections({
-        schema: schemaSnapshot,
-        savedSql,
-        recentQueries,
-      }),
-    [schemaSnapshot, savedSql, recentQueries],
-  )
+  const sections = useMemo<AssistantContextSection[]>(() => {
+    const built = buildContextSections({
+      schema: schemaSnapshot,
+      savedSql: [],
+      recentQueries: [],
+    })
+    return built.filter((section) => section.id === 'schema')
+  }, [schemaSnapshot])
 
   const handleToggleContext = useCallback((chunk: AssistantContextChunk, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -304,7 +269,11 @@ export default function AssistantPage() {
   )
 
   const handlePersistMessages = useCallback(
-    async (messages: UIMessage[], opts?: { updatedAt?: number }) => {
+    async (
+      messages: UIMessage[],
+      opts?: { updatedAt?: number },
+      contextSummaries?: Record<string, string | null | undefined>,
+    ) => {
       if (!activeId) return
       await persistMessages({
         conversationId: activeId,
@@ -312,6 +281,7 @@ export default function AssistantPage() {
         contextChunks,
         connectionId: currentConnId ?? null,
         updatedAt: opts?.updatedAt,
+        contextSummaries,
       })
     },
     [activeId, persistMessages, contextChunks, currentConnId],
@@ -399,6 +369,17 @@ export default function AssistantPage() {
 
   const metrics = activeConversation?.metrics ?? null
 
+  const contextSummaryMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    const messages = activeConversation?.messages ?? []
+    for (const message of messages) {
+      if (typeof message.contextSummary === 'string' && message.contextSummary.trim().length > 0) {
+        map[message.id] = message.contextSummary
+      }
+    }
+    return map
+  }, [activeConversation?.messages])
+
   const profileOptions = useMemo(
     () => profiles.map((profile) => ({ value: profile.id, label: profile.name || '未命名配置' })),
     [profiles],
@@ -448,36 +429,12 @@ export default function AssistantPage() {
             gap: '12px',
           }}
         >
-          {contextChunks.length > 0 ? (
-            <Paper withBorder p="sm" radius="md">
-              <Stack gap={4}>
-                <Text size="sm" fw={600}>
-                  Context preview
-                </Text>
-                {contextChunks.slice(0, 6).map((chunk) => (
-                  <Text key={chunk.id} size="xs" c="dimmed">
-                    {chunk.title} — {chunk.summary}
-                  </Text>
-                ))}
-                {contextChunks.length > 6 ? (
-                  <Text size="xs" c="dimmed">
-                    + {contextChunks.length - 6} more
-                  </Text>
-                ) : null}
-              </Stack>
-            </Paper>
-          ) : (
-            <Paper withBorder p="sm" radius="md">
-              <Text size="xs" c="dimmed">
-                Select schema tables, saved SQL, or recent queries to include additional context.
-              </Text>
-            </Paper>
-          )}
           <Box style={{ flex: 1, minHeight: 0 }}>
             <ChatPanel
               conversationId={activeConversation?.id ?? null}
               transport={transport}
               contextChunks={contextChunks}
+              contextSummaries={contextSummaryMap}
               pendingPrompt={pendingPrompt}
               onPromptConsumed={handlePromptConsumed}
               initialMessages={initialMessages}

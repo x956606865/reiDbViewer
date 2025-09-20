@@ -8,6 +8,23 @@ body {
   margin: 0;
 }
 
+/* Minimal Tailwind utility shims required by Streamdown code blocks */
+.hidden {
+  display: none !important;
+}
+
+body[data-mantine-color-scheme='dark'] .dark\:hidden {
+  display: none !important;
+}
+
+body[data-mantine-color-scheme='dark'] .dark\:block {
+  display: block !important;
+}
+
+body[data-mantine-color-scheme='light'] .dark\:block {
+  display: none !important;
+}
+
 /* Neutralize icon button backgrounds inside our grid container */
 .rdv-grid .mantine-ActionIcon-root {
   background-color: transparent !important;

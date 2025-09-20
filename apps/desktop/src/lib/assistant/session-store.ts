@@ -27,6 +27,7 @@ type Actions = {
     contextChunks?: AssistantContextChunk[]
     connectionId?: string | null
     updatedAt?: number
+    contextSummaries?: Record<string, string | null | undefined>
   }) => Promise<void>
   renameConversation: (conversationId: string, title: string) => Promise<void>
   archiveConversation: (conversationId: string) => Promise<void>
@@ -243,14 +244,31 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
     set({ activeId: id })
   },
 
-  async persistMessages({ conversationId, messages, contextChunks, connectionId, updatedAt }) {
+  async persistMessages({ conversationId, messages, contextChunks, connectionId, updatedAt, contextSummaries }) {
     const existing = get().conversations.find((conv) => conv.id === conversationId)
     if (!existing) return
     const metricsMap = new Map<string, AssistantMessageMetrics>()
     for (const message of existing.messages) {
       if (message.metrics) metricsMap.set(message.id, message.metrics)
     }
+    const summaryMap = new Map<string, string | null>()
+    for (const message of existing.messages) {
+      if (typeof message.contextSummary === 'string') {
+        summaryMap.set(message.id, message.contextSummary)
+      } else if (message.contextSummary === null) {
+        summaryMap.set(message.id, null)
+      }
+    }
     const converted = toConversationMessages(messages)
+    for (const message of converted) {
+      if (contextSummaries && message.id in contextSummaries) {
+        const override = contextSummaries[message.id]
+        message.contextSummary = override ?? null
+      } else if (summaryMap.has(message.id)) {
+        const retained = summaryMap.get(message.id)
+        message.contextSummary = retained ?? null
+      }
+    }
     attachMetrics(converted, metricsMap)
     applyHeuristicMetrics(converted)
     const metrics = computeMetrics(converted)

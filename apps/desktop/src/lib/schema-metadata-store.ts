@@ -1,4 +1,4 @@
-import { readSchemaCache, type SchemaCachePayload } from '@/lib/schema-cache'
+import { readSchemaCache, type IndexCacheEntry, type SchemaCachePayload } from '@/lib/schema-cache'
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn'
 
 export type SchemaMetadataColumn = {
@@ -15,6 +15,8 @@ export type SchemaMetadataTable = {
   name: string
   columns: SchemaMetadataColumn[]
   columnMap: Map<string, SchemaMetadataColumn>
+  ddl: string | null
+  indexes: IndexCacheEntry[]
 }
 
 export type SchemaMetadataSnapshot = {
@@ -56,7 +58,11 @@ function formatIdentifier(raw: string): string {
   return trimmed
 }
 
-function buildTable(payload: SchemaCachePayload['tables'][number]): SchemaMetadataTable {
+function buildTable(
+  payload: SchemaCachePayload['tables'][number],
+  ddl: string | null,
+  indexes: IndexCacheEntry[],
+): SchemaMetadataTable {
   const columnMap = new Map<string, SchemaMetadataColumn>()
   const columns = (payload.columns || []).map((col) => {
     const info: SchemaMetadataColumn = {
@@ -75,11 +81,32 @@ function buildTable(payload: SchemaCachePayload['tables'][number]): SchemaMetada
     name: payload.name,
     columns,
     columnMap,
+    ddl,
+    indexes,
   }
 }
 
 function buildSnapshot(connId: string, payload: SchemaCachePayload, updatedAt: number): SchemaMetadataSnapshot {
-  const tables = (payload.tables || []).map((table) => buildTable(table))
+  const ddlMap = new Map<string, string>()
+  for (const entry of payload.ddls || []) {
+    if (!entry) continue
+    const normalizedKey = `${normalizeIdentifier(entry.schema)}.${normalizeIdentifier(entry.name)}`
+    if (!normalizedKey.trim()) continue
+    ddlMap.set(normalizedKey, entry.ddl)
+  }
+  const indexMap = new Map<string, IndexCacheEntry[]>()
+  for (const entry of payload.indexes || []) {
+    if (!entry) continue
+    const normalizedKey = `${normalizeIdentifier(entry.schema)}.${normalizeIdentifier(entry.name)}`
+    const list = (entry.indexes || []).map((ix) => ({ ...ix }))
+    indexMap.set(normalizedKey, list)
+  }
+  const tables = (payload.tables || []).map((table) => {
+    const normalizedKey = `${normalizeIdentifier(table.schema)}.${normalizeIdentifier(table.name)}`
+    const ddl = ddlMap.get(normalizedKey) ?? null
+    const indexes = indexMap.get(normalizedKey) ?? []
+    return buildTable(table, ddl, indexes)
+  })
   const tablesByKey = new Map<string, SchemaMetadataTable>()
   const tablesByName = new Map<string, SchemaMetadataTable[]>()
   for (const table of tables) {

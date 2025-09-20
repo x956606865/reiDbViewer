@@ -7,6 +7,7 @@ import {
   type UIMessageChunk,
 } from 'ai'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
+import { formatContextSummary } from '@/lib/assistant/context-summary'
 import { MockChatTransport } from '@/lib/assistant/mock-transport'
 import { DEFAULT_ASSISTANT_SETTINGS, type AssistantProvider, type AssistantProviderSettings } from '@/lib/assistant/provider-settings'
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
@@ -25,6 +26,7 @@ type DesktopChatRequest = {
     content: unknown
   }>
   provider: AssistantProviderSettings
+  context_summary?: string | null
 }
 
 type DesktopChatPayload = DesktopChatRequest & { apiKey?: string }
@@ -90,6 +92,7 @@ export type DesktopChatTransportOptions = {
 
 export class DesktopChatTransport implements ChatTransport<UIMessage> {
   private contextChunks: AssistantContextChunk[] = []
+  private contextSummary: string | null = null
   private readonly fallback: ChatTransport<UIMessage>
   private readonly onFallback?: (error: unknown) => void
   private readonly onSuccess?: () => void
@@ -108,6 +111,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
 
   setContextChunks(chunks: AssistantContextChunk[]) {
     this.contextChunks = chunks
+    this.contextSummary = formatContextSummary(chunks)
   }
 
   setProviderSettings(settings: AssistantProviderSettings) {
@@ -121,6 +125,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
   }
 
   private buildRequest(messages: UIMessage[]): DesktopChatRequest {
+    const contextSummary = this.contextSummary
     return {
       messages: messages.map((message) => ({
         role: message.role,
@@ -134,6 +139,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
         content: chunk.content,
       })),
       provider: this.providerSettings,
+      context_summary: contextSummary ?? undefined,
     }
   }
 

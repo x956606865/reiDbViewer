@@ -43,7 +43,10 @@ export type ContextSidebarProps = {
 }
 
 export function ContextSidebar(props: ContextSidebarProps) {
-  const sections = props.sections
+  const sections = useMemo(
+    () => props.sections.filter((section) => section.id === 'schema'),
+    [props.sections],
+  )
   const { selectedCount, maxContextChunks } = props
   const theme = useMantineTheme()
   const [activeTab, setActiveTab] = useState('conversations')
@@ -109,13 +112,64 @@ export function ContextSidebar(props: ContextSidebarProps) {
         value={activeTab}
         onChange={(value) => setActiveTab(value ?? 'context')}
         keepMounted
+        variant="pills"
+        radius="md"
+        vars={(mantineTheme) => {
+          const isDark = mantineTheme.colorScheme === 'dark'
+          return {
+            root: {
+              '--tabs-color': isDark ? mantineTheme.colors.blue[8] : 'var(--mantine-color-blue-0)',
+              '--tabs-text-color': isDark ? mantineTheme.colors.blue[1] : 'var(--mantine-color-blue-9)',
+            },
+          }
+        }}
         style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+        styles={(mantineTheme) => {
+          const isDark = mantineTheme.colorScheme === 'dark'
+          const inactiveColor = isDark ? mantineTheme.colors.gray[3] : 'var(--mantine-color-gray-7)'
+          const activeBackground = isDark ? mantineTheme.colors.blue[8] : 'var(--mantine-color-blue-0)'
+          const activeText = isDark ? mantineTheme.colors.blue[1] : 'var(--mantine-color-blue-9)'
+          const activeBorder = isDark ? mantineTheme.colors.blue[6] : 'var(--mantine-color-blue-3)'
+          const hoverBackground = isDark ? mantineTheme.colors.dark[5] : 'var(--mantine-color-gray-0)'
+
+          return {
+            list: {
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+              gridAutoRows: '1fr',
+              gap: '8px',
+              paddingBottom: 0,
+              border: 'none',
+              boxShadow: 'none',
+            },
+            tab: {
+              width: '100%',
+              height: '100%',
+              fontWeight: 600,
+              fontSize: '14px',
+              border: 0,
+              color: inactiveColor,
+              justifyContent: 'center',
+              paddingBlock: '10px',
+              transition: 'background-color 100ms ease, color 100ms ease',
+              '--tab-hover-color': hoverBackground,
+              '&[data-active]': {
+                backgroundColor: activeBackground,
+                color: activeText,
+                boxShadow: `inset 0 0 0 1px ${activeBorder}`,
+              },
+            },
+          }
+        }}
       >
-        <Tabs.List grow>
+        <Tabs.List>
           <Tabs.Tab value="conversations">对话</Tabs.Tab>
           <Tabs.Tab value="context">Context</Tabs.Tab>
           <Tabs.Tab value="prompts">Prompts</Tabs.Tab>
-          <Tabs.Tab value="preview">Preview</Tabs.Tab>
+          <Tabs.Tab value="preview">
+            Preview
+            {props.contextChunks.length > 0 ? ` (${props.contextChunks.length})` : ''}
+          </Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel
           value="conversations"
@@ -247,7 +301,7 @@ export function ContextSidebar(props: ContextSidebarProps) {
           <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
             <Title order={4}>Context</Title>
             <TextInput
-              placeholder="Search schemas, saved SQL, or recent queries"
+              placeholder="Search schemas or tables"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.currentTarget.value)}
               leftSection={<IconSearch size={14} />}
@@ -333,7 +387,7 @@ export function ContextSidebar(props: ContextSidebarProps) {
               <Stack gap="xs">
                 {props.contextChunks.length === 0 ? (
                   <Text size="xs" c="dimmed">
-                    Select schema tables, saved SQL, or recent queries to inspect context summaries.
+                    Select schema tables to inspect context summaries.
                   </Text>
                 ) : null}
                 {props.contextChunks.map((chunk) => (

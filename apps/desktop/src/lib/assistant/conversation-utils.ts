@@ -15,6 +15,7 @@ export type AssistantConversationMessage = {
   createdAt: number
   error?: string | null
   metrics?: AssistantMessageMetrics
+  contextSummary?: string | null
 }
 
 export type ConversationMetricsSummary = {
