@@ -40,10 +40,10 @@ export default function ConnectionsPage() {
     try {
       const chk = validatePostgresDsn(dsn.trim())
       if (!chk.ok) throw new Error(`无效的 DSN：${chk.reason || 'unknown'}`)
-      const res = await createConnection(alias.trim(), dsn.trim())
+      await createConnection(alias.trim(), dsn.trim())
       setAlias('')
       setDsn('')
-      setInfo(res.storage === 'keyring' ? '已保存。凭据已保存到系统钥匙串。' : '已保存。凭据已加密存储在本地 SQLite。')
+      setInfo('已保存。凭据已加密存储在本地 SQLite。')
       refresh()
     } catch (e: any) {
       setError(String(e?.message || e))
@@ -73,7 +73,7 @@ export default function ConnectionsPage() {
       setEditingId(null)
       setEditAlias('')
       setEditDsn('')
-      setInfo('已更新。凭据已加密存储到本地（同时尝试写入钥匙串）。')
+      setInfo('已更新。凭据已加密存储到本地 SQLite。')
       refresh()
     } catch (e: any) {
       setError(String(e?.message || e))
@@ -118,7 +118,7 @@ export default function ConnectionsPage() {
     <Stack gap="md" maw={840}>
       <div>
         <Title order={3}>用户连接管理</Title>
-        <Text c="dimmed">凭据优先加密存储在本地 SQLite；若可用也会写入系统钥匙串。仅显示别名等非敏感信息。</Text>
+        <Text c="dimmed">凭据会加密存储在本地 SQLite（app_prefs），界面仅显示别名等非敏感信息。</Text>
         {error && (
           <Text c="red" mt="xs">
             {error}

@@ -49,6 +49,8 @@ struct AssistantChatRequest {
     #[serde(default)]
     context_chunks: Vec<AssistantContextChunkPayload>,
     provider: AssistantProviderSettings,
+    #[serde(default, rename = "apiKey")]
+    api_key: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -172,24 +174,17 @@ const WARN_PATTERNS: &[(&str, &str)] = &[
 ];
 
 fn ensure_supported_provider(provider: &str) -> Result<(), String> {
-    if provider.eq_ignore_ascii_case("openai") || provider.eq_ignore_ascii_case("lmstudio") {
-        Ok(())
-    } else {
-        Err("unsupported_provider".to_string())
+    match provider.to_lowercase().as_str() {
+        "openai" | "lmstudio" | "ollama" | "custom" => Ok(()),
+        _ => Err("unsupported_provider".to_string()),
     }
 }
 
-fn load_provider_secret(provider: &str) -> Result<String, String> {
-    let account = format!("assistant:{}", provider);
-    let entry = keyring::Entry::new("dev.reidbview.desktop", &account).map_err(|e| e.to_string())?;
-    entry.get_password().map_err(|e| e.to_string())
-}
-
 fn resolve_base_url(settings: &AssistantProviderSettings) -> String {
-    let fallback = if settings.provider.eq_ignore_ascii_case("lmstudio") {
-        "http://127.0.0.1:1234/v1"
-    } else {
-        "https://api.openai.com/v1"
+    let fallback = match settings.provider.to_lowercase().as_str() {
+        "lmstudio" => "http://127.0.0.1:1234/v1",
+        "ollama" => "http://127.0.0.1:11434/v1",
+        _ => "https://api.openai.com/v1",
     };
     let candidate = settings
         .base_url
@@ -216,16 +211,26 @@ fn model_error_response(detail: String) -> AssistantChatResponse {
     }
 }
 
-fn missing_api_key_response() -> AssistantChatResponse {
+fn provider_label(provider: &str) -> &'static str {
+    match provider.to_lowercase().as_str() {
+        "lmstudio" => "LM Studio",
+        "ollama" => "Ollama",
+        "custom" => "自定义 OpenAI 兼容接口",
+        _ => "OpenAI",
+    }
+}
+
+fn missing_api_key_response(provider: &str) -> AssistantChatResponse {
+    let label = provider_label(provider);
     AssistantChatResponse {
-        message: "尚未配置 OpenAI API Key。请在助手设置中填写后重试。".to_string(),
+        message: format!("尚未配置 {} API Key。请在助手设置中填写后重试。", label),
         tool_calls: Vec::new(),
         safety: Some(SafetyEvaluation {
             severity: "warn".to_string(),
             triggers: vec![SafetyTrigger {
                 kind: "secret".to_string(),
                 pattern: "missing_api_key".to_string(),
-                r#match: "OpenAI API key not found".to_string(),
+                r#match: format!("{} API key not found", label),
             }],
         }),
         usage: None,
@@ -588,41 +593,6 @@ fn format_blocked_message(safety: &SafetyEvaluation) -> String {
 }
 
 #[tauri::command]
-async fn set_secret(account: String, secret: String) -> Result<(), String> {
-    let entry = keyring::Entry::new("dev.reidbview.desktop", &account).map_err(|e| e.to_string())?;
-    entry.set_password(&secret).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn get_secret(account: String) -> Result<String, String> {
-    let entry = keyring::Entry::new("dev.reidbview.desktop", &account).map_err(|e| e.to_string())?;
-    entry.get_password().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn delete_secret(account: String) -> Result<(), String> {
-    let entry = keyring::Entry::new("dev.reidbview.desktop", &account).map_err(|e| e.to_string())?;
-    entry.delete_credential().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn has_secret(account: String) -> Result<bool, String> {
-    let entry = keyring::Entry::new("dev.reidbview.desktop", &account).map_err(|e| e.to_string())?;
-    match entry.get_password() {
-        Ok(secret) => Ok(!secret.is_empty()),
-        Err(err) => {
-            let msg = err.to_string();
-            let lowered = msg.to_lowercase();
-            if lowered.contains("no entry found") || lowered.contains("no matching entry found") {
-                Ok(false)
-            } else {
-                Err(msg)
-            }
-        }
-    }
-}
-
-#[tauri::command]
 async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatResponse, String> {
     ensure_supported_provider(&payload.provider.provider)?;
     let provider_name = payload.provider.provider.to_lowercase();
@@ -634,26 +604,26 @@ async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatRe
         temperature: payload.provider.temperature,
         max_tokens: payload.provider.max_tokens,
     };
+    let api_key = payload
+        .api_key
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
     let chat_response = match provider_name.as_str() {
-        "openai" => {
-            let api_key = match load_provider_secret(&payload.provider.provider) {
-                Ok(secret) => secret,
-                Err(_) => return Ok(missing_api_key_response()),
+        "openai" | "custom" => {
+            let token = match api_key {
+                Some(ref value) => value.clone(),
+                None => return Ok(missing_api_key_response(&payload.provider.provider)),
             };
-            match post_openai_chat(&base_url, Some(api_key.as_str()), &request_body).await {
+            match post_openai_chat(&base_url, Some(token.as_str()), &request_body).await {
                 Ok(response) => response,
                 Err(detail) => return Ok(model_error_response(detail)),
             }
         }
         "lmstudio" => {
-            let token = load_provider_secret(&payload.provider.provider)
-                .unwrap_or_else(|_| "lm-studio".to_string());
-            let bearer = if token.trim().is_empty() {
-                "lm-studio".to_string()
-            } else {
-                token
-            };
-            match post_openai_chat(&base_url, Some(bearer.as_str()), &request_body).await {
+            let token = api_key.clone().unwrap_or_else(|| "lm-studio".to_string());
+            match post_openai_chat(&base_url, Some(token.as_str()), &request_body).await {
                 Ok(response) => response,
                 Err(detail) => {
                     let lowered = detail.to_lowercase();
@@ -669,6 +639,29 @@ async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatRe
                         )
                     } else {
                         format!("LM Studio 返回错误：{}", detail)
+                    };
+                    return Ok(model_error_response(friendly));
+                }
+            }
+        }
+        "ollama" => {
+            let bearer = api_key.as_ref().map(|value| value.as_str());
+            match post_openai_chat(&base_url, bearer, &request_body).await {
+                Ok(response) => response,
+                Err(detail) => {
+                    let lowered = detail.to_lowercase();
+                    let friendly = if lowered.contains("connection refused")
+                        || lowered.contains("could not connect")
+                        || lowered.contains("connection reset")
+                        || lowered.contains("timed out")
+                    {
+                        format!(
+                            "无法连接到 Ollama 服务。请确认已运行 `ollama serve` 并监听 {}。原始错误：{}",
+                            base_url,
+                            detail
+                        )
+                    } else {
+                        format!("Ollama 返回错误：{}", detail)
                     };
                     return Ok(model_error_response(friendly));
                 }
@@ -719,13 +712,7 @@ fn main() {
                 .add_migrations("sqlite:rdv_local.db", migrations::migrations())
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![
-            set_secret,
-            get_secret,
-            delete_secret,
-            has_secret,
-            assistant_chat
-        ])
+        .invoke_handler(tauri::generate_handler![assistant_chat])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

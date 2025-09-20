@@ -118,7 +118,7 @@ export default function SchemaPage() {
       }
     } catch (e: any) {
       const msg = String(e?.message || e)
-      if (/secure storage|keyring|No matching entry/i.test(msg)) {
+      if (/dsn_cipher_missing|local_cipher_decrypt_failed|connection_not_found|secret_decrypt_failed/i.test(msg)) {
         setError('未找到当前连接的凭据。请到“Connections”页面重新保存该连接，或重新选择连接后再试。')
       } else {
         setError(msg)

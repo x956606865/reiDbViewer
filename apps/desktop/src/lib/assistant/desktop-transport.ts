@@ -8,9 +8,10 @@ import {
 } from 'ai'
 import type { AssistantContextChunk } from '@/lib/assistant/context-chunks'
 import { MockChatTransport } from '@/lib/assistant/mock-transport'
-import { DEFAULT_ASSISTANT_SETTINGS, type AssistantProviderSettings } from '@/lib/assistant/provider-settings'
+import { DEFAULT_ASSISTANT_SETTINGS, type AssistantProvider, type AssistantProviderSettings } from '@/lib/assistant/provider-settings'
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
 import type { SimulatedToolCall } from '@/lib/assistant/tooling'
+import { getAssistantApiKey } from '@/lib/assistant/api-key-store'
 
 const STREAM_DELAY_MS = 45
 
@@ -25,6 +26,8 @@ type DesktopChatRequest = {
   }>
   provider: AssistantProviderSettings
 }
+
+type DesktopChatPayload = DesktopChatRequest & { apiKey?: string }
 
 type DesktopChatResponse = {
   message: string
@@ -134,6 +137,20 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
     }
   }
 
+  private async resolveApiKey(provider: AssistantProvider): Promise<string | undefined> {
+    try {
+      const value = await getAssistantApiKey(provider)
+      const trimmed = value.trim()
+      return trimmed.length > 0 ? trimmed : undefined
+    } catch (error) {
+      const optionalProvider = provider === 'lmstudio' || provider === 'ollama'
+      if (!optionalProvider) {
+        console.warn('Failed to resolve assistant API key', error)
+      }
+      return undefined
+    }
+  }
+
   async sendMessages({ messages }: Parameters<ChatTransport<UIMessage>['sendMessages']>[0]) {
     try {
       const request = this.buildRequest(messages)
@@ -143,7 +160,10 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
       } catch (stringifyError) {
         console.warn('[assistant] failed to stringify payload', stringifyError)
       }
-      const response = await invoke<DesktopChatResponse>('assistant_chat', { payload: request })
+      const provider = this.providerSettings.provider
+      const apiKey = await this.resolveApiKey(provider)
+      const payload: DesktopChatPayload = apiKey ? { ...request, apiKey } : { ...request }
+      const response = await invoke<DesktopChatResponse>('assistant_chat', { payload })
       this.onSuccess?.()
       this.lastMetadata = {
         toolCalls: response.tool_calls ?? [],

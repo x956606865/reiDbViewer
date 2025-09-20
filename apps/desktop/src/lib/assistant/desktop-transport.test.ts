@@ -7,7 +7,12 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
+vi.mock('@/lib/assistant/api-key-store', () => ({
+  getAssistantApiKey: vi.fn().mockResolvedValue('sk-test'),
+}))
+
 const invokeMock = vi.mocked((await import('@tauri-apps/api/core')).invoke)
+const getAssistantApiKeyMock = vi.mocked((await import('@/lib/assistant/api-key-store')).getAssistantApiKey)
 
 const sampleMessage: UIMessage = {
   id: 'msg_user',
@@ -38,6 +43,7 @@ const providerSettings = {
 
 beforeEach(() => {
   invokeMock.mockReset()
+  getAssistantApiKeyMock.mockClear()
 })
 
 describe('DesktopChatTransport', () => {
@@ -53,10 +59,12 @@ describe('DesktopChatTransport', () => {
     await transport.sendMessages({ messages: [sampleMessage] })
     expect(invokeMock).toHaveBeenCalledTimes(1)
     const args = invokeMock.mock.calls[0]?.[1] as {
-      payload: { context_chunks: Array<{ id: string }>; provider?: typeof providerSettings }
+      payload: { context_chunks: Array<{ id: string }>; provider?: typeof providerSettings; apiKey?: string }
     }
     expect(args.payload.context_chunks[0]?.id).toBe('ctx_1')
     expect(args.payload.provider).toEqual(providerSettings)
+    expect(args.payload.apiKey).toBe('sk-test')
+    expect(getAssistantApiKeyMock).toHaveBeenCalledWith('openai')
   })
 
   it('falls back to mock transport when invoke fails', async () => {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Alert, Badge, Box, Button, Group, Paper, Stack, Table, Text, Textarea, Title } from '@mantine/core'
+import { Alert, Badge, Box, Button, Group, Paper, Select, Stack, Table, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
@@ -60,6 +60,12 @@ export type ChatPanelProps = {
   onAssistantMetrics: (messageId: string, metrics: AssistantMessageMetrics) => void | Promise<void>
   transportNotice?: string | null
   onDismissTransportNotice?: () => void
+  profileOptions: { value: string; label: string }[]
+  modelOptions: { value: string; label: string }[]
+  selectedProfileId: string
+  selectedModelId: string
+  onSelectProfile: (profileId: string) => void
+  onSelectModel: (modelId: string) => void
 }
 
 export function ChatPanel({
@@ -73,6 +79,12 @@ export function ChatPanel({
   onAssistantMetrics,
   transportNotice,
   onDismissTransportNotice,
+  profileOptions,
+  modelOptions,
+  selectedProfileId,
+  selectedModelId,
+  onSelectProfile,
+  onSelectModel,
 }: ChatPanelProps) {
   const chatId = conversationId ?? 'assistant-default'
   const activeRequestRef = useRef<{
@@ -174,6 +186,22 @@ export function ChatPanel({
   const dismissNotice = useCallback(() => {
     onDismissTransportNotice?.()
   }, [onDismissTransportNotice])
+
+  const handleProfileSelect = useCallback(
+    (value: string | null) => {
+      if (!value) return
+      onSelectProfile(value)
+    },
+    [onSelectProfile],
+  )
+
+  const handleModelSelect = useCallback(
+    (value: string | null) => {
+      if (!value) return
+      onSelectModel(value)
+    },
+    [onSelectModel],
+  )
 
   const enhancedMessages = useMemo(() => withText(messages), [messages])
   const isStreaming = status === 'submitted' || status === 'streaming'
@@ -373,11 +401,31 @@ export function ChatPanel({
               maxRows={6}
               disabled={status === 'error'}
             />
-            <Group justify="space-between">
+            <Group justify="space-between" align="flex-end" gap="sm" wrap="wrap">
               <Text size="xs" c="dimmed">
                 {isStreaming ? 'Streaming response…' : 'Ready for your prompt.'}
               </Text>
               <Group gap="xs">
+                <Select
+                  data={profileOptions}
+                  value={profileOptions.length > 0 ? selectedProfileId : null}
+                  onChange={handleProfileSelect}
+                  placeholder="选择配置"
+                  size="xs"
+                  maw={200}
+                  comboboxProps={{ withinPortal: true }}
+                  disabled={profileOptions.length === 0 || isStreaming}
+                />
+                <Select
+                  data={modelOptions}
+                  value={modelOptions.length > 0 ? selectedModelId : null}
+                  onChange={handleModelSelect}
+                  placeholder="选择模型"
+                  size="xs"
+                  maw={220}
+                  comboboxProps={{ withinPortal: true }}
+                  disabled={modelOptions.length === 0 || isStreaming}
+                />
                 {usageBadges.map((badge) => (
                   <Badge key={badge} variant="light">
                     {badge}

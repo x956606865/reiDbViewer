@@ -28,9 +28,12 @@ import { useAssistantSessions } from '@/lib/assistant/session-store'
 import type { AssistantConversationMessage, AssistantMessageMetrics } from '@/lib/assistant/conversation-utils'
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn'
 import {
-  DEFAULT_ASSISTANT_SETTINGS,
-  loadAssistantSettings,
-  type AssistantProviderSettings,
+  loadAssistantProviderProfiles,
+  loadAssistantProfileSelection,
+  resolveAssistantRuntimeSettings,
+  saveAssistantProfileSelection,
+  type AssistantProviderProfile,
+  type AssistantProfileSelection,
 } from '@/lib/assistant/provider-settings'
 import { hasAssistantApiKey } from '@/lib/assistant/api-key-store'
 
@@ -79,8 +82,20 @@ export default function AssistantPage() {
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null)
   const [transportNotice, setTransportNotice] = useState<string | null>(null)
   const [settingsOpened, setSettingsOpened] = useState(false)
-  const [providerSettings, setProviderSettings] = useState<AssistantProviderSettings>(DEFAULT_ASSISTANT_SETTINGS)
+  const [profiles, setProfiles] = useState<AssistantProviderProfile[]>([])
+  const [profileSelection, setProfileSelection] = useState<AssistantProfileSelection | null>(null)
+  const runtime = useMemo(
+    () => resolveAssistantRuntimeSettings(profiles, profileSelection),
+    [profiles, profileSelection],
+  )
   const [apiKeyReady, setApiKeyReady] = useState<boolean | null>(null)
+
+  const handleApiKeyChange = useCallback(
+    (ready: boolean) => {
+      setApiKeyReady(ready)
+    },
+    [setApiKeyReady],
+  )
 
   const {
     ready,
@@ -210,24 +225,62 @@ export default function AssistantPage() {
   )
 
   useEffect(() => {
+    let cancelled = false
     void (async () => {
       try {
-        const loaded = await loadAssistantSettings()
-        setProviderSettings(loaded)
-        transport.setProviderSettings(loaded)
-        const keyPresent = await hasAssistantApiKey(loaded.provider)
-        const ready = loaded.provider === 'lmstudio' ? true : Boolean(keyPresent)
-        setApiKeyReady(ready)
+        const loadedProfiles = await loadAssistantProviderProfiles()
+        if (cancelled) return
+        setProfiles(loadedProfiles)
+        const loadedSelection = await loadAssistantProfileSelection(loadedProfiles)
+        if (cancelled) return
+        setProfileSelection(loadedSelection)
       } catch (error) {
-        console.warn('failed to load assistant provider settings', error)
-        setApiKeyReady(false)
+        console.warn('failed to load assistant provider profiles', error)
+        if (!cancelled) {
+          setProfiles([])
+          setProfileSelection(null)
+          setApiKeyReady(false)
+        }
       }
     })()
-  }, [transport])
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const runtimeSettings = runtime.settings
 
   useEffect(() => {
-    transport.setProviderSettings(providerSettings)
-  }, [transport, providerSettings])
+    transport.setProviderSettings(runtimeSettings)
+  }, [
+    transport,
+    runtimeSettings.provider,
+    runtimeSettings.model,
+    runtimeSettings.baseUrl,
+    runtimeSettings.temperature,
+    runtimeSettings.maxTokens,
+  ])
+
+  useEffect(() => {
+    let ignore = false
+    void (async () => {
+      try {
+        const provider = runtime.profile.provider
+        if (provider === 'lmstudio' || provider === 'ollama') {
+          if (!ignore) setApiKeyReady(true)
+          return
+        }
+        const keyPresent = await hasAssistantApiKey(provider)
+        if (!ignore) setApiKeyReady(Boolean(keyPresent))
+      } catch (error) {
+        console.warn('failed to verify assistant api key', error)
+        if (!ignore) setApiKeyReady(false)
+      }
+    })()
+    return () => {
+      ignore = true
+    }
+  }, [runtime.profile.provider])
 
   useEffect(() => {
     transport.setContextChunks(contextChunks)
@@ -274,12 +327,44 @@ export default function AssistantPage() {
     [activeId, recordAssistantMetrics],
   )
 
-  const handleSettingsSaved = useCallback(
-    (settings: AssistantProviderSettings) => {
-      setProviderSettings(settings)
-      transport.setProviderSettings(settings)
+  const handleProfilesSaved = useCallback(
+    (nextProfiles: AssistantProviderProfile[], nextSelection?: AssistantProfileSelection) => {
+      setProfiles(nextProfiles)
+      const resolution = resolveAssistantRuntimeSettings(nextProfiles, nextSelection ?? profileSelection)
+      setProfileSelection(resolution.selection)
+      void saveAssistantProfileSelection(resolution.selection)
     },
-    [transport],
+    [profileSelection, saveAssistantProfileSelection],
+  )
+
+  const handleSelectProfileOption = useCallback(
+    (profileId: string) => {
+      const targetProfile = profiles.find((profile) => profile.id === profileId)
+      const desiredSelection: AssistantProfileSelection = {
+        profileId,
+        modelId:
+          targetProfile?.defaultModelId ??
+          targetProfile?.models[0]?.id ??
+          runtime.selection.modelId,
+      }
+      const resolution = resolveAssistantRuntimeSettings(profiles, desiredSelection)
+      setProfileSelection(resolution.selection)
+      void saveAssistantProfileSelection(resolution.selection)
+    },
+    [profiles, runtime.selection.modelId, saveAssistantProfileSelection],
+  )
+
+  const handleSelectModelOption = useCallback(
+    (modelId: string) => {
+      const desiredSelection: AssistantProfileSelection = {
+        profileId: runtime.selection.profileId,
+        modelId,
+      }
+      const resolution = resolveAssistantRuntimeSettings(profiles, desiredSelection)
+      setProfileSelection(resolution.selection)
+      void saveAssistantProfileSelection(resolution.selection)
+    },
+    [profiles, runtime.selection.profileId, saveAssistantProfileSelection],
   )
 
   const handleCreateConversation = useCallback(() => {
@@ -315,6 +400,16 @@ export default function AssistantPage() {
   )
 
   const metrics = activeConversation?.metrics ?? null
+
+  const profileOptions = useMemo(
+    () => profiles.map((profile) => ({ value: profile.id, label: profile.name || '未命名配置' })),
+    [profiles],
+  )
+
+  const modelOptions = useMemo(
+    () => runtime.profile.models.map((model) => ({ value: model.id, label: model.label || model.value })),
+    [runtime.profile.models],
+  )
 
   return (
     <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
@@ -396,6 +491,12 @@ export default function AssistantPage() {
               onAssistantMetrics={handleRecordAssistantMetrics}
               transportNotice={transportNotice}
               onDismissTransportNotice={() => setTransportNotice(null)}
+              profileOptions={profileOptions}
+              modelOptions={modelOptions}
+              selectedProfileId={runtime.selection.profileId}
+              selectedModelId={runtime.selection.modelId}
+              onSelectProfile={handleSelectProfileOption}
+              onSelectModel={handleSelectModelOption}
             />
           </Box>
         </Box>
@@ -405,9 +506,11 @@ export default function AssistantPage() {
       </Group>
       <AssistantSettingsModal
         opened={settingsOpened}
+        profiles={profiles}
+        selection={profileSelection}
         onClose={() => setSettingsOpened(false)}
-        onSettingsSaved={handleSettingsSaved}
-        onApiKeyChange={(value) => setApiKeyReady(value)}
+        onProfilesSaved={handleProfilesSaved}
+        onApiKeyChange={handleApiKeyChange}
       />
     </Stack>
   )
