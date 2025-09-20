@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Alert, Badge, Box, Button, Group, Paper, Select, Stack, Table, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
@@ -10,6 +10,7 @@ import type { AssistantTransportMetadata, AssistantTransportUsage } from '@/lib/
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
 import type { SimulatedToolCall } from '@/lib/assistant/tooling'
 import { IconX } from '@tabler/icons-react'
+import { shouldSubmitOnShiftEnter } from './shortcut-utils'
 
 export const INITIAL_MESSAGES: UIMessage[] = [
   {
@@ -66,6 +67,8 @@ export type ChatPanelProps = {
   selectedModelId: string
   onSelectProfile: (profileId: string) => void
   onSelectModel: (modelId: string) => void
+  onOpenSettings: () => void
+  apiKeyReady: boolean
 }
 
 export function ChatPanel({
@@ -85,6 +88,8 @@ export function ChatPanel({
   selectedModelId,
   onSelectProfile,
   onSelectModel,
+  onOpenSettings,
+  apiKeyReady,
 }: ChatPanelProps) {
   const chatId = conversationId ?? 'assistant-default'
   const activeRequestRef = useRef<{
@@ -312,14 +317,41 @@ export function ChatPanel({
     [input, contextChunks, sendMessage],
   )
 
+  const handleComposerKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        !shouldSubmitOnShiftEnter(event, {
+          hasInput: input.trim().length > 0,
+          isStreaming,
+          isError: status === 'error',
+        })
+      ) {
+        return
+      }
+      event.preventDefault()
+      handleSubmit()
+    },
+    [handleSubmit, input, isStreaming, status],
+  )
+
   return (
     <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
-      <Box>
-        <Title order={3}>Assistant</Title>
-        <Text size="sm" c="dimmed">
-          Context chunks selected: {contextChunks.length}
-        </Text>
-      </Box>
+      <Group justify="space-between" align="center" wrap="nowrap">
+        <Box>
+          <Title order={3}>Assistant</Title>
+          <Text size="sm" c="dimmed">
+            Context chunks selected: {contextChunks.length}
+          </Text>
+        </Box>
+        <Button
+          variant={apiKeyReady ? 'light' : 'filled'}
+          color={apiKeyReady ? 'teal' : 'yellow'}
+          size="xs"
+          onClick={onOpenSettings}
+        >
+          {apiKeyReady ? '更新 API key' : '配置 API key'}
+        </Button>
+      </Group>
       <Paper
         withBorder
         radius="md"
@@ -409,6 +441,7 @@ export function ChatPanel({
               placeholder="Ask the assistant..."
               value={input}
               onChange={(event) => setInput(event.currentTarget.value)}
+              onKeyDown={handleComposerKeyDown}
               autosize
               minRows={3}
               maxRows={6}

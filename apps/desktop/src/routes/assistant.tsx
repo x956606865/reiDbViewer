@@ -2,9 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Box, Group, Paper, Stack, Text } from '@mantine/core'
 import { shallow } from 'zustand/shallow'
 import type { UIMessage } from 'ai'
-import { ConversationToolbar } from '@/components/assistant/ConversationToolbar'
 import { ContextSidebar } from '@/components/assistant/ContextSidebar'
-import { PromptLibrary } from '@/components/assistant/PromptLibrary'
 import { ChatPanel, INITIAL_MESSAGES } from '@/components/assistant/ChatPanel'
 import { AssistantSettingsModal } from '@/components/assistant/AssistantSettingsModal'
 import {
@@ -413,35 +411,31 @@ export default function AssistantPage() {
 
   return (
     <Stack gap="md" h="100%" style={{ minHeight: 0 }}>
-      <ConversationToolbar
-        activeId={activeId}
-        conversations={conversations}
-        archivedConversations={archivedConversations}
-        metrics={metrics}
-        onSelect={handleSelectConversation}
-        onCreate={handleCreateConversation}
-        onRename={handleRenameConversation}
-        onArchive={handleArchiveConversation}
-        onDelete={handleDeleteConversation}
-        onRestore={handleRestoreConversation}
-        onOpenSettings={() => setSettingsOpened(true)}
-        apiKeyReady={apiKeyReady ?? false}
-      />
       <Group
         align="flex-start"
         gap="md"
         wrap="nowrap"
         style={{ flex: 1, width: '100%', height: '100%', minHeight: 0 }}
       >
-        <Box style={{ width: 280, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box style={{ width: 320, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
           <ContextSidebar
             sections={sections}
             selectedIds={selectedIds}
             onToggle={handleToggleContext}
-            onRefreshSavedSql={refreshSavedSql}
-            onRefreshRecentQueries={refreshRecentQueries}
             selectedCount={selectedCount}
             maxContextChunks={MAX_CONTEXT_CHUNKS}
+            contextChunks={contextChunks}
+            onPromptInsert={handlePromptInsert}
+            conversations={conversations}
+            activeConversationId={activeId}
+            onSelectConversation={(id) => handleSelectConversation(id)}
+            onCreateConversation={handleCreateConversation}
+            onRename={handleRenameConversation}
+            onArchive={handleArchiveConversation}
+            onDelete={handleDeleteConversation}
+            onRestore={handleRestoreConversation}
+            archivedConversations={archivedConversations}
+            metrics={metrics}
           />
         </Box>
         <Box
@@ -497,11 +491,10 @@ export default function AssistantPage() {
               selectedModelId={runtime.selection.modelId}
               onSelectProfile={handleSelectProfileOption}
               onSelectModel={handleSelectModelOption}
+              onOpenSettings={() => setSettingsOpened(true)}
+              apiKeyReady={apiKeyReady ?? false}
             />
           </Box>
-        </Box>
-        <Box style={{ width: 320, height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <PromptLibrary onInsert={handlePromptInsert} />
         </Box>
       </Group>
       <AssistantSettingsModal

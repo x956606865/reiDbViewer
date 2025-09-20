@@ -151,10 +151,6 @@ function splitConversations(
   return { active, archived }
 }
 
-function sortByUpdatedAt(conversations: AssistantConversationRecord[]): AssistantConversationRecord[] {
-  return [...conversations].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-}
-
 function stateToPayload(state: State): { conversations: StoredAssistantConversation[]; activeId: string | null } {
   const combined = [...state.conversations, ...state.archivedConversations]
   const stored: StoredAssistantConversation[] = combined.map(({ metrics: _metrics, ...rest }) => ({
@@ -205,8 +201,8 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
       ready: true,
       loading: false,
       activeId,
-      conversations: sortByUpdatedAt(active),
-      archivedConversations: sortByUpdatedAt(archived),
+      conversations: active,
+      archivedConversations: archived,
     })
   },
 
@@ -274,7 +270,7 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
           metrics,
         }
       })
-      return { conversations: sortByUpdatedAt(updated) }
+      return { conversations: updated }
     })
     await persist(get)
   },
@@ -301,8 +297,8 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
           : conv,
       )
       return {
-        conversations: sortByUpdatedAt(activeUpdated),
-        archivedConversations: sortByUpdatedAt(archivedUpdated),
+        conversations: activeUpdated,
+        archivedConversations: archivedUpdated,
       }
     })
     await persist(get)
@@ -324,7 +320,7 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
       return {
         activeId,
         conversations: remaining,
-        archivedConversations: sortByUpdatedAt(archived),
+        archivedConversations: archived,
       }
     })
     await persist(get)
@@ -345,7 +341,7 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
       if (!restored) return prev
       return {
         activeId: restored.id,
-        conversations: sortByUpdatedAt([restored, ...prev.conversations]),
+        conversations: [restored, ...prev.conversations],
         archivedConversations: archived,
       }
     })
@@ -386,7 +382,7 @@ export const useAssistantSessions = create<AssistantSessionStore>((set, get) => 
           updatedAt: now(),
         }
       })
-      return { conversations: sortByUpdatedAt(updated) }
+      return { conversations: updated }
     })
     await persist(get)
   },
