@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo, useRef } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import type { Route } from 'next'
 import { Button, Group, Loader, Paper, Select, Stack, Table, Text, Title, Code, Modal, Badge, TextInput, CloseButton, ActionIcon } from '@mantine/core'
@@ -11,6 +11,20 @@ import { IconEyeOff, IconX } from '@tabler/icons-react'
 
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
+type IndexInfo = {
+  name: string
+  definition: string
+  method: string | null
+  isUnique: boolean
+  isPrimary: boolean
+  isValid: boolean
+  isPartial: boolean
+  idxScan: number
+  idxTupRead: number
+  idxTupFetch: number
+  sizeBytes: number
+  sizePretty: string
+}
 
 export default function SchemaPage() {
   const [tables, setTables] = useState<TableMeta[]>([])
@@ -19,6 +33,7 @@ export default function SchemaPage() {
   const [databases, setDatabases] = useState<string[]>([])
   const [schemas, setSchemas] = useState<string[]>([])
   const [ddls, setDdls] = useState<Record<string, string>>({})
+  const [indexCache, setIndexCache] = useState<Record<string, IndexInfo[]>>({})
   const [userConnId] = useCurrentConnId()
   const [cachedAt, setCachedAt] = useState<string | null>(null)
   const [selectedSchema, setSelectedSchema] = useState<string>('')
@@ -26,12 +41,58 @@ export default function SchemaPage() {
   const [idxTarget, setIdxTarget] = useState<{ schema: string; table: string } | null>(null)
   const [idxLoading, setIdxLoading] = useState(false)
   const [idxError, setIdxError] = useState<string | null>(null)
-  const [indexes, setIndexes] = useState<Array<any>>([])
+  const [indexes, setIndexes] = useState<IndexInfo[]>([])
   const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
   const [prefixInput, setPrefixInput] = useState('')
   const [search, setSearch] = useState('')
   const [debouncedSearch] = useDebouncedValue(search, 300)
+  const lastFetchId = useRef(0)
   const searchRef = useRef<HTMLInputElement>(null)
+  const indexCacheRef = useRef<Record<string, IndexInfo[]>>({})
+
+  useEffect(() => {
+    indexCacheRef.current = {}
+    setIndexCache({})
+  }, [userConnId])
+
+  const applySchemaPayload = useCallback((json: any, fetchId: number) => {
+    if (fetchId !== lastFetchId.current) return
+    const tableList: TableMeta[] = Array.isArray(json.tables) ? json.tables : []
+    const schemaList: string[] = Array.isArray(json.schemas) ? json.schemas : []
+    const databaseList: string[] = Array.isArray(json.databases) ? json.databases : []
+    setTables(tableList)
+    setSchemas(schemaList)
+    setDatabases(databaseList)
+    setCachedAt(json.cachedAt ?? null)
+    const ddlMap: Record<string, string> = {}
+    if (Array.isArray(json.ddls)) {
+      for (const d of json.ddls) {
+        if (d && typeof d.schema === 'string' && typeof d.name === 'string' && typeof d.ddl === 'string') {
+          ddlMap[`${d.schema}.${d.name}`] = d.ddl
+        }
+      }
+    }
+    setDdls(ddlMap)
+    if (Array.isArray(json.indexes)) {
+      const ixMap: Record<string, IndexInfo[]> = {}
+      for (const entry of json.indexes) {
+        if (entry && typeof entry.schema === 'string' && typeof entry.name === 'string' && Array.isArray(entry.indexes)) {
+          ixMap[`${entry.schema}.${entry.name}`] = entry.indexes as IndexInfo[]
+        }
+      }
+      // Prefetched payload only lists tables that have indexes; fill others with [] to skip extra fetches.
+      for (const table of tableList) {
+        const fq = `${table.schema}.${table.name}`
+        if (!(fq in ixMap)) ixMap[fq] = []
+      }
+      indexCacheRef.current = ixMap
+      setIndexCache(ixMap)
+    } else {
+      indexCacheRef.current = {}
+      setIndexCache({})
+    }
+    setSelectedSchema((prev) => (prev && schemaList.includes(prev) ? prev : ''))
+  }, [])
 
   // Shortcut: '/' 聚焦搜索，Esc 清空
   useEffect(() => {
@@ -50,26 +111,31 @@ export default function SchemaPage() {
   }, [])
 
   useEffect(() => {
-    const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
-    setLoading(true)
-    fetch(url)
-      .then((r) => r.json())
-      .then((json) => {
-        setTables(json.tables || [])
-        setSchemas(json.schemas || [])
-        setDatabases(json.databases || [])
-        setCachedAt(json.cachedAt ?? null)
-        if (!selectedSchema && (json.schemas?.length ?? 0) > 0) setSelectedSchema('')
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false))
-  }, [userConnId])
+    const fetchSchema = async () => {
+      const url = userConnId ? `/api/schema/tables?userConnId=${encodeURIComponent(userConnId)}` : '/api/schema/tables'
+      const fetchId = ++lastFetchId.current
+      setLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(url)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(json?.error || json?.message || '加载元数据失败')
+        applySchemaPayload(json, fetchId)
+      } catch (e: any) {
+        if (fetchId === lastFetchId.current) setError(String(e?.message || e))
+      } finally {
+        if (fetchId === lastFetchId.current) setLoading(false)
+      }
+    }
+    fetchSchema()
+  }, [userConnId, applySchemaPayload])
 
   const onRefresh = async () => {
     if (!userConnId) {
       setError('请先在“连接”中选择当前连接（localStorage: rdv.currentUserConnId）。')
       return
     }
+    const fetchId = ++lastFetchId.current
     setLoading(true)
     setError(null)
     try {
@@ -80,17 +146,11 @@ export default function SchemaPage() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json?.error || '刷新失败')
-      setTables(json.tables || [])
-      setDatabases(json.databases || [])
-      setSchemas(json.schemas || [])
-      setCachedAt(new Date().toISOString())
-      const map: Record<string, string> = {}
-      for (const d of json.ddls || []) map[`${d.schema}.${d.name}`] = d.ddl
-      setDdls(map)
+      applySchemaPayload({ ...json, cachedAt: new Date().toISOString() }, fetchId)
     } catch (e: any) {
-      setError(String(e.message || e))
+      if (fetchId === lastFetchId.current) setError(String(e.message || e))
     } finally {
-      setLoading(false)
+      if (fetchId === lastFetchId.current) setLoading(false)
     }
   }
 
@@ -116,10 +176,17 @@ export default function SchemaPage() {
   ), [filteredAndSearched, rules])
 
   const openIndexes = async (schema: string, table: string) => {
+    const fq = `${schema}.${table}`
     setIdxTarget({ schema, table })
-    setIdxLoading(true)
     setIdxError(null)
     setIdxOpen(true)
+    const cached = indexCacheRef.current[fq] ?? indexCache[fq]
+    if (cached) {
+      setIdxLoading(false)
+      setIndexes(cached)
+      return
+    }
+    setIdxLoading(true)
     try {
       const url = userConnId
         ? `/api/schema/indexes?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&userConnId=${encodeURIComponent(userConnId)}`
@@ -127,7 +194,10 @@ export default function SchemaPage() {
       const res = await fetch(url)
       const json = await res.json()
       if (!res.ok) throw new Error(json?.message || json?.error || '加载索引失败')
-      setIndexes(json.indexes || [])
+      const list: IndexInfo[] = json.indexes || []
+      setIndexes(list)
+      indexCacheRef.current = { ...indexCacheRef.current, [fq]: list }
+      setIndexCache((prev) => ({ ...prev, [fq]: list }))
     } catch (e: any) {
       setIdxError(String(e?.message || e))
     } finally {
@@ -290,7 +360,7 @@ export default function SchemaPage() {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {indexes.map((ix: any) => (
+              {indexes.map((ix) => (
                 <Table.Tr key={ix.name}>
                   <Table.Td>{ix.name}</Table.Td>
                   <Table.Td>{ix.method || '-'}</Table.Td>
@@ -319,7 +389,7 @@ export default function SchemaPage() {
         {!idxLoading && !idxError && indexes.length > 0 && (
           <Paper withBorder p="sm" mt="sm">
             <Text fw={600} mb={6}>定义</Text>
-            {indexes.map((ix: any) => (
+            {indexes.map((ix) => (
               <div key={'def-' + ix.name} style={{ marginBottom: 8 }}>
                 <Text fw={500}>{ix.name}</Text>
                 <Code block>{ix.definition}</Code>

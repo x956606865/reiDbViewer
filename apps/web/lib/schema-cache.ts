@@ -2,11 +2,27 @@ import { Pool } from 'pg'
 import { getAppDb } from './appdb'
 import { env } from './env'
 
+export type IndexCacheEntry = {
+  name: string
+  definition: string
+  method: string | null
+  isUnique: boolean
+  isPrimary: boolean
+  isValid: boolean
+  isPartial: boolean
+  idxScan: number
+  idxTupRead: number
+  idxTupFetch: number
+  sizeBytes: number
+  sizePretty: string
+}
+
 export type SchemaCachePayload = {
   databases?: string[]
   schemas?: string[]
   tables: Array<{ schema: string; name: string; columns: Array<{ name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean; isForeignKey?: boolean; references?: { schema: string; table: string; column: string } }> }>
   ddls?: { schema: string; name: string; ddl: string }[]
+  indexes?: Array<{ schema: string; name: string; indexes: IndexCacheEntry[] }>
 }
 
 function tableName() {
@@ -58,4 +74,3 @@ export function renderCreateTableSql(schema: string, prefix: string) {
   PRIMARY KEY (user_id, user_conn_id)
 );`
 }
-
