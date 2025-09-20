@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Alert, Badge, Box, Button, Group, Modal, Paper, Select, Stack, Text, Textarea, Title } from '@mantine/core'
+import {
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Divider,
+  Group,
+  Modal,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  Textarea,
+  Title,
+} from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
@@ -48,6 +62,66 @@ function withText(messages: UIMessage[]): MessageWithText[] {
     ...message,
     text: extractText(message),
   }))
+}
+
+const CONTEXT_DIVIDER_MARKER = '__context-divider__'
+const CONTEXT_DIVIDER_METADATA_TYPE = 'context-divider'
+
+type ContextDividerStatus = 'pending' | 'applied'
+
+type ContextDividerMetadata = {
+  type: typeof CONTEXT_DIVIDER_METADATA_TYPE
+  status: ContextDividerStatus
+  createdAt?: number
+}
+
+function isContextDividerText(text: string | null | undefined): boolean {
+  return text === CONTEXT_DIVIDER_MARKER
+}
+
+function readContextDividerMetadata(metadata: unknown): ContextDividerMetadata | null {
+  if (!metadata || typeof metadata !== 'object') return null
+  const record = metadata as Record<string, unknown>
+  if (record.type !== CONTEXT_DIVIDER_METADATA_TYPE) return null
+  const status = record.status
+  if (status !== 'pending' && status !== 'applied') return null
+  const createdAt = typeof record.createdAt === 'number' && Number.isFinite(record.createdAt) ? record.createdAt : undefined
+  return { type: CONTEXT_DIVIDER_METADATA_TYPE, status, createdAt }
+}
+
+function isContextDividerMessage(message: UIMessage | MessageWithText): boolean {
+  if (!message) return false
+  if (readContextDividerMetadata((message as UIMessage).metadata)) return true
+  const parts = Array.isArray(message.parts) ? message.parts : []
+  return parts.some((part) => part && part.type === 'text' && isContextDividerText(part.text))
+}
+
+function getContextDividerStatus(message: UIMessage | MessageWithText): ContextDividerStatus | null {
+  const meta = readContextDividerMetadata((message as UIMessage).metadata)
+  if (meta) return meta.status
+  return isContextDividerMessage(message) ? 'applied' : null
+}
+
+function createContextDividerMetadata(status: ContextDividerStatus, existing?: ContextDividerMetadata | null): ContextDividerMetadata {
+  const createdAt = existing?.createdAt ?? Date.now()
+  return { type: CONTEXT_DIVIDER_METADATA_TYPE, status, createdAt }
+}
+
+function createContextDividerMessage(id: string, status: ContextDividerStatus = 'pending'): UIMessage {
+  const metadata = createContextDividerMetadata(status)
+  const createdAt = new Date(metadata.createdAt ?? Date.now())
+  return {
+    id,
+    role: 'system',
+    metadata,
+    parts: [
+      {
+        type: 'text',
+        text: CONTEXT_DIVIDER_MARKER,
+      },
+    ],
+    createdAt,
+  }
 }
 
 export type ChatPanelProps = {
@@ -108,10 +182,25 @@ export function ChatPanel({
   const lastPersistRef = useRef<{ conversationId: string | null; userId?: string; assistantId?: string; signature?: string }>({
     conversationId: null,
   })
-  const { messages, sendMessage, status, stop, error, clearError } = useChat({
+  const lastAppliedDividerRef = useRef<string | null>(null)
+
+  const prepareRequestBody = useCallback((payload: any) => {
+    const { messages, id, ...rest } = payload as { messages: UIMessage[]; id?: string }
+    const cutoffId = lastAppliedDividerRef.current
+    let trimmed = messages
+    if (cutoffId) {
+      const index = messages.findIndex((message) => message.id === cutoffId)
+      trimmed = index >= 0 ? messages.slice(index + 1) : messages
+    }
+    const filtered = trimmed.filter((message) => !isContextDividerMessage(message))
+    return { ...rest, messages: filtered, id }
+  }, [])
+
+  const { messages, setMessages, sendMessage, status, stop, error, clearError } = useChat({
     id: chatId,
     messages: initialMessages,
     transport,
+    experimental_prepareRequestBody: prepareRequestBody,
     onFinish(message, options) {
       const meta = activeRequestRef.current
       activeRequestRef.current = null
@@ -136,6 +225,9 @@ export function ChatPanel({
       activeRequestRef.current = null
     },
   })
+  const [pendingDividerId, setPendingDividerId] = useState<string | null>(null)
+  const [appliedDividerIds, setAppliedDividerIds] = useState<string[]>([])
+  const prevConversationIdRef = useRef<string | null>(null)
   const [input, setInput] = useState('')
   const [safetyInfo, setSafetyInfo] = useState<SafetyEvaluation | null>(null)
   const [usage, setUsage] = useState<AssistantTransportUsage | null>(null)
@@ -145,6 +237,56 @@ export function ChatPanel({
   })
   const [contextPreviewOpened, setContextPreviewOpened] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const lastAppliedId = appliedDividerIds.length > 0 ? appliedDividerIds[appliedDividerIds.length - 1] : null
+    lastAppliedDividerRef.current = lastAppliedId
+  }, [appliedDividerIds])
+
+  useEffect(() => {
+    if (prevConversationIdRef.current === conversationId) return
+    prevConversationIdRef.current = conversationId
+
+    const applied: string[] = []
+    let pending: string | null = null
+    for (const message of initialMessages) {
+      if (!isContextDividerMessage(message)) continue
+      const status = getContextDividerStatus(message)
+      if (status === 'pending') {
+        pending = message.id
+      } else {
+        applied.push(message.id)
+      }
+    }
+    setAppliedDividerIds(applied)
+    setPendingDividerId(pending)
+
+    if (initialMessages.some((message) => isContextDividerMessage(message) && !readContextDividerMetadata(message.metadata))) {
+      setMessages((prev) => {
+        let modified = false
+        const updated = prev.map((message) => {
+          if (!isContextDividerMessage(message)) return message
+          const metadata = readContextDividerMetadata(message.metadata)
+          if (metadata) return message
+          modified = true
+          return {
+            ...message,
+            metadata: createContextDividerMetadata('applied'),
+            parts:
+              Array.isArray(message.parts) && message.parts.length > 0
+                ? message.parts
+                : [
+                    {
+                      type: 'text',
+                      text: CONTEXT_DIVIDER_MARKER,
+                    },
+                  ],
+          }
+        })
+        return modified ? updated : prev
+      })
+    }
+  }, [conversationId, initialMessages, setMessages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
@@ -225,6 +367,18 @@ export function ChatPanel({
 
   const enhancedMessages = useMemo(() => withText(messages), [messages])
   const isStreaming = status === 'submitted' || status === 'streaming'
+  const handleToggleClearContext = useCallback(() => {
+    if (isStreaming) return
+    if (pendingDividerId) {
+      setMessages((prev) => prev.filter((message) => message.id !== pendingDividerId))
+      setPendingDividerId(null)
+      return
+    }
+    const id = `context-divider-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    const dividerMessage = createContextDividerMessage(id, 'pending')
+    setMessages((prev) => [...prev, dividerMessage])
+    setPendingDividerId(id)
+  }, [isStreaming, pendingDividerId, setMessages])
   const usageBadges = useMemo(() => {
     if (!usage) return []
     const items: string[] = []
@@ -247,6 +401,46 @@ export function ChatPanel({
       event?.preventDefault()
       const value = input.trim()
       if (!value) return
+      if (pendingDividerId) {
+        const appliedId = pendingDividerId
+        setMessages((prev) => {
+          let modified = false
+          const updated = prev.map((message) => {
+            if (message.id !== appliedId) return message
+            modified = true
+            const metadata = readContextDividerMetadata(message.metadata)
+            const nextMetadata = createContextDividerMetadata('applied', metadata)
+            const nextParts =
+              Array.isArray(message.parts) && message.parts.length > 0
+                ? message.parts.map((part) =>
+                    part && part.type === 'text'
+                      ? {
+                          ...part,
+                          text: CONTEXT_DIVIDER_MARKER,
+                        }
+                      : part,
+                  )
+                : [
+                    {
+                      type: 'text',
+                      text: CONTEXT_DIVIDER_MARKER,
+                    },
+                  ]
+            return {
+              ...message,
+              metadata: nextMetadata,
+              parts: nextParts,
+            }
+          })
+          return modified ? updated : prev
+        })
+        setAppliedDividerIds((prev) => {
+          const filtered = prev.filter((id) => id !== appliedId)
+          return [...filtered, appliedId]
+        })
+        lastAppliedDividerRef.current = appliedId
+        setPendingDividerId(null)
+      }
       const startedAt = performance.now()
       const contextPayload = contextChunks.length > 0 ? JSON.stringify(contextChunks) : ''
       const contextBytes = contextPayload.length
@@ -264,7 +458,7 @@ export function ChatPanel({
       void sendMessage({ text: value })
       setInput('')
     },
-    [input, contextChunks, sendMessage],
+    [input, contextChunks, sendMessage, pendingDividerId, setMessages, setAppliedDividerIds, setPendingDividerId],
   )
 
   const handleComposerKeyDown = useCallback(
@@ -321,6 +515,22 @@ export function ChatPanel({
         <Box style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px' }}>
           <Stack gap="sm">
             {enhancedMessages.map((message) => {
+              if (isContextDividerMessage(message)) {
+                const status = getContextDividerStatus(message)
+                const label = status === 'pending' ? '清除上下文（待生效）' : '清除上下文'
+                const color = status === 'pending' ? 'orange' : 'gray'
+                return (
+                  <Divider
+                    key={message.id}
+                    label={label}
+                    labelPosition="center"
+                    variant="dashed"
+                    color={color}
+                    labelProps={{ style: { fontSize: 12, fontWeight: 500 } }}
+                    style={{ marginBlock: '8px' }}
+                  />
+                )
+              }
               const isUser = message.role === 'user'
               const sanitized = sanitizeMarkdownText(message.text)
               const contextSummary = contextSummaries[message.id] ?? null
@@ -430,9 +640,20 @@ export function ChatPanel({
               disabled={status === 'error'}
             />
             <Group justify="space-between" align="flex-end" gap="sm" wrap="wrap">
-              <Text size="xs" c="dimmed">
-                {isStreaming ? 'Streaming response…' : 'Ready for your prompt.'}
-              </Text>
+              <Group gap="xs" align="center">
+                <Text size="xs" c="dimmed">
+                  {isStreaming ? 'Streaming response…' : 'Ready for your prompt.'}
+                </Text>
+                <Button
+                  variant={pendingDividerId ? 'filled' : 'light'}
+                  color={pendingDividerId ? 'orange' : 'gray'}
+                  size="xs"
+                  onClick={handleToggleClearContext}
+                  disabled={isStreaming}
+                >
+                  {pendingDividerId ? '取消清除' : '清除上下文'}
+                </Button>
+              </Group>
               <Group gap="xs">
                 <Select
                   data={profileOptions}

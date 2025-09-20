@@ -55,6 +55,7 @@ function toUiMessages(messages: AssistantConversationMessage[] | undefined): UIM
   return messages.map((message) => ({
     id: message.id,
     role: message.role,
+    metadata: message.metadata ?? undefined,
     parts: [
       {
         type: 'text',

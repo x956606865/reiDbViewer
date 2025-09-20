@@ -49,4 +49,25 @@ describe('toConversationMessages', () => {
 
     expect(extractMessageText(message)).toBe('Chunk A & Chunk B')
   })
+
+  it('preserves metadata when converting messages', () => {
+    const dividerMessage: UIMessage = {
+      id: 'divider-1',
+      role: 'system',
+      parts: [
+        {
+          type: 'text',
+          text: '__context-divider__',
+        },
+      ],
+      metadata: {
+        type: 'context-divider',
+        status: 'applied',
+      },
+      createdAt: new Date(),
+    }
+
+    const converted = toConversationMessages([dividerMessage])
+    expect(converted[0]?.metadata).toEqual({ type: 'context-divider', status: 'applied' })
+  })
 })

@@ -60,6 +60,15 @@ function sanitizeMetrics(metrics: AssistantMessageMetrics | null | undefined): A
   return Object.keys(sanitized).length > 0 ? sanitized : undefined
 }
 
+function sanitizeMetadata(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object') return null
+  try {
+    return JSON.parse(JSON.stringify(raw)) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
 function sanitizeMessage(raw: any): StoredAssistantMessage | null {
   if (!raw || typeof raw !== 'object') return null
   const role = typeof raw.role === 'string' ? raw.role : 'assistant'
@@ -75,6 +84,7 @@ function sanitizeMessage(raw: any): StoredAssistantMessage | null {
       : raw.contextSummary === null
         ? null
         : undefined
+  const metadata = sanitizeMetadata(raw.metadata)
   return {
     id,
     role: role as StoredAssistantMessage['role'],
@@ -83,6 +93,7 @@ function sanitizeMessage(raw: any): StoredAssistantMessage | null {
     error,
     metrics,
     contextSummary,
+    metadata,
   }
 }
 

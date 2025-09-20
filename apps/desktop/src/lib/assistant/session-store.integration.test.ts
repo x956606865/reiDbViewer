@@ -33,6 +33,22 @@ const sampleAssistant: UIMessage = {
   createdAt: new Date('2025-01-01T00:00:01Z'),
 }
 
+const sampleDivider: UIMessage = {
+  id: 'divider-1',
+  role: 'system',
+  parts: [
+    {
+      type: 'text',
+      text: '__context-divider__',
+    },
+  ],
+  metadata: {
+    type: 'context-divider',
+    status: 'applied',
+  },
+  createdAt: new Date('2025-01-01T00:00:02Z'),
+}
+
 function resetStore() {
   useAssistantSessions.setState({
     ready: true,
@@ -76,5 +92,18 @@ describe('assistant session store persistence', () => {
       .getState()
       .conversations.find((conv) => conv.id === conversation.id)
     expect(stored?.messages.find((msg) => msg.id === sampleUser.id)?.contextSummary).toBe(contextSummary)
+  })
+
+  it('persists system message metadata', async () => {
+    const { createConversation, persistMessages } = useAssistantSessions.getState()
+    const conversation = await createConversation({ title: 'Divider conversation' })
+    await persistMessages({ conversationId: conversation.id, messages: [sampleDivider] })
+    const stored = useAssistantSessions
+      .getState()
+      .conversations.find((conv) => conv.id === conversation.id)
+    expect(stored?.messages.find((msg) => msg.id === sampleDivider.id)?.metadata).toEqual({
+      type: 'context-divider',
+      status: 'applied',
+    })
   })
 })

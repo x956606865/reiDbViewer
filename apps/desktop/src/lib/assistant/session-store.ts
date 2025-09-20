@@ -101,6 +101,7 @@ function toConversationMessages(messages: UIMessage[]): AssistantConversationMes
       createdAt: message.createdAt ? Number(new Date(message.createdAt)) : now(),
       error: message.role === 'assistant' && message.content === undefined ? 'response_incomplete' : null,
       metrics: undefined,
+      metadata: message.metadata ? { ...message.metadata } : null,
     })
   }
   return result

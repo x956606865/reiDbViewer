@@ -16,6 +16,7 @@ export type AssistantConversationMessage = {
   error?: string | null
   metrics?: AssistantMessageMetrics
   contextSummary?: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 export type ConversationMetricsSummary = {
