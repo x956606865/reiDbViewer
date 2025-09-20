@@ -13,6 +13,7 @@ import { DEFAULT_ASSISTANT_SETTINGS, type AssistantProvider, type AssistantProvi
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
 import type { SimulatedToolCall } from '@/lib/assistant/tooling'
 import { getAssistantApiKey } from '@/lib/assistant/api-key-store'
+import { prepareMessagesForRequest } from '@/lib/assistant/context-divider'
 
 const STREAM_DELAY_MS = 45
 
@@ -158,8 +159,9 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
   }
 
   async sendMessages({ messages }: Parameters<ChatTransport<UIMessage>['sendMessages']>[0]) {
+    const preparedMessages = prepareMessagesForRequest(messages)
     try {
-      const request = this.buildRequest(messages)
+      const request = this.buildRequest(preparedMessages)
       console.info('[assistant] sending request payload', request)
       try {
         console.debug('[assistant] payload json', JSON.stringify(request, null, 2))
@@ -193,7 +195,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
       this.onFallback?.(err)
       console.warn('assistant_chat failed, falling back to mock transport', err)
       this.lastMetadata = { toolCalls: [], safety: null, usage: null }
-      return this.fallback.sendMessages({ messages })
+      return this.fallback.sendMessages({ messages: preparedMessages })
     }
   }
 
