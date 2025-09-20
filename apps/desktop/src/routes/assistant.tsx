@@ -148,6 +148,16 @@ export default function AssistantPage() {
     return built.filter((section) => section.id === 'schema')
   }, [schemaSnapshot])
 
+  const availableContextIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const section of sections) {
+      for (const item of section.items) {
+        ids.add(item.id)
+      }
+    }
+    return ids
+  }, [sections])
+
   const handleToggleContext = useCallback((chunk: AssistantContextChunk, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -168,6 +178,22 @@ export default function AssistantPage() {
     }
     return selectedChunks.slice(0, MAX_CONTEXT_CHUNKS)
   }, [sections, selectedIds])
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      let changed = false
+      const filtered = new Set<string>()
+      prev.forEach((id) => {
+        if (availableContextIds.has(id)) {
+          filtered.add(id)
+        } else {
+          changed = true
+        }
+      })
+      return changed ? filtered : prev
+    })
+  }, [availableContextIds])
 
   const transport = useMemo(
     () =>
