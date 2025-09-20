@@ -594,6 +594,7 @@ fn evaluate_response_safety(text: &str) -> SafetyEvaluation {
     }
 }
 
+#[allow(dead_code)]
 fn strip_sql_comments(sql: &str) -> String {
     let without_block = Regex::new(r"(?s)/\*.*?\*/")
         .unwrap()
@@ -605,6 +606,7 @@ fn strip_sql_comments(sql: &str) -> String {
         .to_string()
 }
 
+#[allow(dead_code)]
 fn is_read_only_sql(sql: &str) -> bool {
     let stripped = strip_sql_comments(sql);
     let normalized = stripped.trim();
@@ -638,6 +640,7 @@ fn is_read_only_sql(sql: &str) -> bool {
     lowered.starts_with("select ") || lowered.starts_with("with ")
 }
 
+#[allow(dead_code)]
 fn generate_tool_id() -> String {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -646,6 +649,7 @@ fn generate_tool_id() -> String {
     format!("tool_{:x}", now)
 }
 
+#[allow(dead_code)]
 fn simulate_tool_calls(text: &str) -> Vec<SimulatedToolCall> {
     let code_block_re = match Regex::new(r"```(?:sql|postgresql|postgres)?\s*([\s\S]*?)```") {
         Ok(re) => re,
@@ -824,11 +828,7 @@ async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatRe
     let safety = evaluate_response_safety(&assistant_text);
     let mut final_message = assistant_text.clone();
 
-    let tool_calls = if safety.severity == "block" {
-        Vec::new()
-    } else {
-        simulate_tool_calls(&assistant_text)
-    };
+    let tool_calls = Vec::new();
 
     if safety.severity == "block" {
         final_message = format_blocked_message(&safety);

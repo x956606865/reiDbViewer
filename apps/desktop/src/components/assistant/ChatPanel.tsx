@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Alert, Badge, Box, Button, Group, Modal, Paper, Select, Stack, Table, Text, Textarea, Title } from '@mantine/core'
+import { Alert, Badge, Box, Button, Group, Modal, Paper, Select, Stack, Text, Textarea, Title } from '@mantine/core'
 import { useChat } from '@ai-sdk/react'
 import type { UIMessage, ChatTransport } from 'ai'
 import { Streamdown } from 'streamdown'
@@ -9,8 +9,7 @@ import { estimateTokenUsage, type AssistantMessageMetrics } from '@/lib/assistan
 import { formatContextSummary } from '@/lib/assistant/context-summary'
 import type { AssistantTransportMetadata, AssistantTransportUsage } from '@/lib/assistant/desktop-transport'
 import type { SafetyEvaluation } from '@/lib/assistant/security-guard'
-import type { SimulatedToolCall } from '@/lib/assistant/tooling'
-import { IconGhost, IconX } from '@tabler/icons-react'
+import { IconGhost } from '@tabler/icons-react'
 import { shouldSubmitOnShiftEnter } from './shortcut-utils'
 
 export const INITIAL_MESSAGES: UIMessage[] = [
@@ -129,7 +128,6 @@ export function ChatPanel({
       void onAssistantMetrics(message.id, metrics)
       if (typeof (transport as any)?.consumeLastMetadata === 'function') {
         const metadata = (transport as any).consumeLastMetadata() as AssistantTransportMetadata
-        setToolCalls(metadata.toolCalls)
         setSafetyInfo(metadata.safety)
         setUsage(metadata.usage ?? null)
       }
@@ -139,7 +137,6 @@ export function ChatPanel({
     },
   })
   const [input, setInput] = useState('')
-  const [toolCalls, setToolCalls] = useState<SimulatedToolCall[]>([])
   const [safetyInfo, setSafetyInfo] = useState<SafetyEvaluation | null>(null)
   const [usage, setUsage] = useState<AssistantTransportUsage | null>(null)
   const [contextPreview, setContextPreview] = useState<{ messageId: string | null; summary: string }>({
@@ -245,72 +242,6 @@ export function ChatPanel({
     return safetyInfo.triggers.length > 0
   }, [safetyInfo])
 
-  const toolCallCards = useMemo(() => {
-    if (!toolCalls || toolCalls.length === 0) return null
-    return toolCalls.map((call) => {
-      const isSuccess = call.status === 'success'
-      return (
-        <Paper key={call.id} withBorder radius="md" p="sm">
-          <Stack gap="xs">
-            <Group justify="space-between" align="flex-start">
-              <Stack gap={0}>
-                <Text size="sm" fw={600}>
-                  Tool: {call.name}
-                </Text>
-                <Text size="xs" c="dimmed">
-                  Preview for SQL (read-only): {call.input.sql.slice(0, 120)}{call.input.sql.length > 120 ? '…' : ''}
-                </Text>
-              </Stack>
-              <Badge color={isSuccess ? 'teal' : 'yellow'} variant={isSuccess ? 'light' : 'outline'}>
-                {call.status === 'success' ? 'Simulated' : 'Needs attention'}
-              </Badge>
-            </Group>
-            {isSuccess && call.result ? (
-              <Table striped withColumnBorders>
-                <Table.Thead>
-                  <Table.Tr>
-                    {call.result.columns.map((column) => (
-                      <Table.Th key={column}>{column}</Table.Th>
-                    ))}
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {call.result.rows.map((row, index) => (
-                    <Table.Tr key={index}>
-                      {call.result.columns.map((column) => (
-                        <Table.Td key={column}>{String((row as Record<string, unknown>)[column] ?? '')}</Table.Td>
-                      ))}
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            ) : null}
-            {!isSuccess && call.message ? (
-              <Alert color="yellow" variant="light" icon={<IconX size={16} />}> 
-                {call.message}
-              </Alert>
-            ) : null}
-            {isSuccess && call.result?.summary ? (
-              <Text size="xs" c="dimmed">
-                {call.result.summary}
-              </Text>
-            ) : null}
-          </Stack>
-        </Paper>
-      )
-    })
-  }, [toolCalls])
-
-  const lastAssistantMessageId = useMemo(() => {
-    for (let index = enhancedMessages.length - 1; index >= 0; index -= 1) {
-      const candidate = enhancedMessages[index]
-      if (candidate.role === 'assistant') {
-        return candidate.id
-      }
-    }
-    return null
-  }, [enhancedMessages])
-
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
       event?.preventDefault()
@@ -328,7 +259,6 @@ export function ChatPanel({
         contextBytes,
         contextSummary,
       }
-      setToolCalls([])
       setSafetyInfo(null)
       setUsage(null)
       void sendMessage({ text: value })
@@ -395,16 +325,9 @@ export function ChatPanel({
               const sanitized = sanitizeMarkdownText(message.text)
               const contextSummary = contextSummaries[message.id] ?? null
               const hasContextSummary = typeof contextSummary === 'string' && contextSummary.trim().length > 0
-              const isLastAssistantMessage = !isUser && message.id === lastAssistantMessageId
-              const shouldRenderToolCalls = isLastAssistantMessage && !!toolCallCards
-              const hasContent = Boolean(sanitized) || shouldRenderToolCalls
+              const hasContent = Boolean(sanitized)
               return (
-                <Stack
-                  key={message.id}
-                  gap={4}
-                  align={isUser ? 'flex-end' : 'flex-start'}
-                  style={{ width: '100%' }}
-                >
+                <Stack key={message.id} gap={4} align="flex-start" style={{ width: '100%' }}>
                   <Text size="xs" c="dimmed">
                     {isUser ? 'You' : 'Assistant'}
                   </Text>
@@ -413,7 +336,7 @@ export function ChatPanel({
                     radius="md"
                     p="sm"
                     bg={isUser ? 'var(--mantine-color-blue-0)' : 'var(--mantine-color-gray-0)'}
-                    style={{ maxWidth: '720px', width: '100%' }}
+                    style={{ width: '100%' }}
                   >
                     {hasContent ? (
                       <Stack gap="sm">
@@ -422,7 +345,6 @@ export function ChatPanel({
                             <Streamdown>{sanitized}</Streamdown>
                           </div>
                         ) : null}
-                        {shouldRenderToolCalls ? <Stack gap="sm">{toolCallCards}</Stack> : null}
                       </Stack>
                     ) : null}
                   </Paper>
