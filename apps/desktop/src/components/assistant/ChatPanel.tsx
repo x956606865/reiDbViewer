@@ -278,6 +278,16 @@ export function ChatPanel({
     })
   }, [toolCalls])
 
+  const lastAssistantMessageId = useMemo(() => {
+    for (let index = enhancedMessages.length - 1; index >= 0; index -= 1) {
+      const candidate = enhancedMessages[index]
+      if (candidate.role === 'assistant') {
+        return candidate.id
+      }
+    }
+    return null
+  }, [enhancedMessages])
+
   const handleSubmit = useCallback(
     (event?: FormEvent<HTMLFormElement>) => {
       event?.preventDefault()
@@ -321,6 +331,9 @@ export function ChatPanel({
             {enhancedMessages.map((message) => {
               const isUser = message.role === 'user'
               const sanitized = sanitizeMarkdownText(message.text)
+              const isLastAssistantMessage = !isUser && message.id === lastAssistantMessageId
+              const shouldRenderToolCalls = isLastAssistantMessage && !!toolCallCards
+              const hasContent = Boolean(sanitized) || shouldRenderToolCalls
               return (
                 <Stack
                   key={message.id}
@@ -338,10 +351,15 @@ export function ChatPanel({
                     bg={isUser ? 'var(--mantine-color-blue-0)' : 'var(--mantine-color-gray-0)'}
                     style={{ maxWidth: '720px', width: '100%' }}
                   >
-                    {sanitized ? (
-                      <div className="assistant-markdown">
-                        <Streamdown>{sanitized}</Streamdown>
-                      </div>
+                    {hasContent ? (
+                      <Stack gap="sm">
+                        {sanitized ? (
+                          <div className="assistant-markdown">
+                            <Streamdown>{sanitized}</Streamdown>
+                          </div>
+                        ) : null}
+                        {shouldRenderToolCalls ? <Stack gap="sm">{toolCallCards}</Stack> : null}
+                      </Stack>
                     ) : null}
                   </Paper>
                 </Stack>
@@ -374,11 +392,6 @@ export function ChatPanel({
               ) : null}
             </Stack>
           </Alert>
-        ) : null}
-        {toolCallCards ? (
-          <Stack gap="sm" mx="md" mb="sm">
-            {toolCallCards}
-          </Stack>
         ) : null}
         {error ? (
           <Alert color="red" title="Assistant error" mx="md" mb="sm">
