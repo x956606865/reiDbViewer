@@ -3,7 +3,7 @@
 mod migrations;
 
 use regex::Regex;
-use reqwest::Client;
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -324,6 +324,17 @@ async fn fetch_openai_models(base_url: &str, bearer: Option<&str>) -> Result<Vec
     let response = request.send().await.map_err(|err| err.to_string())?;
     let status = response.status();
     let body: Value = response.json().await.map_err(|err| err.to_string())?;
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        let detail = body
+            .get("error")
+            .and_then(|err| err.get("message").or_else(|| err.get("code")))
+            .and_then(Value::as_str)
+            .unwrap_or("接口返回鉴权错误");
+        return Err(format!(
+            "鉴权失败：{}。请确认是否配置了 API Key 或接口权限。",
+            detail
+        ));
+    }
     if !status.is_success() {
         let message = body
             .get("error")
@@ -714,14 +725,8 @@ async fn assistant_list_models(payload: AssistantListModelsRequest) -> Result<Ve
         .filter(|value| !value.is_empty())
         .map(|value| value.to_string());
 
-    let label = provider_label(&payload.provider.provider);
     let token_holder: Option<String> = match provider_name.as_str() {
-        "openai" | "custom" => match trimmed.clone() {
-            Some(value) => Some(value),
-            None => {
-                return Err(format!("{} 接口需要 API Key。请先填写后重试。", label));
-            }
-        },
+        "openai" | "custom" => trimmed.clone(),
         "lmstudio" => Some(trimmed.clone().unwrap_or_else(|| "lm-studio".to_string())),
         "ollama" => trimmed.clone(),
         _ => None,

@@ -116,6 +116,14 @@ export function AssistantSettingsModal({
   const [selectedModelValues, setSelectedModelValues] = useState<string[]>([])
   const [modelsError, setModelsError] = useState<string | null>(null)
 
+  const resetQuickAddState = useCallback(() => {
+    setQuickAddOpened(false)
+    setModelsLoading(false)
+    setModelsError(null)
+    setAvailableModels([])
+    setSelectedModelValues([])
+  }, [])
+
   const activeProfile = useMemo(() => {
     if (draftProfiles.length === 0) return null
     const found = activeProfileId ? draftProfiles.find((profile) => profile.id === activeProfileId) : null
@@ -179,6 +187,12 @@ export function AssistantSettingsModal({
     if (!opened || !activeProfile) return
     void refreshApiKey(activeProfile.provider)
   }, [opened, activeProfile?.provider, refreshApiKey])
+
+  useEffect(() => {
+    if (!opened) {
+      resetQuickAddState()
+    }
+  }, [opened, resetQuickAddState])
 
   const handleProfileNameChange = (value: string) => {
     setDraftProfiles((prev) =>
@@ -329,13 +343,9 @@ export function AssistantSettingsModal({
     }
   }
 
-  const handleCloseQuickAdd = () => {
-    setQuickAddOpened(false)
-    setModelsLoading(false)
-    setModelsError(null)
-    setAvailableModels([])
-    setSelectedModelValues([])
-  }
+  const handleCloseQuickAdd = useCallback(() => {
+    resetQuickAddState()
+  }, [resetQuickAddState])
 
   const handleConfirmQuickAdd = () => {
     if (!activeProfile) {
