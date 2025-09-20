@@ -97,6 +97,13 @@ struct AssistantChatRequest {
     api_key: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AssistantListModelsRequest {
+    provider: AssistantProviderSettings,
+    #[serde(default, rename = "apiKey")]
+    api_key: Option<String>,
+}
+
 #[derive(Debug, Serialize, Clone)]
 struct SafetyTrigger {
     kind: String,
@@ -307,6 +314,45 @@ async fn post_openai_chat(
     serde_json::from_value(body).map_err(|err| err.to_string())
 }
 
+async fn fetch_openai_models(base_url: &str, bearer: Option<&str>) -> Result<Vec<String>, String> {
+    let endpoint = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = Client::new();
+    let mut request = client.get(endpoint);
+    if let Some(token) = bearer {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().await.map_err(|err| err.to_string())?;
+    let status = response.status();
+    let body: Value = response.json().await.map_err(|err| err.to_string())?;
+    if !status.is_success() {
+        let message = body
+            .get("error")
+            .and_then(|err| err.get("message").or_else(|| err.get("code")))
+            .and_then(Value::as_str)
+            .unwrap_or("模型列表获取失败")
+            .to_string();
+        return Err(message);
+    }
+    let data = body
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "模型列表响应格式无效".to_string())?;
+    let mut models: Vec<String> = data
+        .iter()
+        .filter_map(|item| {
+            item.get("id")
+                .and_then(Value::as_str)
+                .map(|id| id.to_string())
+        })
+        .collect();
+    models.sort();
+    models.dedup();
+    if models.is_empty() {
+        return Err("模型列表为空".to_string());
+    }
+    Ok(models)
+}
+
 fn value_as_str<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key)?.as_str()
 }
@@ -417,7 +463,10 @@ fn format_context_chunks(chunks: &[AssistantContextChunkPayload]) -> Option<Stri
             } else {
                 content_str
             };
-            line.push_str(&format!("\n   content: {}", sanitize_markdown_text(&trimmed)));
+            line.push_str(&format!(
+                "\n   content: {}",
+                sanitize_markdown_text(&trimmed)
+            ));
         }
         blocks.push(line);
     }
@@ -436,11 +485,13 @@ fn build_openai_messages(payload: &AssistantChatRequest) -> Vec<OpenAiMessage> {
         role: "system".to_string(),
         content: SYSTEM_PROMPT.to_string(),
     });
-    if let Some(summary) = payload
-        .context_summary
-        .as_ref()
-        .and_then(|text| if text.trim().is_empty() { None } else { Some(text.clone()) })
-    {
+    if let Some(summary) = payload.context_summary.as_ref().and_then(|text| {
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(text.clone())
+        }
+    }) {
         messages.push(OpenAiMessage {
             role: "system".to_string(),
             content: summary,
@@ -524,11 +575,7 @@ fn evaluate_response_safety(text: &str) -> SafetyEvaluation {
         .iter()
         .any(|trigger| trigger.kind == "write_sql" || trigger.kind == "unsafe_command");
 
-    let severity = if has_blocker {
-        "block"
-    } else {
-        "warn"
-    };
+    let severity = if has_blocker { "block" } else { "warn" };
 
     SafetyEvaluation {
         severity: severity.to_string(),
@@ -537,8 +584,14 @@ fn evaluate_response_safety(text: &str) -> SafetyEvaluation {
 }
 
 fn strip_sql_comments(sql: &str) -> String {
-    let without_block = Regex::new(r"(?s)/\*.*?\*/").unwrap().replace_all(sql, "").to_string();
-    Regex::new(r"--.*").unwrap().replace_all(&without_block, "").to_string()
+    let without_block = Regex::new(r"(?s)/\*.*?\*/")
+        .unwrap()
+        .replace_all(sql, "")
+        .to_string();
+    Regex::new(r"--.*")
+        .unwrap()
+        .replace_all(&without_block, "")
+        .to_string()
 }
 
 fn is_read_only_sql(sql: &str) -> bool {
@@ -641,8 +694,42 @@ fn format_blocked_message(safety: &SafetyEvaluation) -> String {
     let joined = reasons.join(", ");
     format!(
         "⚠️ 已阻止可能的危险回答。触发关键词: {}。请重新尝试，以只读查询或描述性请求的方式表达。",
-        if joined.is_empty() { "unknown".to_string() } else { joined }
+        if joined.is_empty() {
+            "unknown".to_string()
+        } else {
+            joined
+        }
     )
+}
+
+#[tauri::command]
+async fn assistant_list_models(payload: AssistantListModelsRequest) -> Result<Vec<String>, String> {
+    ensure_supported_provider(&payload.provider.provider)?;
+    let provider_name = payload.provider.provider.to_lowercase();
+    let base_url = resolve_base_url(&payload.provider);
+    let trimmed = payload
+        .api_key
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+
+    let label = provider_label(&payload.provider.provider);
+    let token_holder: Option<String> = match provider_name.as_str() {
+        "openai" | "custom" => match trimmed.clone() {
+            Some(value) => Some(value),
+            None => {
+                return Err(format!("{} 接口需要 API Key。请先填写后重试。", label));
+            }
+        },
+        "lmstudio" => Some(trimmed.clone().unwrap_or_else(|| "lm-studio".to_string())),
+        "ollama" => trimmed.clone(),
+        _ => None,
+    };
+
+    fetch_openai_models(&base_url, token_holder.as_deref())
+        .await
+        .map_err(|err| format!("获取模型列表失败：{}", err))
 }
 
 #[tauri::command]
@@ -765,7 +852,10 @@ fn main() {
                 .add_migrations("sqlite:rdv_local.db", migrations::migrations())
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![assistant_chat])
+        .invoke_handler(tauri::generate_handler![
+            assistant_chat,
+            assistant_list_models
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

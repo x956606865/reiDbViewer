@@ -3,17 +3,20 @@ import {
   ActionIcon,
   Alert,
   Button,
+  Checkbox,
   Group,
   Modal,
   NumberInput,
   PasswordInput,
+  ScrollArea,
   Select,
   Stack,
   Text,
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { IconCheck, IconKey, IconPlus, IconStar, IconTrash, IconX } from '@tabler/icons-react'
+import { invoke } from '@tauri-apps/api/core'
+import { IconBolt, IconCheck, IconKey, IconPlus, IconStar, IconTrash, IconX } from '@tabler/icons-react'
 import {
   createAssistantProfile,
   getDefaultBaseUrl,
@@ -107,6 +110,11 @@ export function AssistantSettingsModal({
   const [status, setStatus] = useState<StatusMessage | null>(null)
   const [saving, setSaving] = useState(false)
   const [checkingKey, setCheckingKey] = useState(false)
+  const [quickAddOpened, setQuickAddOpened] = useState(false)
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [selectedModelValues, setSelectedModelValues] = useState<string[]>([])
+  const [modelsError, setModelsError] = useState<string | null>(null)
 
   const activeProfile = useMemo(() => {
     if (draftProfiles.length === 0) return null
@@ -279,6 +287,86 @@ export function AssistantSettingsModal({
     )
   }
 
+  const handleOpenQuickAdd = async () => {
+    if (!activeProfile) return
+    setQuickAddOpened(true)
+    setModelsLoading(true)
+    setModelsError(null)
+    setSelectedModelValues([])
+    setAvailableModels([])
+    const existingValues = new Set(activeProfile.models.map((model) => model.value.trim()))
+    const defaultModelValue =
+      activeProfile.models.find((model) => model.id === activeProfile.defaultModelId)?.value ??
+      activeProfile.models[0]?.value ??
+      getDefaultModel(activeProfile.provider)
+    const trimmedKey = apiKeyInput.trim()
+    const payload = {
+      provider: {
+        provider: activeProfile.provider,
+        model: defaultModelValue,
+        temperature: activeProfile.temperature,
+        maxTokens: activeProfile.maxTokens ?? null,
+        baseUrl: activeProfile.baseUrl,
+      },
+      apiKey: trimmedKey.length > 0 ? trimmedKey : undefined,
+    }
+
+    try {
+      const response = await invoke<string[]>('assistant_list_models', { payload })
+      const filtered = response
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .filter((value) => !existingValues.has(value))
+      setAvailableModels(filtered)
+      setModelsError(null)
+    } catch (error) {
+      console.error('Failed to list assistant models', error)
+      const message = error instanceof Error ? error.message : String(error)
+      setModelsError(message || '获取模型列表失败，请稍后再试。')
+      setAvailableModels([])
+    } finally {
+      setModelsLoading(false)
+    }
+  }
+
+  const handleCloseQuickAdd = () => {
+    setQuickAddOpened(false)
+    setModelsLoading(false)
+    setModelsError(null)
+    setAvailableModels([])
+    setSelectedModelValues([])
+  }
+
+  const handleConfirmQuickAdd = () => {
+    if (!activeProfile) {
+      handleCloseQuickAdd()
+      return
+    }
+    const existingValues = new Set(activeProfile.models.map((model) => model.value.trim()))
+    const additions = selectedModelValues
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0 && !existingValues.has(value))
+      .map((value) => ({
+        id: makeRandomId('model'),
+        label: value,
+        value,
+      }))
+    if (additions.length === 0) {
+      if (selectedModelValues.length > 0) {
+        setStatus({ color: 'yellow', text: '选中的模型已存在于当前配置。' })
+      }
+      handleCloseQuickAdd()
+      return
+    }
+    setDraftProfiles((prev) =>
+      prev.map((profile) =>
+        profile.id === activeProfile.id ? { ...profile, models: [...profile.models, ...additions] } : profile,
+      ),
+    )
+    setStatus({ color: 'green', text: `已添加 ${additions.length} 个模型至当前配置。` })
+    handleCloseQuickAdd()
+  }
+
   const handleAddProfile = () => {
     const next = createAssistantProfile({ name: `新配置 ${draftProfiles.length + 1}` })
     setDraftProfiles((prev) => [...prev, next])
@@ -422,9 +510,10 @@ export function AssistantSettingsModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="助手配置" size="xl" centered>
-      <Stack gap="md">
-        <Group justify="space-between" align="flex-end">
+    <>
+      <Modal opened={opened} onClose={onClose} title="助手配置" size="xl" centered>
+        <Stack gap="md">
+          <Group justify="space-between" align="flex-end">
           <Select
             label="选择配置"
             data={profileOptions}
@@ -503,9 +592,21 @@ export function AssistantSettingsModal({
             <Stack gap="sm">
               <Group justify="space-between" align="center">
                 <Text fw={600}>可用模型</Text>
-                <Button leftSection={<IconPlus size={16} />} variant="light" onClick={handleAddModel}>
-                  新增模型
-                </Button>
+                <Group gap="xs">
+                  <Button
+                    leftSection={<IconBolt size={16} />}
+                    variant="light"
+                    onClick={() => {
+                      void handleOpenQuickAdd()
+                    }}
+                    disabled={modelsLoading}
+                  >
+                    快速添加模型
+                  </Button>
+                  <Button leftSection={<IconPlus size={16} />} variant="light" onClick={handleAddModel}>
+                    新增模型
+                  </Button>
+                </Group>
               </Group>
               <Stack gap="sm">
                 {activeModels.map((model) => {
@@ -589,5 +690,46 @@ export function AssistantSettingsModal({
         )}
       </Stack>
     </Modal>
+    <Modal opened={quickAddOpened} onClose={handleCloseQuickAdd} title="快速添加模型" size="lg">
+      <Stack gap="sm">
+        {modelsLoading ? (
+          <Text size="sm" c="dimmed">
+            正在获取模型列表…
+          </Text>
+        ) : modelsError ? (
+          <Alert color="red" icon={<IconX size={18} />}>
+            {modelsError}
+          </Alert>
+        ) : availableModels.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            未获取到新的模型，当前配置可能已包含全部可用模型。
+          </Text>
+        ) : (
+          <Stack gap="xs">
+            <Text size="sm" c="dimmed">
+              已过滤掉当前配置中已存在的模型，可多选后添加。
+            </Text>
+            <Checkbox.Group value={selectedModelValues} onChange={setSelectedModelValues}>
+              <ScrollArea h={240} offsetScrollbars scrollbarSize={6}>
+                <Stack gap="xs">
+                  {availableModels.map((model) => (
+                    <Checkbox key={model} value={model} label={model} />
+                  ))}
+                </Stack>
+              </ScrollArea>
+            </Checkbox.Group>
+          </Stack>
+        )}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={handleCloseQuickAdd}>
+            取消
+          </Button>
+          <Button onClick={handleConfirmQuickAdd} disabled={modelsLoading || selectedModelValues.length === 0}>
+            添加所选模型
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  </>
   )
 }

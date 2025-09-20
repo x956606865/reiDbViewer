@@ -3,9 +3,9 @@ use tauri_plugin_sql::{Migration, MigrationKind};
 pub fn migrations() -> Vec<Migration> {
     vec![
         Migration {
-        version: 1,
-        description: "init_local_store",
-        sql: r#"
+            version: 1,
+            description: "init_local_store",
+            sql: r#"
         CREATE TABLE IF NOT EXISTS user_connections (
           id TEXT PRIMARY KEY,
           alias TEXT NOT NULL,
@@ -48,12 +48,12 @@ pub fn migrations() -> Vec<Migration> {
         CREATE INDEX IF NOT EXISTS idx_saved_sql_updated_at ON saved_sql(updated_at);
         CREATE INDEX IF NOT EXISTS idx_schema_cache_conn ON schema_cache(conn_id);
         "#,
-        kind: MigrationKind::Up,
-    },
-    Migration {
-        version: 2,
-        description: "ops_audit_table",
-        sql: r#"
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 2,
+            description: "ops_audit_table",
+            sql: r#"
         CREATE TABLE IF NOT EXISTS ops_audit (
           id TEXT PRIMARY KEY,
           conn_id TEXT NOT NULL,
@@ -66,7 +66,7 @@ pub fn migrations() -> Vec<Migration> {
 
         CREATE INDEX IF NOT EXISTS idx_ops_audit_created_at ON ops_audit(created_at);
         "#,
-        kind: MigrationKind::Up,
-    }
+            kind: MigrationKind::Up,
+        },
     ]
 }
