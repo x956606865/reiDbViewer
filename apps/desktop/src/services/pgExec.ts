@@ -139,6 +139,7 @@ type SqlCoreInput = {
   allowWrite?: boolean
   previewInline: string
   recent?: RecentRecord
+  displaySql?: string
 }
 
 const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now())
@@ -230,6 +231,8 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
     }
   })()
 
+  const displaySql = ctx.displaySql ?? baseSql
+
   const needCount = isSelect && pagination.enabled && !!pagination.withCount
   const countPossible = needCount && !hasLimitOrOffset(baseSql)
 
@@ -249,7 +252,7 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
           : []
         const first = rows[0] ?? {}
         return {
-          sql: execText.text,
+          sql: displaySql,
           params: execText.values,
           rows,
           columns: Object.keys(first ?? {}),
@@ -276,7 +279,7 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
   if (needCount && pagination.countOnly) {
     if (!countPossible) {
       const result: ExecuteResult = {
-        sql: baseSql,
+        sql: displaySql,
         params: ctx.values,
         rows: [],
         columns: [],
@@ -307,7 +310,7 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
         const num = typeof total === 'string' ? Number(total) : Number(total)
         const totalRows = Number.isFinite(num) ? num : undefined
         return {
-          sql: ctx.baseSql,
+          sql: displaySql,
           params: ctx.values,
           rows: [],
           columns: [],
@@ -361,7 +364,7 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
       const queryMs = Math.round(now() - queryStart)
       const columns = Object.keys(dataRows[0] ?? {})
       const execResult: ExecuteResult = {
-        sql: execText.text,
+        sql: displaySql,
         params: execText.values,
         rows: dataRows,
         columns,
@@ -434,6 +437,7 @@ export async function executeSavedSql(opts: ExecuteOptions): Promise<ExecuteResu
       referenceId: saved.id,
       source: 'saved-sql',
     },
+    displaySql: previewInline,
   })
 }
 
@@ -463,6 +467,7 @@ export async function executeTempSql(opts: ExecuteTempOptions): Promise<ExecuteR
     pagination: opts.pagination,
     allowWrite: opts.allowWrite,
     previewInline: cleaned,
+    displaySql: cleaned,
     recent: {
       sql: cleaned,
       preview: cleaned,
