@@ -66,9 +66,12 @@ function getOffsetLabel(date: Date, timeZone: string): string {
   if (!tzPart) return ''
   const match = tzPart.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/)
   if (!match) return tzPart.replace('GMT', 'UTC')
-  const hours = parseInt(match[1], 10)
-  const minutes = match[2] ? Number(match[2]) : 0
-  const sign = hours < 0 || match[1].startsWith('-') ? '-' : '+'
+  const hourPart = match[1]
+  if (!hourPart) return tzPart.replace('GMT', 'UTC')
+  const minutePart = match[2]
+  const hours = Number.parseInt(hourPart, 10)
+  const minutes = minutePart ? Number(minutePart) : 0
+  const sign = hours < 0 || hourPart.startsWith('-') ? '-' : '+'
   const absHours = Math.abs(hours)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `UTC${sign}${pad(absHours)}:${pad(minutes)}`

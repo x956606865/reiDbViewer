@@ -59,10 +59,11 @@ export async function runOpsQuery(opts: {
   const { text, values } = buildOpsQuery(actionId, params)
   const dsn = await getDsnForConn(userConnId)
   try {
-    const rows = await withReadonlySession<Array<Record<string, unknown>>>(
+    const rows = await withReadonlySession(
       dsn,
       async (db) => {
-        return await db.select<Array<Record<string, unknown>>>(text, values)
+        const result = await db.select(text, values)
+        return Array.isArray(result) ? (result as Array<Record<string, unknown>>) : []
       },
       { cacheKey: userConnId },
     )
@@ -84,11 +85,12 @@ export async function sendOpsSignal(opts: {
   let ok = false
   let error: string | undefined
   try {
-    ok = await withWritableSession<boolean>(
+    ok = await withWritableSession(
       dsn,
       async (db) => {
-        const rows = await db.select<Array<{ ok: boolean }>>(`SELECT ${fn}($1) AS ok`, [pid])
-        return Boolean(rows?.[0]?.ok)
+        const rows = await db.select(`SELECT ${fn}($1) AS ok`, [pid])
+        const first = Array.isArray(rows) ? (rows as Array<{ ok?: boolean }>)[0] : undefined
+        return Boolean(first?.ok)
       },
       { cacheKey: userConnId },
     )

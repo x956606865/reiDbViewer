@@ -20,6 +20,6 @@ Notes:
 
 M1 status (as of 2025-09-15):
 
-- Keyring integration (set/get/delete) wired via custom Tauri commands and used by connection storage.
-- Connection management page supports add, test, and set current; edit flow to be added.
-- DSN validation covered by unit test; keyring mock tests pending.
+- Secrets now rely on encrypted SQLite (`app_prefs`) with AES-GCM; legacy keyring commands have been removed.
+- Connection management page supports add, test, set current, and edit flows against the encrypted store.
+- DSN validation covered by unit test; assistant secret storage tests ensure encrypted preferences work as expected.

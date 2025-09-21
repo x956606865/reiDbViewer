@@ -47,6 +47,7 @@ import {
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
 import { listConnections } from '@/lib/localStore';
+import { normalizeCalcItems, normalizeCalcItem } from '@/lib/calc-item-utils';
 
 type QueryTimingState = {
   totalMs?: number | null;
@@ -289,12 +290,7 @@ export default function QueriesPage() {
         for (const v of varDefs) defaults[v.name] = v.default ?? '';
         setRunValues(defaults);
         setDynCols(res.dynamicColumns || []);
-        const normalizedCalcItems = (res.calcItems || []).map((item) => ({
-          ...item,
-          runMode: item.runMode ?? 'manual',
-          kind: item.kind ?? 'single',
-        }));
-        setCalcItems(normalizedCalcItems);
+        setCalcItems(normalizeCalcItems(res.calcItems));
         setPreviewSQL('');
         setRows([]);
         setGridCols([]);
@@ -678,21 +674,19 @@ export default function QueriesPage() {
   const runtimeCalcItems = useMemo(() => {
     const base: CalcItemDef[] = [];
     if (pgEnabled) {
-      base.push({
-        name: '__total_count__',
-        type: 'sql',
-        code: 'select count(*)::bigint as total from ({{_sql}}) t',
-        runMode: 'manual',
-        kind: 'single',
-      });
+      base.push(
+        normalizeCalcItem({
+          name: '__total_count__',
+          type: 'sql',
+          code: 'select count(*)::bigint as total from ({{_sql}}) t',
+          runMode: 'manual',
+          kind: 'single',
+        }),
+      );
     }
     return [
       ...base,
-      ...calcItems.map((ci) => ({
-        ...ci,
-        runMode: ci.runMode ?? 'manual',
-        kind: ci.kind ?? 'single',
-      })),
+      ...calcItems.map((ci) => normalizeCalcItem(ci)),
     ];
   }, [calcItems, pgEnabled]);
 

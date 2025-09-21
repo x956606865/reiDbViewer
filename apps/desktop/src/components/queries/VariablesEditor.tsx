@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
   ActionIcon,
   Button,
@@ -15,13 +15,14 @@ import {
   TagsInput,
   Text,
   TextInput,
-  Textarea,
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconCheck, IconRefresh, IconTrash, IconX } from "@tabler/icons-react";
 import { fetchEnumOptions } from "@/services/pgExec";
 import type { SavedQueryVariableDef } from "@rei-db-view/types/appdb";
+import type { editor } from "monaco-editor";
+import { CodeEditor } from "@/components/code/CodeEditor";
 
 const VAR_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 
@@ -54,6 +55,16 @@ export function VariablesEditor({
   userConnId?: string | null;
 }) {
   const hasEnum = vars.some((v) => v.type === "enum");
+  const sqlOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      minimap: { enabled: false },
+      wordWrap: "on",
+      lineNumbers: "off",
+      fontSize: 13,
+      scrollBeyondLastLine: false,
+    }),
+    [],
+  );
   return (
     <Paper withBorder p="md">
       <Title order={4}>变量定义</Title>
@@ -156,25 +167,22 @@ export function VariablesEditor({
                         placeholder="输入后回车添加选项"
                         w={260}
                       />
-                      <Textarea
-                        placeholder="可选：输入 SQL 拉取选项（只读 SELECT/WITH，取第一列）"
+                      <CodeEditor
                         value={String(v.optionsSql ?? "")}
-                        onChange={(e) => {
-                          const val = e.currentTarget.value;
+                        onChange={(val) =>
                           setVars((vs) =>
                             vs.map((x, idx) =>
                               idx === i ? { ...x, optionsSql: val } : x
                             )
-                          );
-                        }}
-                        autosize
-                        minRows={2}
-                        w={360}
-                        styles={{
-                          input: {
-                            fontFamily: "var(--mantine-font-family-monospace)",
-                          },
-                        }}
+                          )
+                        }
+                        language="sql"
+                        height={140}
+                        minHeight={120}
+                        options={sqlOptions}
+                        ariaLabel={`Enum options SQL ${v.name ?? i}`}
+                        modelPath={`file:///variables/options-${i}.sql`}
+                        placeholder="-- 可选：输入只读 SQL 拉取变量枚举"
                       />
                       <Group gap="xs">
                         <Button

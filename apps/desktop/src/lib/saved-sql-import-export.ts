@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { SavedQueryVariableDef, DynamicColumnDef, CalcItemDef } from '@rei-db-view/types/appdb'
+import { normalizeCalcItems as normalizeCalcItemsHelper } from '@/lib/calc-item-utils'
 
 // File format v1
 export const SavedQueriesExportSchema = z.object({
@@ -138,12 +139,6 @@ export function normalizeImportItems(data: SavedQueriesExport): ImportItem[] {
     sql: it.sql,
     variables: Array.isArray(it.variables) ? it.variables : [],
     dynamicColumns: Array.isArray(it.dynamicColumns) ? it.dynamicColumns : [],
-    calcItems: Array.isArray(it.calcItems)
-      ? it.calcItems.map((ci) => ({
-          ...ci,
-          runMode: ci.runMode ?? 'manual',
-          kind: ci.kind ?? 'single',
-        }))
-      : [],
+    calcItems: normalizeCalcItemsHelper(it.calcItems ?? []),
   }))
 }

@@ -51,7 +51,36 @@ function stripTrailingSemicolons(sql: string): string {
 function buildJsonFallbackQuery(sql: string): string {
   const cleaned = stripTrailingSemicolons(sql).trim()
   if (!cleaned) return ''
-  return `SELECT to_jsonb(${JSON_FALLBACK_ALIAS}) AS ${JSON_FALLBACK_ALIAS} FROM (\n${cleaned}\n) ${JSON_FALLBACK_ALIAS}`
+  const innerAlias = '__rdv_row_source__'
+  return `SELECT row_to_json(${innerAlias})::text AS ${JSON_FALLBACK_ALIAS} FROM (\n${cleaned}\n) ${innerAlias}`
+}
+
+function stripLeadingComments(sql: string): string {
+  let text = sql ?? ''
+  while (true) {
+    let trimmed = text.trimStart()
+    if (!trimmed) return ''
+    if (trimmed.startsWith('--')) {
+      const idx = trimmed.indexOf('\n')
+      if (idx === -1) return ''
+      text = trimmed.slice(idx + 1)
+      continue
+    }
+    if (trimmed.startsWith('/*')) {
+      const idx = trimmed.indexOf('*/')
+      if (idx === -1) return ''
+      text = trimmed.slice(idx + 2)
+      continue
+    }
+    return trimmed
+  }
+}
+
+function isLikelySelectQuery(sql: string): boolean {
+  const cleaned = stripLeadingComments(sql)
+  if (!cleaned) return false
+  const normalized = cleaned.replace(/^\(+/, '').trimStart()
+  return /^(select|with)\b/i.test(normalized)
 }
 
 function parseJsonFallbackRow(row: Record<string, unknown>): Record<string, unknown> {
@@ -73,11 +102,23 @@ function parseJsonFallbackRow(row: Record<string, unknown>): Record<string, unkn
   return { value: payload }
 }
 
-function wrapSelectWithFallback(db: any): any {
+function wrapSelectWithFallback(db: any, opts?: { preferJsonFallback?: boolean }): any {
   if (!db || typeof db.select !== 'function' || (db as any).__rdvSelectWrapped) return db
   const baseSelect = db.select.bind(db)
   Object.defineProperty(db, '__rdvSelectWrapped', { value: true, enumerable: false })
+  const preferJsonFallback = !!opts?.preferJsonFallback
   db.select = async (sql: string, params: unknown[] = []) => {
+    if (preferJsonFallback && isLikelySelectQuery(sql)) {
+      const fallbackSql = buildJsonFallbackQuery(sql)
+      if (fallbackSql) {
+        try {
+          const rows = await baseSelect(fallbackSql, params)
+          return rows.map((row: Record<string, unknown>) => parseJsonFallbackRow(row))
+        } catch (fallbackErr) {
+          // fallback query might fail for statements like EXPLAIN; fall through to base query
+        }
+      }
+    }
     try {
       return await baseSelect(sql, params)
     } catch (err) {
@@ -173,13 +214,18 @@ async function runWithLock<T>(key: string, task: () => Promise<T>): Promise<T> {
   }
 }
 
+function isPostgresDsn(dsn: string): boolean {
+  const normalized = dsn?.trim().toLowerCase()
+  return normalized.startsWith('postgres://') || normalized.startsWith('postgresql://')
+}
+
 async function getDatabase(key: string, dsn: string): Promise<any> {
   const existing = dbCache.get(key)
   if (existing && existing.dsn === dsn) {
     return existing.dbPromise
   }
   const wrapped = Database.load(dsn).then(
-    (db) => wrapSelectWithFallback(db),
+    (db) => wrapSelectWithFallback(db, { preferJsonFallback: isPostgresDsn(dsn) }),
     (err) => {
       const current = dbCache.get(key)
       if (current?.dbPromise === wrapped) {
@@ -278,4 +324,7 @@ export const __test__ = {
   buildJsonFallbackQuery,
   parseJsonFallbackRow,
   wrapSelectWithFallback,
+  isLikelySelectQuery,
+  stripLeadingComments,
+  isPostgresDsn,
 }

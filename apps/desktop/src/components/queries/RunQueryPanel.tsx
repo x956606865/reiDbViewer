@@ -97,7 +97,7 @@ export function RunQueryPanel({
   setExplainFormat: (v: "text" | "json") => void;
   explainAnalyze: boolean;
   setExplainAnalyze: (v: boolean) => void;
-  sqlPreviewRef: React.RefObject<HTMLDivElement>;
+  sqlPreviewRef: React.RefObject<HTMLDivElement | null>;
   isPreviewing: boolean;
   previewSQL: string;
   textResult: string | null;

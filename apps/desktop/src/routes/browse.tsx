@@ -91,8 +91,9 @@ export default function BrowsePage() {
           setSchema(String(target.schema));
           setTable(String(target.table));
         } else {
-          if (schs.length && !schema) setSchema(schs[0]);
-          const t0 = tbs.find((t) => t.schema === (schs[0] || ''));
+          const firstSchema = schs[0];
+          if (firstSchema && !schema) setSchema(firstSchema);
+          const t0 = firstSchema ? tbs.find((t) => t.schema === firstSchema) : undefined;
           if (t0 && !table) setTable(t0.name);
         }
       })
@@ -225,7 +226,7 @@ export default function BrowsePage() {
       setDurationMs(elapsed);
     } catch (e: any) {
       const msg = String(e?.message || e);
-      if (/secure storage|keyring|No matching entry/i.test(msg)) {
+      if (/dsn_cipher_missing|local_cipher_decrypt_failed|connection_not_found|secret_decrypt_failed/i.test(msg)) {
         setError(
           '未找到当前连接的凭据。请到“Connections”页面重新保存该连接，或重新选择连接后再试。'
         );

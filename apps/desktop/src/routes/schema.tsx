@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { ActionIcon, Badge, Button, Code, Group, Loader, Modal, Paper, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ActionIcon, Badge, Button, Code, Group, Loader, Modal, Pagination, Paper, Select, Stack, Table, Text, TextInput, Title } from '@mantine/core'
 import { IconX, IconEyeOff } from '@tabler/icons-react'
 import { getCurrent } from '@/lib/localStore'
 import { subscribeCurrentConnId, getCurrentConnId } from '@/lib/current-conn'
 import { getDsnForConn } from '@/lib/localStore'
-import { readSchemaCache, writeSchemaCache } from '@/lib/schema-cache'
+import { readSchemaCache, writeSchemaCache, type SchemaCachePayload } from '@/lib/schema-cache'
+import { applySchemaMetadataPayload } from '@/lib/schema-metadata-store'
 import { introspectPostgres } from '@/lib/introspect'
 import { loadIndexes, type IndexInfo } from '@/lib/indexes'
 import { useSchemaHide } from '@/lib/schema-hide'
@@ -12,19 +13,105 @@ import { useSchemaHide } from '@/lib/schema-hide'
 type ColumnMeta = { name: string; dataType: string; nullable?: boolean; isPrimaryKey?: boolean }
 type TableMeta = { schema: string; name: string; columns: ColumnMeta[] }
 
+const PAGE_SIZE_OPTIONS = [20, 50, 100] as const
+
+function asSchemaCachePayload(res: Awaited<ReturnType<typeof introspectPostgres>>) {
+  return {
+    databases: res.databases,
+    schemas: res.schemas,
+    tables: res.tables.map((table) => ({
+      schema: table.schema,
+      name: table.name,
+      columns: table.columns.map((col) => ({
+        name: col.name,
+        dataType: col.dataType,
+        nullable: col.nullable,
+        isPrimaryKey: col.isPrimaryKey,
+        ...(col.isForeignKey ? { isForeignKey: true as const, references: col.references } : {}),
+      })),
+    })),
+    ddls: res.ddls,
+    indexes: res.indexes.map((entry) => ({
+      schema: entry.schema,
+      name: entry.name,
+      indexes: entry.indexes.map((ix) => ({
+        name: ix.name,
+        definition: ix.definition,
+        method: ix.method,
+        isUnique: ix.isUnique,
+        isPrimary: ix.isPrimary,
+        isValid: ix.isValid,
+        isPartial: ix.isPartial,
+        idxScan: ix.idxScan,
+        idxTupRead: ix.idxTupRead,
+        idxTupFetch: ix.idxTupFetch,
+        sizeBytes: ix.sizeBytes,
+        sizePretty: ix.sizePretty,
+      })),
+    })),
+  }
+}
+
 export default function SchemaPage() {
   const [userConnId, setUserConnId] = useState<string | null>(getCurrent())
   const [tables, setTables] = useState<TableMeta[]>([])
   const [databases, setDatabases] = useState<string[]>([])
   const [schemas, setSchemas] = useState<string[]>([])
   const [ddls, setDdls] = useState<Record<string, string>>({})
+  const [indexCache, setIndexCache] = useState<Record<string, IndexInfo[]>>({})
   const [cachedAt, setCachedAt] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedSchema, setSelectedSchema] = useState<string>('')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0])
   const searchRef = useRef<HTMLInputElement>(null)
+  const indexCacheRef = useRef<Record<string, IndexInfo[]>>({})
   const { rules, addPrefix, removePrefix, addTable, removeTable, clear } = useSchemaHide(userConnId)
+  const hideSignature = useMemo(() => `${rules.prefixes.join('|')}::${rules.tables.join('|')}`, [rules.prefixes, rules.tables])
+
+  const applyPayload = useCallback((payload: SchemaCachePayload | null, updated: number | null) => {
+    if (!payload) {
+      setTables([])
+      setSchemas([])
+      setDatabases([])
+      setDdls({})
+      setCachedAt(null)
+      indexCacheRef.current = {}
+      setIndexCache({})
+      return
+    }
+    const tableList: TableMeta[] = Array.isArray(payload.tables) ? payload.tables : []
+    setTables(tableList)
+    setSchemas(Array.isArray(payload.schemas) ? payload.schemas : [])
+    setDatabases(Array.isArray(payload.databases) ? payload.databases : [])
+    const ddlMap: Record<string, string> = {}
+    for (const d of payload.ddls || []) {
+      if (d && typeof d.schema === 'string' && typeof d.name === 'string' && typeof d.ddl === 'string') {
+        ddlMap[`${d.schema}.${d.name}`] = d.ddl
+      }
+    }
+    setDdls(ddlMap)
+    setCachedAt(typeof updated === 'number' ? updated : null)
+    if (Array.isArray(payload.indexes)) {
+      const map: Record<string, IndexInfo[]> = {}
+      for (const entry of payload.indexes) {
+        if (entry && typeof entry.schema === 'string' && typeof entry.name === 'string' && Array.isArray(entry.indexes)) {
+          map[`${entry.schema}.${entry.name}`] = entry.indexes as IndexInfo[]
+        }
+      }
+      for (const table of tableList) {
+        const fq = `${table.schema}.${table.name}`
+        if (!(fq in map)) map[fq] = []
+      }
+      indexCacheRef.current = map
+      setIndexCache(map)
+    } else {
+      indexCacheRef.current = {}
+      setIndexCache({})
+    }
+  }, [])
 
   // load cache on mount/conn change
   useEffect(() => {
@@ -38,28 +125,30 @@ export default function SchemaPage() {
     setLoading(true)
     setError(null)
     if (!userConnId) {
-      // no connection → empty view, nudge to choose connection
-      setTables([]); setSchemas([]); setDatabases([]); setDdls({}); setCachedAt(null)
+      applyPayload(null, null)
       setLoading(false)
       return
     }
+    indexCacheRef.current = {}
+    setIndexCache({})
     readSchemaCache(userConnId)
       .then((res) => {
         if (res) {
-          setTables((res.payload as any).tables || [])
-          setSchemas((res.payload as any).schemas || [])
-          setDatabases((res.payload as any).databases || [])
-          const map: Record<string, string> = {}
-          for (const d of ((res.payload as any).ddls || [])) map[`${d.schema}.${d.name}`] = d.ddl
-          setDdls(map)
-          setCachedAt(res.updatedAt || null)
+          applyPayload(res.payload, res.updatedAt || null)
+          if (userConnId) {
+            applySchemaMetadataPayload(userConnId, res.payload, res.updatedAt || undefined)
+          }
         } else {
-          setTables([]); setSchemas([]); setDatabases([]); setDdls({}); setCachedAt(null)
+          applyPayload(null, null)
         }
       })
       .catch((e) => setError(String(e?.message || e)))
       .finally(() => setLoading(false))
-  }, [userConnId])
+  }, [userConnId, applyPayload])
+
+  useEffect(() => {
+    setPage(1)
+  }, [selectedSchema, search, userConnId, hideSignature])
 
   // keyboard shortcuts: '/' focus, Esc clear
   useEffect(() => {
@@ -80,17 +169,16 @@ export default function SchemaPage() {
     try {
       const dsn = await getDsnForConn(userConnId)
       const res = await introspectPostgres(dsn)
-      await writeSchemaCache(userConnId, res)
-      setTables(res.tables || [])
-      setDatabases(res.databases || [])
-      setSchemas(res.schemas || [])
-      const map: Record<string, string> = {}
-      for (const d of res.ddls || []) map[`${d.schema}.${d.name}`] = d.ddl
-      setDdls(map)
-      setCachedAt(Math.floor(Date.now() / 1000))
+      const payload = asSchemaCachePayload(res)
+      await writeSchemaCache(userConnId, payload)
+      const nowSec = Math.floor(Date.now() / 1000)
+      applyPayload(payload, nowSec)
+      if (userConnId) {
+        applySchemaMetadataPayload(userConnId, payload, nowSec)
+      }
     } catch (e: any) {
       const msg = String(e?.message || e)
-      if (/secure storage|keyring|No matching entry/i.test(msg)) {
+      if (/dsn_cipher_missing|local_cipher_decrypt_failed|connection_not_found|secret_decrypt_failed/i.test(msg)) {
         setError('未找到当前连接的凭据。请到“Connections”页面重新保存该连接，或重新选择连接后再试。')
       } else {
         setError(msg)
@@ -113,6 +201,17 @@ export default function SchemaPage() {
         return true
       })
   ), [tables, selectedSchema, searchLower, rules])
+  const totalTables = filteredTables.length
+  const totalPages = Math.max(1, Math.ceil(totalTables / pageSize))
+  const paginatedTables = useMemo(() => (
+    filteredTables.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize)
+  ), [filteredTables, page, pageSize])
+  const startIndex = totalTables === 0 ? 0 : (page - 1) * pageSize + 1
+  const endIndex = totalTables === 0 ? 0 : Math.min(totalTables, page * pageSize)
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   // indexes modal
   const [idxOpen, setIdxOpen] = useState(false)
@@ -122,11 +221,23 @@ export default function SchemaPage() {
   const [idxTarget, setIdxTarget] = useState<{ schema: string; table: string } | null>(null)
   const openIndexes = async (schema: string, table: string) => {
     if (!userConnId) return
-    setIdxTarget({ schema, table }); setIdxOpen(true); setIdxLoading(true); setIdxError(null)
+    const fq = `${schema}.${table}`
+    setIdxTarget({ schema, table })
+    setIdxOpen(true)
+    setIdxError(null)
+    const cached = indexCacheRef.current[fq] ?? indexCache[fq]
+    if (cached) {
+      setIdxLoading(false)
+      setIndexes(cached)
+      return
+    }
+    setIdxLoading(true)
     try {
       const dsn = await getDsnForConn(userConnId)
       const rows = await loadIndexes(dsn, schema, table)
       setIndexes(rows)
+      indexCacheRef.current = { ...indexCacheRef.current, [fq]: rows }
+      setIndexCache((prev) => ({ ...prev, [fq]: rows }))
     } catch (e: any) {
       setIdxError(String(e?.message || e))
     } finally {
@@ -155,7 +266,7 @@ export default function SchemaPage() {
               label="筛选 Schema"
               placeholder="全部"
               value={selectedSchema}
-              onChange={(v) => setSelectedSchema(v || '')}
+              onChange={(v) => { setSelectedSchema(v || ''); setPage(1) }}
               data={[{ value: '', label: '全部 Schema' }, ...schemas.map((s) => ({ value: s, label: s }))]}
               styles={{ root: { width: 240 } }}
             />
@@ -163,7 +274,7 @@ export default function SchemaPage() {
               label="搜索表"
               placeholder="输入表名或 schema.table"
               value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
+              onChange={(e) => { setSearch(e.currentTarget.value); setPage(1) }}
               ref={searchRef}
               rightSection={search ? (
                 <ActionIcon size="sm" variant="subtle" onClick={() => setSearch('')} aria-label="清空搜索">
@@ -207,6 +318,29 @@ export default function SchemaPage() {
           </Group>
         </div>
 
+        {totalTables > 0 && (
+          <Group justify="space-between" align="center">
+            <Text c="dimmed" size="sm">当前显示第 {startIndex}-{endIndex} 张表，共 {totalTables} 张</Text>
+            <Group gap="xs" align="center">
+              <Select
+                size="sm"
+                aria-label="每页数量"
+                value={String(pageSize)}
+                data={PAGE_SIZE_OPTIONS.map((size) => ({ value: String(size), label: `${size} / 页` }))}
+                onChange={(value) => {
+                  const next = value ? Number(value) : PAGE_SIZE_OPTIONS[0]
+                  setPageSize(next)
+                  setPage(1)
+                }}
+                styles={{ root: { width: 140 } }}
+              />
+              {totalPages > 1 && (
+                <Pagination value={page} onChange={setPage} total={totalPages} size="sm" />
+              )}
+            </Group>
+          </Group>
+        )}
+
         {!loading && error && (
           <Text c="red">加载失败：{error}</Text>
         )}
@@ -216,7 +350,7 @@ export default function SchemaPage() {
           </Paper>
         )}
 
-        {filteredTables.map((t) => (
+        {paginatedTables.map((t) => (
           <Paper withBorder p="sm" key={`${t.schema}.${t.name}`}>
             <Group justify="space-between" align="center">
               <Title order={5}>

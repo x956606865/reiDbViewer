@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo } from "react";
 import {
   ActionIcon,
   Button,
@@ -8,13 +8,14 @@ import {
   Switch,
   Table,
   Text,
-  Textarea,
   TextInput,
   Title,
   Group,
 } from "@mantine/core";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { DynamicColumnDef } from "@rei-db-view/types/appdb";
+import type { editor } from "monaco-editor";
+import { CodeEditor } from "@/components/code/CodeEditor";
 
 export function DynamicColumnsEditor({
   dynCols,
@@ -23,6 +24,18 @@ export function DynamicColumnsEditor({
   dynCols: DynamicColumnDef[];
   setDynCols: React.Dispatch<React.SetStateAction<DynamicColumnDef[]>>;
 }) {
+  const editorOptions = useMemo<editor.IStandaloneEditorConstructionOptions>(
+    () => ({
+      tabSize: 2,
+      insertSpaces: true,
+      fontSize: 13,
+      wordWrap: "on",
+      minimap: { enabled: false },
+      lineNumbers: "off",
+    }),
+    [],
+  );
+
   return (
     <Paper withBorder p="md">
       <Title order={4}>动态列</Title>
@@ -57,17 +70,21 @@ export function DynamicColumnsEditor({
                   }}
                 />
               </Table.Td>
-              <Table.Td>
-                <Textarea
+              <Table.Td style={{ minWidth: 420 }}>
+                <CodeEditor
                   value={dc.code}
-                  onChange={(e) => {
-                    const val = e.currentTarget.value;
-                    setDynCols((arr) => arr.map((x, idx) => (idx === i ? { ...x, code: val } : x)));
-                  }}
-                  autosize
-                  minRows={3}
-                  styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
-                  placeholder="(row, vars, helpers) => null"
+                  onChange={(val) =>
+                    setDynCols((arr) =>
+                      arr.map((x, idx) => (idx === i ? { ...x, code: val } : x))
+                    )
+                  }
+                  language="javascript"
+                  height={160}
+                  minHeight={140}
+                  options={editorOptions}
+                  ariaLabel={`Dynamic column code ${dc.name ?? i}`}
+                  modelPath={`file:///dynamic-columns/${i}.js`}
+                  placeholder="// 函数签名: (row, vars, helpers) => any"
                 />
               </Table.Td>
               <Table.Td>
@@ -107,4 +124,3 @@ export function DynamicColumnsEditor({
     </Paper>
   );
 }
-
