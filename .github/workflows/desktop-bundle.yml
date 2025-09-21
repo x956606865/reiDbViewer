@@ -131,6 +131,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build desktop bundles
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
         run: pnpm --filter @rei-db-view/desktop build:tauri
 
       - name: Upload bundle artifacts
