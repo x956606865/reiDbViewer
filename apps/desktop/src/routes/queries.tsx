@@ -9,6 +9,7 @@ import {
   Button,
   Group,
   LoadingOverlay,
+  Modal,
   Paper,
   ScrollArea,
   Stack,
@@ -132,6 +133,8 @@ export default function QueriesPage() {
   const [pgCountLoaded, setPgCountLoaded] = useState(false);
   const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   const [queryTiming, setQueryTiming] = useState<QueryTimingState | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SavedItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
   const lastExecSignatureRef = useRef<string | null>(null);
   const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
@@ -258,6 +261,11 @@ export default function QueriesPage() {
     });
   };
 
+  const openDeleteDialog = useCallback((item: SavedItem) => {
+    setDeleteBusy(false);
+    setDeleteTarget(item);
+  }, []);
+
   const onNew = () => {
     setMode('edit');
     setCurrentId(null);
@@ -382,17 +390,36 @@ export default function QueriesPage() {
     }
   };
 
-  const onDelete = async () => {
+  const onDelete = () => {
     if (!currentId) return;
-    const ok = window.confirm('确定要归档当前查询吗？');
-    if (!ok) return;
+    const existing =
+      items.find((it) => it.id === currentId) ?? {
+        id: currentId,
+        name: name.trim() || currentId,
+        description: description.trim() || null,
+        variables: vars,
+        createdAt: null,
+        updatedAt: null,
+      };
+    openDeleteDialog(existing);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    const target = deleteTarget;
     try {
-      await archiveSavedSql(currentId);
-      setInfo('已归档当前查询');
-      refresh();
-      onNew();
+      await archiveSavedSql(target.id);
+      if (currentId === target.id) {
+        onNew();
+      }
+      await refresh();
+      setInfo(`已归档 ${target.name}`);
+      setDeleteTarget(null);
     } catch (e: any) {
       setError(String(e?.message || e));
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -1113,6 +1140,32 @@ export default function QueriesPage() {
         overlayProps={{ blur: 2 }}
         loaderProps={{ children: busy || '处理中...' }}
       />
+      <Modal
+        opened={!!deleteTarget}
+        onClose={() => {
+          if (!deleteBusy) setDeleteTarget(null);
+        }}
+        title="确认归档"
+        centered
+        closeOnClickOutside={!deleteBusy}
+        closeOnEscape={!deleteBusy}
+      >
+        <Text size="sm">
+          确认归档「{deleteTarget?.name ?? ''}」？归档后可在导出文件中手动恢复。
+        </Text>
+        <Group justify="flex-end" mt="md">
+          <Button
+            variant="default"
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleteBusy}
+          >
+            取消
+          </Button>
+          <Button color="red" onClick={confirmDelete} loading={deleteBusy}>
+            归档
+          </Button>
+        </Group>
+      </Modal>
       <Group align="flex-start" style={{ height: '100%' }}>
         <SavedQueriesSidebar
           items={items}
@@ -1146,17 +1199,7 @@ export default function QueriesPage() {
           busy={busy}
           onOpenItemRun={(it) => loadAndOpen(it.id, 'run')}
           onOpenItemEdit={(it) => loadAndOpen(it.id, 'edit')}
-          onDeleteItem={async (it) => {
-            const ok = window.confirm(`确认归档“${it.name}”？`);
-            if (!ok) return;
-            try {
-              await archiveSavedSql(it.id);
-              setInfo(`已归档 ${it.name}`);
-              refresh();
-            } catch (e: any) {
-              setError(String(e?.message || e));
-            }
-          }}
+          onDeleteItem={(it) => openDeleteDialog(it)}
         />
         <ScrollArea style={{ flex: 1 }}>
           <Stack gap="md" maw={1800}>
