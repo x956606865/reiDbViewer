@@ -26,6 +26,7 @@ import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 import { SavedQueriesSidebar } from '@/components/queries/SavedQueriesSidebar';
 import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
+import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
 import type { SavedItem } from '@/components/queries/types';
 import {
   getSavedSql,
@@ -42,6 +43,9 @@ import {
   executeSavedSql,
   explainSavedSql,
   computeCalcSql,
+  previewTempSql,
+  executeTempSql,
+  explainTempSql,
   QueryError,
 } from '@/services/pgExec';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
@@ -90,6 +94,7 @@ function useCurrentConnIdState() {
 }
 
 const defaultSql = 'SELECT * FROM users LIMIT 10';
+const defaultTempSql = 'SELECT 1;';
 
 export default function QueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -97,10 +102,11 @@ export default function QueriesPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [mode, setMode] = useState<'edit' | 'run'>('run');
+  const [mode, setMode] = useState<'edit' | 'run' | 'temp'>('run');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [sql, setSql] = useState(defaultSql);
+  const [tempSql, setTempSql] = useState(defaultTempSql);
   const [vars, setVars] = useState<SavedQueryVariableDef[]>([]);
   const [runValues, setRunValues] = useState<Record<string, any>>({});
   const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([]);
@@ -273,6 +279,26 @@ export default function QueriesPage() {
     lastExecSignatureRef.current = null;
   };
 
+  const onTempQueryMode = () => {
+    setMode('temp');
+    setCurrentId(null);
+    setError(null);
+    setInfo('已切换为临时查询模式。');
+    setPreviewSQL('');
+    setRows([]);
+    setGridCols([]);
+    setCalcResults({});
+    setTextResult(null);
+    setQueryTiming(null);
+    setPgPage(1);
+    setPgTotalRows(null);
+    setPgTotalPages(null);
+    setPgCountLoaded(false);
+    setTempSql((prev) => (prev && prev.trim().length > 0 ? prev : defaultTempSql));
+    calcAutoTriggeredRef.current = {};
+    lastExecSignatureRef.current = null;
+  };
+
   const loadAndOpen = useCallback(
     async (id: string, focusMode: 'run' | 'edit') => {
       setError(null);
@@ -371,6 +397,30 @@ export default function QueriesPage() {
   };
 
   const onPreview = async (override?: { page?: number; pageSize?: number }) => {
+    if (mode === 'temp') {
+      if (!tempSql.trim()) {
+        setError('请先输入 SQL。');
+        return;
+      }
+      setIsPreviewing(true);
+      setError(null);
+      try {
+        const res = await previewTempSql(tempSql);
+        setPreviewSQL(res.previewInline || res.previewText);
+        requestAnimationFrame(() => {
+          sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        setInfo('已生成 SQL 预览');
+        if (override?.pageSize) setPgSize(override.pageSize);
+        if (override?.page) setPgPage(override.page);
+      } catch (e: any) {
+        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
+        setError(msg);
+      } finally {
+        setIsPreviewing(false);
+      }
+      return;
+    }
     if (!currentId) {
       setError('请先选择或保存查询再预览。');
       return;
@@ -406,6 +456,122 @@ export default function QueriesPage() {
     forceCount?: boolean;
     countOnly?: boolean;
   }) => {
+    if (mode === 'temp') {
+      if (!userConnId) {
+        setError('未设置当前连接，请先在 Connections 选择。');
+        return;
+      }
+      if (!tempSql.trim()) {
+        setError('请先输入 SQL。');
+        return;
+      }
+      setIsExecuting(true);
+      setError(null);
+      setInfo(null);
+      setQueryTiming(null);
+      const start = getNow();
+      const pagination = {
+        enabled: pgEnabled,
+        page: override?.page ?? pgPage,
+        pageSize: override?.pageSize ?? pgSize,
+        withCount: override?.forceCount || (!pgCountLoaded && pgEnabled) || false,
+        countOnly: !!override?.countOnly,
+      };
+      try {
+        const res = await executeTempSql({
+          sql: tempSql,
+          userConnId,
+          pagination,
+          allowWrite: false,
+        });
+        const elapsedMs = Math.round(getNow() - start);
+        const resConnectMs = res.timing?.connectMs ?? null;
+        const resQueryMs = res.timing?.queryMs ?? null;
+        const resCountMs = res.timing?.countMs ?? null;
+        if (override?.countOnly) {
+          if (res.totalRows != null) {
+            setPgTotalRows(res.totalRows);
+            setPgTotalPages(res.totalPages ?? null);
+            setPgCountLoaded(true);
+            setInfo('已刷新计数');
+          }
+          setQueryTiming((prev) => ({
+            totalMs: elapsedMs,
+            connectMs: resConnectMs,
+            queryMs: prev?.queryMs ?? null,
+            countMs: resCountMs,
+          }));
+          return;
+        }
+        setPreviewSQL(res.sql);
+        setRows(res.rows);
+        setGridCols(res.columns);
+        setTextResult(null);
+        setQueryTiming({
+          totalMs: elapsedMs,
+          connectMs: resConnectMs,
+          queryMs: resQueryMs,
+          countMs: resCountMs,
+        });
+        if (res.page) setPgPage(res.page);
+        if (res.pageSize) setPgSize(res.pageSize);
+        if (res.totalRows != null) {
+          setPgTotalRows(res.totalRows);
+          setPgTotalPages(res.totalPages ?? null);
+          setPgCountLoaded(true);
+        } else if (res.countSkipped) {
+          setPgTotalRows(null);
+          setPgTotalPages(null);
+          setPgCountLoaded(false);
+        }
+      } catch (e: any) {
+        if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
+          setPreviewSQL(e.previewInline || '');
+          const ok = window.confirm('该 SQL 可能修改数据，是否继续执行？');
+          if (!ok) {
+            setError('已取消执行。');
+            setQueryTiming(null);
+          } else {
+            const retryStart = getNow();
+            try {
+              const res2 = await executeTempSql({
+                sql: tempSql,
+                userConnId,
+                pagination: {
+                  enabled: pgEnabled,
+                  page: pgPage,
+                  pageSize: pgSize,
+                },
+                allowWrite: true,
+              });
+              const retryElapsed = Math.round(getNow() - retryStart);
+              setPreviewSQL(res2.sql);
+              setRows(res2.rows);
+              setGridCols(res2.columns);
+              setTextResult(null);
+              setQueryTiming({
+                totalMs: retryElapsed,
+                connectMs: res2.timing?.connectMs ?? null,
+                queryMs: res2.timing?.queryMs ?? null,
+                countMs: res2.timing?.countMs ?? null,
+              });
+            } catch (ex: any) {
+              const msg2 =
+                ex instanceof QueryError ? ex.message : String(ex?.message || ex);
+              setError(msg2);
+              setQueryTiming(null);
+            }
+          }
+        } else {
+          const msg = e instanceof QueryError ? e.message : String(e?.message || e);
+          setError(msg);
+          setQueryTiming(null);
+        }
+      } finally {
+        setIsExecuting(false);
+      }
+      return;
+    }
     if (!currentId) {
       setError('请先选择或保存查询后再执行。');
       return;
@@ -561,6 +727,44 @@ export default function QueriesPage() {
   };
 
   const onExplain = async () => {
+    if (mode === 'temp') {
+      if (!userConnId) {
+        setError('未设置当前连接，请先在 Connections 选择。');
+        return;
+      }
+      if (!tempSql.trim()) {
+        setError('请先输入 SQL。');
+        return;
+      }
+      setIsExecuting(true);
+      setError(null);
+      setQueryTiming(null);
+      try {
+        const res = await explainTempSql({
+          sql: tempSql,
+          userConnId,
+          format: explainFormat,
+          analyze: explainAnalyze,
+        });
+        setPreviewSQL(res.previewInline);
+        if (explainFormat === 'json') {
+          setTextResult(JSON.stringify(res.rows ?? [], null, 2));
+          setRows([]);
+          setGridCols([]);
+        } else {
+          setTextResult(res.text ?? '');
+          setRows([]);
+          setGridCols([]);
+        }
+        setInfo('Explain 完成');
+      } catch (e: any) {
+        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
+        setError(msg);
+      } finally {
+        setIsExecuting(false);
+      }
+      return;
+    }
     if (!currentId) {
       setError('请先选择查询再 Explain。');
       return;
@@ -672,6 +876,7 @@ export default function QueriesPage() {
   );
 
   const runtimeCalcItems = useMemo(() => {
+    if (mode !== 'run') return [];
     const base: CalcItemDef[] = [];
     if (pgEnabled) {
       base.push(
@@ -688,7 +893,7 @@ export default function QueriesPage() {
       ...base,
       ...calcItems.map((ci) => normalizeCalcItem(ci)),
     ];
-  }, [calcItems, pgEnabled]);
+  }, [calcItems, pgEnabled, mode]);
 
   useEffect(() => {
     runtimeCalcItemsRef.current = runtimeCalcItems;
@@ -703,6 +908,7 @@ export default function QueriesPage() {
         pageSizeOverride?: number;
       }
     ) => {
+      if (mode !== 'run') return;
       const key = ci.name;
       const variant = (ci.kind ?? 'single') as 'single' | 'group';
       const effectiveRows = opts?.rowsOverride ?? rows;
@@ -896,7 +1102,7 @@ export default function QueriesPage() {
         });
       }
     },
-    [currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
+    [mode, currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
   );
 
   return (
@@ -934,6 +1140,7 @@ export default function QueriesPage() {
             setInfo(`已创建文件夹：${path}`);
           }}
           onNewQuery={() => onNew()}
+          onTempQuery={onTempQueryMode}
           onExportAll={onExportAll}
           onImportFile={onImportFile}
           busy={busy}
@@ -997,6 +1204,47 @@ export default function QueriesPage() {
                 setDynCols={setDynCols}
                 calcItems={calcItems}
                 setCalcItems={setCalcItems}
+              />
+            ) : mode === 'temp' ? (
+              <TempQueryPanel
+                userConnId={userConnId}
+                currentConn={currentConn}
+                sql={tempSql}
+                setSql={setTempSql}
+                pgEnabled={pgEnabled}
+                setPgEnabled={(v) => {
+                  setPgEnabled(v);
+                  if (!v) {
+                    setPgTotalRows(null);
+                    setPgTotalPages(null);
+                  }
+                }}
+                pgSize={pgSize}
+                setPgSize={(n) => setPgSize(n)}
+                pgPage={pgPage}
+                setPgPage={(n) => setPgPage(n)}
+                pgTotalRows={pgTotalRows}
+                pgTotalPages={pgTotalPages}
+                onResetCounters={() => {
+                  setPgTotalRows(null);
+                  setPgTotalPages(null);
+                  setPgCountLoaded(false);
+                }}
+                onPreview={() => onPreview()}
+                onExecute={(opts) => onExecute(opts)}
+                onExplain={onExplain}
+                isExecuting={isExecuting}
+                sqlPreviewRef={sqlPreviewRef}
+                isPreviewing={isPreviewing}
+                previewSQL={previewSQL}
+                textResult={textResult}
+                gridCols={gridCols}
+                rows={rows}
+                queryTiming={queryTiming}
+                explainFormat={explainFormat}
+                setExplainFormat={setExplainFormat}
+                explainAnalyze={explainAnalyze}
+                setExplainAnalyze={setExplainAnalyze}
               />
             ) : (
               <RunQueryPanel

@@ -14,6 +14,7 @@ export function SavedQueriesSidebar({
   extraFolders,
   onCreateFolder,
   onNewQuery,
+  onTempQuery,
   onExportAll,
   onImportFile,
   busy,
@@ -27,6 +28,7 @@ export function SavedQueriesSidebar({
   extraFolders: Set<string>;
   onCreateFolder: (normPath: string) => void;
   onNewQuery: () => void;
+  onTempQuery: () => void;
   onExportAll: () => void;
   onImportFile: (file: File) => void;
   busy: string | null;
@@ -54,6 +56,9 @@ export function SavedQueriesSidebar({
         </Button>
         <Button size="xs" variant="default" onClick={onNewQuery}>
           新建查询
+        </Button>
+        <Button size="xs" variant="filled" color="blue" onClick={onTempQuery}>
+          临时查询
         </Button>
         <Button size="xs" variant="default" onClick={onExportAll} disabled={!!busy}>
           {busy === '导出中...' ? '导出中...' : '导出全部'}
@@ -100,4 +105,3 @@ export function SavedQueriesSidebar({
     </LeftDrawer>
   );
 }
-
