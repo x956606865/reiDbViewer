@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { ActionIcon, Code, Drawer, Group, ScrollArea, Tooltip } from '@mantine/core'
 import { CopyButton } from '@mantine/core'
 import { IconCopy, IconEye } from '@tabler/icons-react'
-import ReactJson from 'react-json-view'
+
+import JsonTree from './JsonTree'
 
 type JsonCellProps = {
   value: unknown
@@ -82,16 +83,7 @@ export default function JsonCell({ value, previewMax = 20 }: JsonCellProps) {
       <Drawer opened={opened} onClose={() => setOpened(false)} title="JSON 详情" size="lg" position="right">
         <ScrollArea h={520} type="auto">
           {parsed && typeof parsed === 'object' ? (
-            // @ts-ignore react-json-view runtime component
-            <ReactJson
-              name={null}
-              src={parsed as any}
-              collapsed={1}
-              enableClipboard={false}
-              displayDataTypes={false}
-              displayObjectSize={false}
-              style={{ background: 'transparent', fontFamily: 'var(--mantine-font-family-monospace)' }}
-            />
+            <JsonTree value={parsed} />
           ) : (
             <Code block>{pretty}</Code>
           )}
@@ -100,4 +92,3 @@ export default function JsonCell({ value, previewMax = 20 }: JsonCellProps) {
     </>
   )
 }
-
