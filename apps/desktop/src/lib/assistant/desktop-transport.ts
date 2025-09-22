@@ -98,6 +98,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
   private readonly onFallback?: (error: unknown) => void
   private readonly onSuccess?: () => void
   private providerSettings: AssistantProviderSettings = DEFAULT_ASSISTANT_SETTINGS
+  private activeProfileId: string | null = null
   private lastMetadata: AssistantTransportMetadata = {
     toolCalls: [],
     safety: null,
@@ -115,8 +116,9 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
     this.contextSummary = formatContextSummary(chunks)
   }
 
-  setProviderSettings(settings: AssistantProviderSettings) {
+  setProviderSettings(settings: AssistantProviderSettings, profileId: string) {
     this.providerSettings = settings
+    this.activeProfileId = profileId
   }
 
   consumeLastMetadata(): AssistantTransportMetadata {
@@ -146,7 +148,7 @@ export class DesktopChatTransport implements ChatTransport<UIMessage> {
 
   private async resolveApiKey(provider: AssistantProvider): Promise<string | undefined> {
     try {
-      const value = await getAssistantApiKey(provider)
+      const value = await getAssistantApiKey(provider, this.activeProfileId)
       const trimmed = value.trim()
       return trimmed.length > 0 ? trimmed : undefined
     } catch (error) {

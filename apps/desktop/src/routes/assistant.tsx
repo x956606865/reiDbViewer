@@ -241,9 +241,10 @@ export default function AssistantPage() {
   const runtimeSettings = runtime.settings
 
   useEffect(() => {
-    transport.setProviderSettings(runtimeSettings)
+    transport.setProviderSettings(runtimeSettings, runtime.profile.id)
   }, [
     transport,
+    runtime.profile.id,
     runtimeSettings.provider,
     runtimeSettings.model,
     runtimeSettings.baseUrl,
@@ -261,7 +262,7 @@ export default function AssistantPage() {
           if (!ignore) setApiKeyReady(true)
           return
         }
-        const keyPresent = await hasAssistantApiKey(provider)
+        const keyPresent = await hasAssistantApiKey(provider, runtime.profile.id)
         if (!ignore) setApiKeyReady(Boolean(keyPresent))
       } catch (error) {
         console.warn('failed to verify assistant api key', error)
@@ -271,7 +272,7 @@ export default function AssistantPage() {
     return () => {
       ignore = true
     }
-  }, [runtime.profile.provider])
+  }, [runtime.profile.provider, runtime.profile.id])
 
   useEffect(() => {
     transport.setContextChunks(contextChunks)

@@ -1,33 +1,104 @@
 import type { AssistantProvider } from './provider-settings'
 import { deleteEncryptedPref, getEncryptedPref, setEncryptedPref } from '@/lib/secret-store'
 
-const prefKeyOf = (provider: AssistantProvider) => `assistant.apiKey.${provider}`
+const profilePrefKey = (profileId: string) => `assistant.apiKey.profile.${profileId}`
+const providerPrefKey = (provider: AssistantProvider) => `assistant.apiKey.${provider}`
 
-export async function setAssistantApiKey(provider: AssistantProvider, apiKey: string): Promise<void> {
+function normalizeProfileId(profileId: string | null | undefined): string | null {
+  const trimmed = profileId?.trim()
+  return trimmed && trimmed.length > 0 ? trimmed : null
+}
+
+async function setPref(key: string, value: string) {
+  await setEncryptedPref(key, value)
+}
+
+async function deletePref(key: string) {
+  await deleteEncryptedPref(key)
+}
+
+async function readPref(key: string): Promise<string | null> {
+  const value = await getEncryptedPref(key)
+  return value && value.trim().length > 0 ? value : null
+}
+
+async function getProfileScopedKey(provider: AssistantProvider, profileId: string | null): Promise<string | null> {
+  const normalized = normalizeProfileId(profileId)
+  if (!normalized) return null
+  const value = await readPref(profilePrefKey(normalized))
+  if (value) return value
+  return null
+}
+
+async function getProviderFallbackKey(provider: AssistantProvider): Promise<string | null> {
+  return await readPref(providerPrefKey(provider))
+}
+
+export async function setAssistantApiKey(
+  provider: AssistantProvider,
+  profileId: string | null | undefined,
+  apiKey: string,
+): Promise<void> {
   const trimmed = apiKey.trim()
   if (!trimmed) {
-    await deleteAssistantApiKey(provider)
+    await deleteAssistantApiKey(provider, profileId)
     return
   }
-  await setEncryptedPref(prefKeyOf(provider), trimmed)
-}
-
-export async function getAssistantApiKey(provider: AssistantProvider): Promise<string> {
-  const secret = await getEncryptedPref(prefKeyOf(provider))
-  if (!secret) {
-    throw new Error('assistant_api_key_missing')
+  const normalizedProfile = normalizeProfileId(profileId)
+  if (normalizedProfile) {
+    await setPref(profilePrefKey(normalizedProfile), trimmed)
+    await deletePref(providerPrefKey(provider))
+  } else {
+    await setPref(providerPrefKey(provider), trimmed)
   }
-  return secret
 }
 
-export async function deleteAssistantApiKey(provider: AssistantProvider): Promise<void> {
-  await deleteEncryptedPref(prefKeyOf(provider))
+export async function getAssistantApiKey(
+  provider: AssistantProvider,
+  profileId: string | null | undefined,
+): Promise<string> {
+  const normalizedProfile = normalizeProfileId(profileId)
+  let fallback: string | null = null
+  if (normalizedProfile) {
+    const scoped = await getProfileScopedKey(provider, normalizedProfile)
+    if (scoped) return scoped
+    fallback = await getProviderFallbackKey(provider)
+    if (fallback) {
+      await setPref(profilePrefKey(normalizedProfile), fallback)
+      await deletePref(providerPrefKey(provider))
+      return fallback
+    }
+  }
+  if (fallback === null) {
+    fallback = await getProviderFallbackKey(provider)
+  }
+  if (fallback) return fallback
+  throw new Error('assistant_api_key_missing')
 }
 
-export async function hasAssistantApiKey(provider: AssistantProvider): Promise<boolean> {
+export async function deleteAssistantApiKey(
+  provider: AssistantProvider,
+  profileId: string | null | undefined,
+): Promise<void> {
+  const normalizedProfile = normalizeProfileId(profileId)
+  if (normalizedProfile) {
+    await deletePref(profilePrefKey(normalizedProfile))
+  }
+  await deletePref(providerPrefKey(provider))
+}
+
+export async function hasAssistantApiKey(
+  provider: AssistantProvider,
+  profileId: string | null | undefined,
+): Promise<boolean> {
   try {
-    const secret = await getEncryptedPref(prefKeyOf(provider))
-    return Boolean(secret && secret.trim().length > 0)
+    const normalizedProfile = normalizeProfileId(profileId)
+    if (normalizedProfile) {
+      const scoped = await getProfileScopedKey(provider, normalizedProfile)
+      if (scoped) return true
+    }
+    const fallback = await getProviderFallbackKey(provider)
+    return Boolean(fallback)
   } catch (error) {
     console.error('Failed to inspect assistant API key state', error)
     return false
@@ -35,5 +106,7 @@ export async function hasAssistantApiKey(provider: AssistantProvider): Promise<b
 }
 
 export const __test__ = {
-  prefKeyOf,
+  profilePrefKey,
+  providerPrefKey,
+  normalizeProfileId,
 }

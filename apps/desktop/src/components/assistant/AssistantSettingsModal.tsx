@@ -143,16 +143,17 @@ export function AssistantSettingsModal({
   }, [draftProfiles, activeProfileId])
 
   const refreshApiKey = useCallback(
-    async (provider: AssistantProvider) => {
+    async (profile: AssistantProviderProfile) => {
       if (!opened) return
       setCheckingKey(true)
       try {
-        const present = await hasAssistantApiKey(provider)
+        const provider = profile.provider
+        const present = await hasAssistantApiKey(provider, profile.id)
         const optionalProvider = isReadyWithoutKey(provider)
         setHasKey(Boolean(present))
         if (present) {
           try {
-            const storedKey = await getAssistantApiKey(provider)
+            const storedKey = await getAssistantApiKey(provider, profile.id)
             setApiKeyInput(storedKey)
             onApiKeyChange?.(true)
           } catch (loadError) {
@@ -172,7 +173,7 @@ export function AssistantSettingsModal({
         console.error('Failed to check provider API key presence', error)
         setHasKey(false)
         setApiKeyInput('')
-        const optionalProvider = isReadyWithoutKey(provider)
+        const optionalProvider = isReadyWithoutKey(profile.provider)
         onApiKeyChange?.(optionalProvider ? true : false)
         if (!optionalProvider) {
           setStatus({ color: 'red', text: '无法检测 API Key 状态，请稍后再试。' })
@@ -192,13 +193,13 @@ export function AssistantSettingsModal({
     setActiveProfileId(resolution.selection.profileId)
     setApiKeyInput('')
     setStatus(null)
-    void refreshApiKey(resolution.profile.provider)
+    void refreshApiKey(resolution.profile)
   }, [opened, profiles, selection, refreshApiKey])
 
   useEffect(() => {
     if (!opened || !activeProfile) return
-    void refreshApiKey(activeProfile.provider)
-  }, [opened, activeProfile?.provider, refreshApiKey])
+    void refreshApiKey(activeProfile)
+  }, [opened, activeProfile, refreshApiKey])
 
   useEffect(() => {
     if (!opened) {
@@ -416,7 +417,7 @@ export function AssistantSettingsModal({
     setActiveProfileId(next.id)
     setApiKeyInput('')
     setStatus(null)
-    void refreshApiKey(next.provider)
+    void refreshApiKey(next)
   }
 
   const handleRemoveProfile = () => {
@@ -431,7 +432,7 @@ export function AssistantSettingsModal({
     setActiveProfileId(resolution.selection.profileId)
     setApiKeyInput('')
     setStatus(null)
-    void refreshApiKey(resolution.profile.provider)
+    void refreshApiKey(resolution.profile)
   }
 
   const handleApiKeyChange = (value: string) => {
@@ -513,7 +514,7 @@ export function AssistantSettingsModal({
       const resolution = resolveAssistantRuntimeSettings(saved, preferredSelection)
       const trimmedInput = apiKeyInput.trim()
       if (trimmedInput) {
-        await setAssistantApiKey(activeProfile.provider, trimmedInput)
+        await setAssistantApiKey(activeProfile.provider, activeProfile.id, trimmedInput)
         setHasKey(true)
         setApiKeyInput(trimmedInput)
         onApiKeyChange?.(true)
@@ -535,7 +536,7 @@ export function AssistantSettingsModal({
     setSaving(true)
     setStatus(null)
     try {
-      await deleteAssistantApiKey(activeProfile.provider)
+      await deleteAssistantApiKey(activeProfile.provider, activeProfile.id)
       setHasKey(false)
       setApiKeyInput('')
       onApiKeyChange?.(isReadyWithoutKey(activeProfile.provider))

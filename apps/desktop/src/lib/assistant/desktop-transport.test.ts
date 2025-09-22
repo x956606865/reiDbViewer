@@ -55,7 +55,7 @@ describe('DesktopChatTransport', () => {
       reconnectToStream: vi.fn(),
     }
     const transport = new DesktopChatTransport({ fallback })
-    transport.setProviderSettings(providerSettings)
+    transport.setProviderSettings(providerSettings, 'profile_test')
     transport.setContextChunks([chunk({ id: 'ctx_1' })])
     await transport.sendMessages({ messages: [sampleMessage] })
     expect(invokeMock).toHaveBeenCalledTimes(1)
@@ -65,7 +65,7 @@ describe('DesktopChatTransport', () => {
     expect(args.payload.context_chunks[0]?.id).toBe('ctx_1')
     expect(args.payload.provider).toEqual(providerSettings)
     expect(args.payload.apiKey).toBe('sk-test')
-    expect(getAssistantApiKeyMock).toHaveBeenCalledWith('openai')
+    expect(getAssistantApiKeyMock).toHaveBeenCalledWith('openai', 'profile_test')
   })
 
   it('falls back to mock transport when invoke fails', async () => {
@@ -75,6 +75,7 @@ describe('DesktopChatTransport', () => {
       reconnectToStream: vi.fn(),
     }
     const transport = new DesktopChatTransport({ fallback })
+    transport.setProviderSettings(providerSettings, 'profile_test')
     await transport.sendMessages({ messages: [sampleMessage] })
     expect(fallback.sendMessages).toHaveBeenCalled()
   })
