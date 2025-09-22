@@ -109,7 +109,7 @@ export function RunParamsPanel({
                   <Select
                     data={(v.options || []).map((o) => ({ value: o, label: o }))}
                     value={
-                      typeof runValues[v.name] === "string"
+                      typeof runValues[v.name] === "string" && runValues[v.name] !== ""
                         ? (runValues[v.name] as string)
                         : typeof v.default === "string"
                         ? (v.default as string)

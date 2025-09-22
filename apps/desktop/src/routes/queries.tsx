@@ -88,6 +88,51 @@ const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): b
   return true;
 };
 
+const shallowEqualRecord = (
+  a: Record<string, any>,
+  b: Record<string, any>,
+): boolean => {
+  if (a === b) return true;
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+};
+
+const RUN_KEY_DRAFT = '__draft__';
+const RUN_KEY_TEMP = '__temp__';
+
+const resolveRunKey = (
+  mode: 'edit' | 'run' | 'temp',
+  id: string | null,
+): string => {
+  if (mode === 'temp') return RUN_KEY_TEMP;
+  if (!id) return RUN_KEY_DRAFT;
+  return id;
+};
+
+const mergeRunValuesWithDefaults = (
+  defs: SavedQueryVariableDef[],
+  existing?: Record<string, any>,
+): Record<string, any> => {
+  const merged: Record<string, any> = {};
+  for (const def of defs) {
+    const name = def?.name;
+    if (!name) continue;
+    if (existing && Object.prototype.hasOwnProperty.call(existing, name)) {
+      merged[name] = existing[name];
+    } else if (def.default !== undefined) {
+      merged[name] = def.default;
+    } else {
+      merged[name] = '';
+    }
+  }
+  return merged;
+};
+
 function toSavedItem(summary: SavedSqlSummary): SavedItem {
   return {
     id: summary.id,
@@ -135,7 +180,49 @@ export default function QueriesPage() {
   const [sql, setSql] = useState(defaultSql);
   const [tempSql, setTempSql] = useState(defaultTempSql);
   const [vars, setVars] = useState<SavedQueryVariableDef[]>([]);
-  const [runValues, setRunValues] = useState<Record<string, any>>({});
+  const runValueStoreRef = useRef<Record<string, Record<string, any>>>(
+    {
+      [RUN_KEY_DRAFT]: {},
+      [RUN_KEY_TEMP]: {},
+    }
+  );
+  const [runValues, setRunValuesState] = useState<Record<string, any>>({});
+  const runKey = resolveRunKey(mode, currentId);
+  const syncRunValues = useCallback((key: string, values: Record<string, any>) => {
+    const store = runValueStoreRef.current;
+    const existing = store[key];
+    if (existing && shallowEqualRecord(existing, values)) return;
+    runValueStoreRef.current = {
+      ...store,
+      [key]: values,
+    };
+  }, []);
+  const setRunValues = useCallback<React.Dispatch<React.SetStateAction<Record<string, any>>>>(
+    (update) => {
+      setRunValuesState((prev) => {
+        const next =
+          typeof update === 'function'
+            ? (update(prev) as Record<string, any>)
+            : (update as Record<string, any>);
+        syncRunValues(runKey, next);
+        return next;
+      });
+    },
+    [runKey, syncRunValues],
+  );
+  const applyRunValues = useCallback(
+    (key: string, defs: SavedQueryVariableDef[]) => {
+      const store = runValueStoreRef.current;
+      const merged = mergeRunValuesWithDefaults(defs, store[key]);
+      const nextStore = {
+        ...store,
+        [key]: merged,
+      };
+      runValueStoreRef.current = nextStore;
+      setRunValuesState(merged);
+    },
+    [],
+  );
   const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([]);
   const [calcItems, setCalcItems] = useState<CalcItemDef[]>([]);
   const [previewSQL, setPreviewSQL] = useState('');
@@ -349,13 +436,15 @@ export default function QueriesPage() {
   }, []);
 
   const onNew = () => {
+    syncRunValues(runKey, runValues);
+    syncRunValues(RUN_KEY_DRAFT, {});
+    setRunValuesState({});
     setMode('edit');
     setCurrentId(null);
     setName('');
     setDescription('');
     setSql('');
     setVars([]);
-    setRunValues({});
     setDynCols([]);
     setCalcItems([]);
     setPreviewSQL('');
@@ -371,6 +460,9 @@ export default function QueriesPage() {
   };
 
   const onTempQueryMode = () => {
+    syncRunValues(runKey, runValues);
+    syncRunValues(RUN_KEY_TEMP, {});
+    setRunValuesState(runValueStoreRef.current[RUN_KEY_TEMP] ?? {});
     setMode('temp');
     setCurrentId(null);
     setError(null);
@@ -393,6 +485,7 @@ export default function QueriesPage() {
 
   const loadAndOpen = useCallback(
     async (id: string, focusMode: 'run' | 'edit') => {
+      syncRunValues(runKey, runValues);
       setError(null);
       setInfo(null);
       try {
@@ -405,9 +498,7 @@ export default function QueriesPage() {
         setSql(res.sql);
         const varDefs = res.variables || [];
         setVars(varDefs);
-        const defaults: Record<string, any> = {};
-        for (const v of varDefs) defaults[v.name] = v.default ?? '';
-        setRunValues(defaults);
+        applyRunValues(res.id, varDefs);
         setDynCols(res.dynamicColumns || []);
         setCalcItems(normalizeCalcItems(res.calcItems));
         setPreviewSQL('');
@@ -427,7 +518,7 @@ export default function QueriesPage() {
         setError(String(e?.message || e));
       }
     },
-    []
+    [applyRunValues, runKey, runValues, syncRunValues]
   );
 
   const onSave = async (asNew?: boolean) => {
