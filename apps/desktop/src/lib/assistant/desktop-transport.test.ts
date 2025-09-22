@@ -38,6 +38,7 @@ const providerSettings = {
   model: 'gpt-4o-mini',
   temperature: 0.3,
   maxTokens: 2048,
+  reasoningEffort: 'medium' as const,
   baseUrl: 'https://api.openai.com/v1',
 }
 

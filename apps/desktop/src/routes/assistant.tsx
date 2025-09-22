@@ -249,6 +249,7 @@ export default function AssistantPage() {
     runtimeSettings.baseUrl,
     runtimeSettings.temperature,
     runtimeSettings.maxTokens,
+    runtimeSettings.reasoningEffort,
   ])
 
   useEffect(() => {

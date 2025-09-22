@@ -3,11 +3,24 @@ import { parseJsonColumn } from '@/lib/sqlite-text'
 
 export type AssistantProvider = 'openai' | 'lmstudio' | 'ollama' | 'custom'
 
+export type AssistantReasoningEffort = 'minimal' | 'low' | 'medium' | 'high'
+
+const REASONING_EFFORT_PROVIDERS: ReadonlyArray<AssistantProvider> = ['openai', 'custom', 'lmstudio', 'ollama']
+const ALLOWED_REASONING_EFFORTS: ReadonlyArray<AssistantReasoningEffort> = ['minimal', 'low', 'medium', 'high']
+
+const DEFAULT_REASONING_EFFORTS: Record<AssistantProvider, AssistantReasoningEffort | null> = {
+  openai: 'medium',
+  lmstudio: 'medium',
+  ollama: 'medium',
+  custom: 'medium',
+}
+
 export type AssistantProviderSettings = {
   provider: AssistantProvider
   model: string
   temperature: number
   maxTokens: number | null
+  reasoningEffort: AssistantReasoningEffort | null
   baseUrl: string
 }
 
@@ -24,6 +37,7 @@ export type AssistantProviderProfile = {
   baseUrl: string
   temperature: number
   maxTokens: number | null
+  reasoningEffort: AssistantReasoningEffort | null
   models: AssistantProviderProfileModel[]
   defaultModelId: string
   createdAt: number
@@ -73,6 +87,7 @@ export const DEFAULT_ASSISTANT_SETTINGS: AssistantProviderSettings = {
   model: DEFAULT_MODELS.openai,
   temperature: DEFAULT_TEMPERATURE,
   maxTokens: DEFAULT_MAX_TOKENS,
+  reasoningEffort: DEFAULT_REASONING_EFFORTS.openai,
   baseUrl: DEFAULT_BASE_URLS.openai,
 }
 
@@ -120,6 +135,26 @@ function sanitizeBaseUrl(baseUrl: string | null | undefined, provider: Assistant
   }
 }
 
+export function supportsReasoningEffort(provider: AssistantProvider): boolean {
+  return REASONING_EFFORT_PROVIDERS.includes(provider)
+}
+
+export function getDefaultReasoningEffort(provider: AssistantProvider): AssistantReasoningEffort | null {
+  return DEFAULT_REASONING_EFFORTS[provider]
+}
+
+function normalizeReasoningEffort(
+  value: AssistantReasoningEffort | string | null | undefined,
+  provider: AssistantProvider,
+): AssistantReasoningEffort | null {
+  if (!supportsReasoningEffort(provider)) return null
+  if (typeof value !== 'string') return DEFAULT_REASONING_EFFORTS[provider]
+  const normalized = value.trim().toLowerCase() as AssistantReasoningEffort
+  return ALLOWED_REASONING_EFFORTS.includes(normalized)
+    ? normalized
+    : DEFAULT_REASONING_EFFORTS[provider]
+}
+
 function isSupportedProvider(provider: string | null | undefined): provider is AssistantProvider {
   return !!provider && SUPPORTED_PROVIDERS.includes(provider as AssistantProvider)
 }
@@ -151,11 +186,16 @@ export function normalizeAssistantSettings(
       ? DEFAULT_MAX_TOKENS
       : Number(input.maxTokens)
   const baseUrl = sanitizeBaseUrl((input as AssistantProviderSettings).baseUrl, provider)
+  const reasoningEffort = normalizeReasoningEffort(
+    (input as AssistantProviderSettings).reasoningEffort,
+    provider,
+  )
   return {
     provider,
     model,
     temperature,
     maxTokens,
+    reasoningEffort,
     baseUrl,
   }
 }
@@ -195,6 +235,7 @@ function normalizeProfile(raw: any, fallbackName: string): AssistantProviderProf
       ? DEFAULT_MAX_TOKENS
       : Number(raw.maxTokens)
   const baseUrl = sanitizeBaseUrl(raw.baseUrl, provider)
+  const reasoningEffort = normalizeReasoningEffort(raw.reasoningEffort, provider)
   const createdAt = Number.isFinite(raw.createdAt) ? Number(raw.createdAt) : now()
   const updatedAt = Number.isFinite(raw.updatedAt) ? Number(raw.updatedAt) : createdAt
   const modelsInput: Array<AssistantProviderProfileModel | string> = Array.isArray(raw.models)
@@ -233,6 +274,7 @@ function normalizeProfile(raw: any, fallbackName: string): AssistantProviderProf
     baseUrl,
     temperature,
     maxTokens,
+    reasoningEffort,
     models: normalizedModels,
     defaultModelId,
     createdAt,
@@ -250,6 +292,7 @@ function createDefaultProfile(): AssistantProviderProfile {
     baseUrl: DEFAULT_ASSISTANT_SETTINGS.baseUrl,
     temperature: DEFAULT_ASSISTANT_SETTINGS.temperature,
     maxTokens: DEFAULT_ASSISTANT_SETTINGS.maxTokens,
+    reasoningEffort: DEFAULT_ASSISTANT_SETTINGS.reasoningEffort,
     models: [model],
     defaultModelId: model.id,
     createdAt: timestamp,
@@ -258,13 +301,16 @@ function createDefaultProfile(): AssistantProviderProfile {
 }
 
 export function createAssistantProfile(
-  preset?: Partial<Pick<AssistantProviderProfile, 'name' | 'provider' | 'baseUrl' | 'temperature' | 'maxTokens'>> & {
+  preset?: Partial<
+    Pick<AssistantProviderProfile, 'name' | 'provider' | 'baseUrl' | 'temperature' | 'maxTokens' | 'reasoningEffort'>
+  > & {
     modelValue?: string
   },
 ): AssistantProviderProfile {
   const provider = preset?.provider && isSupportedProvider(preset.provider) ? preset.provider : DEFAULT_ASSISTANT_SETTINGS.provider
   const baseUrl = sanitizeBaseUrl(preset?.baseUrl, provider)
   const modelValue = sanitizeModelName(preset?.modelValue ?? DEFAULT_MODELS[provider], provider)
+  const reasoningEffort = normalizeReasoningEffort(preset?.reasoningEffort, provider)
   const model =
     normalizeModelEntry(
       {
@@ -285,6 +331,7 @@ export function createAssistantProfile(
       preset?.maxTokens === null || preset?.maxTokens === undefined || Number.isNaN(Number(preset?.maxTokens))
         ? DEFAULT_MAX_TOKENS
         : Number(preset?.maxTokens),
+    reasoningEffort,
     models: [model],
     defaultModelId: model.id,
     createdAt: timestamp,
@@ -329,6 +376,7 @@ async function loadLegacyProfile(): Promise<AssistantProviderProfile | null> {
       baseUrl: normalized.baseUrl,
       temperature: normalized.temperature,
       maxTokens: normalized.maxTokens,
+      reasoningEffort: normalized.reasoningEffort,
       models: [model],
       defaultModelId: model.id,
       createdAt: timestamp,
@@ -476,6 +524,7 @@ export function resolveAssistantRuntimeSettings(
     baseUrl: profile.baseUrl,
     temperature: profile.temperature,
     maxTokens: profile.maxTokens,
+    reasoningEffort: profile.reasoningEffort,
   }
   return {
     profile,

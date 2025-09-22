@@ -58,6 +58,19 @@ fn sanitize_markdown_text(input: &str) -> String {
     input.replace('&', "&amp;").replace('<', "&lt;")
 }
 
+fn resolve_reasoning_effort(provider: &str, effort: Option<&str>) -> Option<String> {
+    match provider {
+        "openai" | "custom" | "lmstudio" | "ollama" => {
+            let normalized = effort
+                .map(|value| value.trim().to_lowercase())
+                .filter(|value| matches!(value.as_str(), "minimal" | "low" | "medium" | "high"))
+                .unwrap_or_else(|| "medium".to_string());
+            Some(normalized)
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct AssistantChatMessage {
     role: String,
@@ -81,6 +94,8 @@ struct AssistantProviderSettings {
     temperature: f32,
     #[serde(default)]
     max_tokens: Option<u32>,
+    #[serde(default, rename = "reasoningEffort")]
+    reasoning_effort: Option<String>,
     #[serde(default, rename = "baseUrl")]
     base_url: Option<String>,
 }
@@ -177,6 +192,8 @@ struct OpenAiChatRequest {
     temperature: f32,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -752,6 +769,10 @@ async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatRe
         messages,
         temperature: payload.provider.temperature,
         max_tokens: payload.provider.max_tokens,
+        reasoning_effort: resolve_reasoning_effort(
+            provider_name.as_str(),
+            payload.provider.reasoning_effort.as_deref(),
+        ),
     };
     let api_key = payload
         .api_key

@@ -21,10 +21,13 @@ import {
   createAssistantProfile,
   getDefaultBaseUrl,
   getDefaultModel,
+  getDefaultReasoningEffort,
   getSupportedProviders,
   resolveAssistantRuntimeSettings,
+  supportsReasoningEffort,
   saveAssistantProviderProfiles,
   type AssistantProvider,
+  type AssistantReasoningEffort,
   type AssistantProviderProfile,
   type AssistantProviderProfileModel,
   type AssistantProfileSelection,
@@ -101,6 +104,15 @@ export function AssistantSettingsModal({
 }: AssistantSettingsModalProps) {
   const providerOptions = useMemo(
     () => getSupportedProviders().map((value) => ({ value, label: PROVIDER_LABELS[value] })),
+    [],
+  )
+  const reasoningOptions = useMemo(
+    () => [
+      { value: 'minimal', label: 'Minimal · 最短推理' },
+      { value: 'low', label: 'Low · 快速' },
+      { value: 'medium', label: 'Medium · 标准' },
+      { value: 'high', label: 'High · 深度' },
+    ],
     [],
   )
   const [draftProfiles, setDraftProfiles] = useState<DraftProfile[]>([])
@@ -213,6 +225,7 @@ export function AssistantSettingsModal({
               baseUrl: preset.baseUrl,
               temperature: preset.temperature,
               maxTokens: preset.maxTokens,
+              reasoningEffort: preset.reasoningEffort,
               models: preset.models.map((model) => ({ ...model })),
               defaultModelId: preset.defaultModelId,
               updatedAt: Date.now(),
@@ -243,6 +256,23 @@ export function AssistantSettingsModal({
     const numeric = value === '' || value === undefined || value === null ? null : Number(value)
     setDraftProfiles((prev) =>
       prev.map((profile) => (profile.id === activeProfile.id ? { ...profile, maxTokens: numeric } : profile)),
+    )
+  }
+
+  const handleReasoningEffortChange = (value: string | null) => {
+    if (!activeProfile) return
+    const supports = supportsReasoningEffort(activeProfile.provider)
+    const fallback = getDefaultReasoningEffort(activeProfile.provider)
+    const normalized = supports && value ? (value as AssistantReasoningEffort) : fallback
+    setDraftProfiles((prev) =>
+      prev.map((profile) =>
+        profile.id === activeProfile.id
+          ? {
+              ...profile,
+              reasoningEffort: supports ? normalized ?? fallback : null,
+            }
+          : profile,
+      ),
     )
   }
 
@@ -320,6 +350,9 @@ export function AssistantSettingsModal({
         model: defaultModelValue,
         temperature: activeProfile.temperature,
         maxTokens: activeProfile.maxTokens ?? null,
+        reasoningEffort: supportsReasoningEffort(activeProfile.provider)
+          ? activeProfile.reasoningEffort ?? getDefaultReasoningEffort(activeProfile.provider)
+          : null,
         baseUrl: activeProfile.baseUrl,
       },
       apiKey: trimmedKey.length > 0 ? trimmedKey : undefined,
@@ -450,10 +483,14 @@ export function AssistantSettingsModal({
         .filter((model) => model.value.trim().length > 0)
       const defaultModelExists = sanitizedModels.some((model) => model.id === profile.defaultModelId)
       const fallbackDefault = defaultModelExists ? profile.defaultModelId : sanitizedModels[0].id
+      const reasoningEffort = supportsReasoningEffort(profile.provider)
+        ? profile.reasoningEffort ?? getDefaultReasoningEffort(profile.provider)
+        : null
       return {
         ...profile,
         name: sanitizedName,
         baseUrl: profile.baseUrl.trim() || getDefaultBaseUrl(profile.provider),
+        reasoningEffort,
         models: sanitizedModels,
         defaultModelId: fallbackDefault,
         updatedAt: Date.now(),
@@ -598,6 +635,18 @@ export function AssistantSettingsModal({
                 max={16000}
                 step={256}
               />
+              {supportsReasoningEffort(activeProfile.provider) ? (
+                <Select
+                  label="Reasoning effort"
+                  data={reasoningOptions}
+                  value={
+                    activeProfile.reasoningEffort ??
+                    getDefaultReasoningEffort(activeProfile.provider) ??
+                    undefined
+                  }
+                  onChange={handleReasoningEffortChange}
+                />
+              ) : null}
             </Group>
             <Stack gap="sm">
               <Group justify="space-between" align="center">

@@ -45,6 +45,7 @@ describe('normalizeAssistantSettings', () => {
     expect(result.provider).toBe('lmstudio')
     expect(result.model).toBe('lmstudio-community/qwen2.5-7b-instruct')
     expect(result.baseUrl).toBe('http://127.0.0.1:1234/v1')
+    expect(result.reasoningEffort).toBe('medium')
   })
 
   it('provides Ollama defaults when selected', () => {
@@ -52,6 +53,7 @@ describe('normalizeAssistantSettings', () => {
     expect(result.provider).toBe('ollama')
     expect(result.model).toBe('llama3.1')
     expect(result.baseUrl).toBe('http://127.0.0.1:11434/v1')
+    expect(result.reasoningEffort).toBe('medium')
   })
 
   it('falls back to custom defaults for OpenAI-compatible providers', () => {
@@ -72,6 +74,7 @@ describe('resolveAssistantRuntimeSettings', () => {
         baseUrl: 'https://api.openai.com/v1',
         temperature: 0.4,
         maxTokens: 4096,
+        reasoningEffort: 'high',
         models: [
           { id: 'model_a', label: 'GPT-4o mini', value: 'gpt-4o-mini' },
           { id: 'model_b', label: 'GPT-4o', value: 'gpt-4o' },
@@ -87,6 +90,7 @@ describe('resolveAssistantRuntimeSettings', () => {
         baseUrl: 'http://127.0.0.1:1234/v1',
         temperature: 0.2,
         maxTokens: 2048,
+        reasoningEffort: 'medium',
         models: [
           { id: 'model_c', label: 'Qwen 7B', value: 'qwen-7b' },
         ],
@@ -104,6 +108,7 @@ describe('resolveAssistantRuntimeSettings', () => {
     expect(resolution.selection.profileId).toBe(profiles[0].id)
     expect(resolution.model.value).toBe('gpt-4o')
     expect(resolution.settings.provider).toBe('openai')
+    expect(resolution.settings.reasoningEffort).toBe('high')
   })
 
   it('returns requested profile/model when available', () => {
@@ -116,6 +121,7 @@ describe('resolveAssistantRuntimeSettings', () => {
     expect(resolution.selection).toEqual(wanted)
     expect(resolution.settings.provider).toBe('lmstudio')
     expect(resolution.settings.model).toBe('qwen-7b')
+    expect(resolution.settings.reasoningEffort).toBe('medium')
   })
 
   it('remaps model selection when requested model not in profile', () => {
@@ -140,6 +146,7 @@ describe('sanitizeSelection helper', () => {
         baseUrl: 'https://example.com/v1',
         temperature: 0.3,
         maxTokens: 1024,
+        reasoningEffort: 'medium',
         models: [{ id: 'model_x', label: 'X', value: 'x' }],
         defaultModelId: 'model_x',
         createdAt: 1,
