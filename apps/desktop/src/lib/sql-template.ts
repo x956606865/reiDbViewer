@@ -757,7 +757,16 @@ export function compileSql(
 
   const placeholders: string[] = []
   const values: any[] = []
-  const used = new Map<string, number>()
+  const used = new Map<string, string>()
+
+  const applyTypeCast = (placeholder: string, def: SavedQueryVariableDef): string => {
+    switch (def.type) {
+      case 'uuid':
+        return `(${placeholder})::uuid`
+      default:
+        return placeholder
+    }
+  }
 
   const text = rendered.replace(varNameRe, (_, raw: string) => {
     const name = String(raw)
@@ -767,12 +776,14 @@ export function compileSql(
     if (def.type === 'raw') {
       return String(val ?? '')
     }
-    if (used.has(name)) return `$${used.get(name)}`
+    if (used.has(name)) return used.get(name)!
     values.push(val)
     const idx = values.length
     placeholders.push(name)
-    used.set(name, idx)
-    return `$${idx}`
+    const base = `$${idx}`
+    const token = applyTypeCast(base, def)
+    used.set(name, token)
+    return token
   })
 
   return { text, values, placeholders }

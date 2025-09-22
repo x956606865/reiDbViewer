@@ -49,6 +49,15 @@ describe('sql-template helpers', () => {
     expect(preview).toContain('3')
   })
 
+  it('casts uuid variables to avoid text comparison errors', () => {
+    const vars: SavedQueryVariableDef[] = [{ name: 'userId', type: 'uuid', required: true }]
+    const compiled = compileSql('select * from users where user_id = {{userId}}', vars, {
+      userId: '27fe3d57-20b1-4aa9-b003-68eae5bb12e5',
+    })
+    expect(compiled.text).toContain('::uuid')
+    expect(compiled.values).toEqual(['27fe3d57-20b1-4aa9-b003-68eae5bb12e5'])
+  })
+
   it('detects read-only statements only for select/with', () => {
     expect(isReadOnlySelect('select 1')).toBe(true)
     expect(isReadOnlySelect('\n-- comment\nWITH cte AS (SELECT 1) SELECT * FROM cte')).toBe(true)
