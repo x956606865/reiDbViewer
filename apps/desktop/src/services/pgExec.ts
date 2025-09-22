@@ -164,8 +164,10 @@ const stripTrailingSemicolons = (sql: string) => {
   }
 }
 
+export const DEFAULT_PAGE_SIZE = 10
+
 const capPageSize = (size: number | undefined) => {
-  const raw = Number.isFinite(size) ? Number(size) : 50
+  const raw = Number.isFinite(size) ? Number(size) : DEFAULT_PAGE_SIZE
   return Math.max(1, Math.min(raw, env.MAX_ROW_LIMIT))
 }
 
@@ -202,7 +204,13 @@ async function executeSqlCore(ctx: SqlCoreInput): Promise<ExecuteResult> {
     throw new QueryError('SQL 不能为空', { code: 'sql_empty' })
   }
   const pagination =
-    ctx.pagination ?? { enabled: false, page: 1, pageSize: 50, withCount: false, countOnly: false }
+    ctx.pagination ?? {
+      enabled: false,
+      page: 1,
+      pageSize: DEFAULT_PAGE_SIZE,
+      withCount: false,
+      countOnly: false,
+    }
   const pageSize = capPageSize(pagination.pageSize)
   const page = Math.max(1, pagination.page ?? 1)
   const isSelect = isReadOnlySelect(originalForCheck || baseSql)

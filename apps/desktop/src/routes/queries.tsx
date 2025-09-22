@@ -50,6 +50,7 @@ import {
   executeTempSql,
   explainTempSql,
   QueryError,
+  DEFAULT_PAGE_SIZE,
 } from '@/services/pgExec';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
@@ -108,6 +109,19 @@ function useCurrentConnIdState() {
 
 const defaultSql = 'SELECT * FROM users LIMIT 10';
 const defaultTempSql = 'SELECT 1;';
+const PAGE_SIZE_STORAGE_KEY = 'rdv.desktop.queries.pageSize';
+
+const readStoredPageSize = () => {
+  if (typeof window === 'undefined') return DEFAULT_PAGE_SIZE;
+  try {
+    const raw = window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
+    if (!raw) return DEFAULT_PAGE_SIZE;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE;
+  } catch {
+    return DEFAULT_PAGE_SIZE;
+  }
+};
 
 export default function QueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -140,7 +154,7 @@ export default function QueriesPage() {
     };
   }, [isExecuting]);
   const [pgEnabled, setPgEnabled] = useState(true);
-  const [pgSize, setPgSize] = useState(20);
+  const [pgSize, setPgSize] = useState<number>(() => readStoredPageSize());
   const [pgPage, setPgPage] = useState(1);
   const [pgTotalRows, setPgTotalRows] = useState<number | null>(null);
   const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
@@ -201,6 +215,13 @@ export default function QueriesPage() {
       .then((list) => setItems(list.map(toSavedItem)))
       .catch((e: any) => setError(String(e?.message || e)));
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pgSize));
+    } catch {}
+  }, [pgSize]);
 
   const refresh = useCallback(async () => {
     setError(null);
