@@ -68,5 +68,21 @@ pub fn migrations() -> Vec<Migration> {
         "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "saved_sql_column_widths",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS saved_sql_column_widths (
+          saved_id TEXT NOT NULL,
+          column_name TEXT NOT NULL,
+          width INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (saved_id, column_name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_saved_sql_widths_saved ON saved_sql_column_widths(saved_id);
+        "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }

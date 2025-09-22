@@ -4,6 +4,7 @@ import { MantineProvider } from '@mantine/core'
 import { Notifications } from '@mantine/notifications'
 import '@mantine/core/styles.css'
 import '@mantine/notifications/styles.css'
+import 'mantine-react-table/styles.css'
 import './styles/overrides.css'
 import App from './App'
 

@@ -67,6 +67,8 @@ export function RunQueryPanel({
   gridCols,
   rows,
   queryTiming,
+  columnWidths,
+  onColumnWidthsChange,
   // calc
   runtimeCalcItems,
   calcResults,
@@ -104,6 +106,8 @@ export function RunQueryPanel({
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
   queryTiming: QueryTimingState | null;
+  columnWidths?: Record<string, number>;
+  onColumnWidthsChange?: (next: Record<string, number>) => void;
   runtimeCalcItems: CalcItemDef[];
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
@@ -156,6 +160,8 @@ export function RunQueryPanel({
         textResult={textResult}
         gridCols={gridCols}
         rows={rows}
+        columnWidths={columnWidths}
+        onColumnWidthsChange={onColumnWidthsChange}
         timing={queryTiming}
         footer={
           <PaginationBar

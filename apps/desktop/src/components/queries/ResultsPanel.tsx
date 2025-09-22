@@ -14,7 +14,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { DataGrid } from "../../components/DataGrid";
+import { ResizableDataGrid } from "../../components/ResizableDataGrid";
 import { IconCopy } from "@tabler/icons-react";
 
 type TimingState = {
@@ -45,6 +45,8 @@ export function ResultsPanel({
   rows,
   footer,
   timing,
+  columnWidths,
+  onColumnWidthsChange,
 }: {
   isExecuting: boolean;
   top?: React.ReactNode;
@@ -53,6 +55,8 @@ export function ResultsPanel({
   rows: Array<Record<string, unknown>>;
   footer?: React.ReactNode;
   timing?: TimingState | null;
+  columnWidths?: Record<string, number>;
+  onColumnWidthsChange?: (next: Record<string, number>) => void;
 }) {
   const durationLabel = buildTimingLabel(timing);
   const textPlaceholder = "（无返回）";
@@ -125,7 +129,12 @@ export function ResultsPanel({
                 </ScrollArea>
               </Paper>
             ) : (
-              <DataGrid columns={gridCols} rows={rows} />
+              <ResizableDataGrid
+                columns={gridCols}
+                rows={rows}
+                columnWidths={columnWidths}
+                onColumnWidthsChange={onColumnWidthsChange}
+              />
             )}
           </div>
           {footer}

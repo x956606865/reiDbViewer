@@ -9,6 +9,11 @@ import JsonCell from './JsonCell'
 import TimezoneCell from './TimezoneCell'
 import RowViewButton from './RowViewButton'
 import { isTimestampWithOffset } from '../lib/timezone-detect'
+import {
+  DEFAULT_ACTION_COLUMN_WIDTH,
+  DEFAULT_COLUMN_WIDTH,
+  buildColumnWidthMap,
+} from '../lib/column-width'
 
 export type DataGridProps = {
   columns: string[]
@@ -23,36 +28,26 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
   const hasExternalActions = React.useMemo(() => columns.includes('actions'), [columns])
   const totalCols = hasExternalActions ? columns.length : columns.length + 1
   const allColumnIds = React.useMemo(() => (hasExternalActions ? columns : [...columns, '__rdv_actions']), [columns, hasExternalActions])
-  const DEFAULT_COL_WIDTH = defaultColWidth ?? 160
-  const ACTION_COL_WIDTH = actionColWidth ?? 120
+  const fallbackColumnWidth = defaultColWidth ?? DEFAULT_COLUMN_WIDTH
+  const fallbackActionWidth = actionColWidth ?? DEFAULT_ACTION_COLUMN_WIDTH
 
-  const guessWidth = React.useCallback((name: string): number => {
-    const n = name.toLowerCase()
-    if (columnWidths && typeof columnWidths[name] === 'number') return columnWidths[name]
-    if (n.includes('email')) return 240
-    if (n.includes('url') || n.includes('link')) return 300
-    if (n.includes('name') || n.includes('title')) return 200
-    if (n.includes('desc')) return 260
-    if (n.includes('status') || n.includes('state')) return 140
-    if (n.endsWith('_id') || n === 'id') return 140
-    if (n.includes('date') || n.includes('time') || n.endsWith('at')) return 200
-    if (n.includes('json')) return 240
-    return DEFAULT_COL_WIDTH
-  }, [columnWidths, DEFAULT_COL_WIDTH])
-
-  const widthMap = React.useMemo(() => {
-    const m = new Map<string, number>()
-    for (const c of columns) m.set(c, guessWidth(c))
-    if (!hasExternalActions) m.set('__rdv_actions', ACTION_COL_WIDTH)
-    else m.set('actions', ACTION_COL_WIDTH)
-    return m
-  }, [columns, guessWidth, hasExternalActions, ACTION_COL_WIDTH])
+  const widthMap = React.useMemo(
+    () =>
+      buildColumnWidthMap(columns, {
+        overrides: columnWidths,
+        defaultWidth: fallbackColumnWidth,
+        actionColumnId: hasExternalActions ? 'actions' : '__rdv_actions',
+        actionColumnWidth: fallbackActionWidth,
+        includeActionColumn: !hasExternalActions,
+      }),
+    [columns, columnWidths, fallbackColumnWidth, fallbackActionWidth, hasExternalActions]
+  )
 
   const totalWidthPx = React.useMemo(() => {
     let w = 0
-    for (const id of allColumnIds) w += widthMap.get(id) || DEFAULT_COL_WIDTH
+    for (const id of allColumnIds) w += widthMap.get(id) || fallbackColumnWidth
     return w
-  }, [allColumnIds, widthMap, DEFAULT_COL_WIDTH])
+  }, [allColumnIds, widthMap, fallbackColumnWidth])
 
   const columnDefs = React.useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     const defs: ColumnDef<Record<string, unknown>>[] = columns.map((key) => ({
@@ -97,7 +92,7 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
       <table style={{ width: totalWidthPx + 'px', borderCollapse: 'separate', borderSpacing: 0, tableLayout: 'fixed' }}>
         <colgroup>
           {allColumnIds.map((id) => (
-            <col key={id} style={{ width: widthMap.get(id) || DEFAULT_COL_WIDTH }} />
+            <col key={id} style={{ width: widthMap.get(id) || fallbackColumnWidth }} />
           ))}
         </colgroup>
         <thead style={{ background: '#f9fafb' }}>
@@ -124,8 +119,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                       isActions
                         ? {
                             ...base,
-                            width: 120,
-                            minWidth: 120,
+                            width: fallbackActionWidth,
+                            minWidth: fallbackActionWidth,
                             position: 'sticky',
                             right: 0,
                             zIndex: 3,
@@ -154,8 +149,8 @@ export const DataGrid = React.memo(function DataGrid({ columns, rows, height = 3
                   borderBottom: '1px solid #f1f5f9',
                   background: '#fff',
                   whiteSpace: 'nowrap',
-                  width: isActions ? 120 : undefined,
-                  minWidth: isActions ? 120 : undefined,
+                  width: isActions ? fallbackActionWidth : undefined,
+                  minWidth: isActions ? fallbackActionWidth : undefined,
                   ...(isActions
                     ? {
                         position: 'sticky',

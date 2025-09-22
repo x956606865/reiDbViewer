@@ -38,6 +38,8 @@ import {
   importSavedSql,
   listSavedSql,
   type SavedSqlSummary,
+  getSavedSqlColumnWidths,
+  replaceSavedSqlColumnWidths,
 } from '@/services/savedSql';
 import {
   previewSavedSql,
@@ -73,6 +75,16 @@ type CalcResultState = {
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
   timing?: CalcTimingState;
+};
+
+const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): boolean => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
 };
 
 function toSavedItem(summary: SavedSqlSummary): SavedItem {
@@ -115,6 +127,8 @@ export default function QueriesPage() {
   const [previewSQL, setPreviewSQL] = useState('');
   const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
   const [gridCols, setGridCols] = useState<string[]>([]);
+  const [savedColumnWidths, setSavedColumnWidths] = useState<Record<string, number>>({});
+  const savedColumnWidthsRef = useRef<Record<string, number>>({});
   const [textResult, setTextResult] = useState<string | null>(null);
   const sqlPreviewRef = useRef<HTMLDivElement | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -170,6 +184,18 @@ export default function QueriesPage() {
     [name, sql]
   );
 
+  const activeColumnWidths = useMemo(() => {
+    if (!currentId || gridCols.length === 0) return undefined;
+    const map: Record<string, number> = {};
+    for (const col of gridCols) {
+      const width = savedColumnWidths[col];
+      if (typeof width === 'number' && width > 0) {
+        map[col] = width;
+      }
+    }
+    return Object.keys(map).length > 0 ? map : undefined;
+  }, [currentId, gridCols, savedColumnWidths]);
+
   useEffect(() => {
     listSavedSql()
       .then((list) => setItems(list.map(toSavedItem)))
@@ -191,6 +217,28 @@ export default function QueriesPage() {
       .then((res) => setConnItems(res))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    savedColumnWidthsRef.current = savedColumnWidths;
+  }, [savedColumnWidths]);
+
+  useEffect(() => {
+    if (!currentId) {
+      setSavedColumnWidths({});
+      return;
+    }
+    let cancelled = false;
+    getSavedSqlColumnWidths(currentId)
+      .then((map) => {
+        if (!cancelled) setSavedColumnWidths(map);
+      })
+      .catch(() => {
+        if (!cancelled) setSavedColumnWidths({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentId]);
 
   useEffect(() => {
     try {
@@ -261,6 +309,19 @@ export default function QueriesPage() {
     });
   };
 
+  const handleColumnWidthsChange = useCallback(
+    (next: Record<string, number>) => {
+      if (!currentId) return;
+      if (isSameWidthMap(savedColumnWidthsRef.current, next)) return;
+      const normalized = { ...next };
+      setSavedColumnWidths(normalized);
+      replaceSavedSqlColumnWidths(currentId, normalized).catch((err) => {
+        console.warn('Failed to persist column widths', err);
+      });
+    },
+    [currentId]
+  );
+
   const openDeleteDialog = useCallback((item: SavedItem) => {
     setDeleteBusy(false);
     setDeleteTarget(item);
@@ -279,6 +340,7 @@ export default function QueriesPage() {
     setPreviewSQL('');
     setRows([]);
     setGridCols([]);
+    setSavedColumnWidths({});
     setCalcResults({});
     setTextResult(null);
     setInfo('已切换为新建模式。');
@@ -295,6 +357,7 @@ export default function QueriesPage() {
     setPreviewSQL('');
     setRows([]);
     setGridCols([]);
+    setSavedColumnWidths({});
     setCalcResults({});
     setTextResult(null);
     setQueryTiming(null);
@@ -314,6 +377,7 @@ export default function QueriesPage() {
       try {
         const res = await getSavedSql(id);
         if (!res) throw new Error('未找到 Saved SQL');
+        setSavedColumnWidths({});
         setCurrentId(res.id);
         setName(res.name);
         setDescription(res.description ?? '');
@@ -1330,6 +1394,10 @@ export default function QueriesPage() {
                 textResult={textResult}
                 gridCols={gridCols}
                 rows={rows}
+                columnWidths={mode === 'run' ? activeColumnWidths : undefined}
+                onColumnWidthsChange={
+                  mode === 'run' && currentId ? handleColumnWidthsChange : undefined
+                }
                 queryTiming={queryTiming}
                 runtimeCalcItems={runtimeCalcItems}
                 calcResults={calcResults}

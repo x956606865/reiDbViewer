@@ -9,4 +9,3 @@ export const env = {
   SCHEMA_REFRESH_TIMEOUT_MS: toInt(import.meta.env?.VITE_SCHEMA_REFRESH_TIMEOUT_MS, 30000),
   MAX_ROW_LIMIT: toInt(import.meta.env?.VITE_MAX_ROW_LIMIT, 1000),
 }
-

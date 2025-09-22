@@ -11,6 +11,7 @@ import {
 import { normalizeCalcItems as normalizeCalcItemsHelper } from '@/lib/calc-item-utils'
 
 const TABLE = 'saved_sql'
+const WIDTH_TABLE = 'saved_sql_column_widths'
 
 type SavedSqlRow = {
   id: string
@@ -202,12 +203,14 @@ export async function updateSavedSql(
 
 export async function archiveSavedSql(id: string): Promise<void> {
   await updateSavedSql(id, { isArchived: true })
+  await deleteSavedSqlColumnWidths(id)
 }
 
 export async function removeSavedSql(id: string): Promise<void> {
   if (!id) return
   const db = await openLocal()
   await db.execute(`DELETE FROM ${TABLE} WHERE id = $1`, [id])
+  await deleteSavedSqlColumnWidths(id)
 }
 
 export async function exportAllSavedSql(): Promise<SavedQueriesExport> {
@@ -291,4 +294,62 @@ export async function importSavedSql(
     added += 1
   }
   return { added, overwritten, skipped }
+}
+
+type WidthRow = {
+  column_name?: string
+  width?: number
+}
+
+const sanitizeWidth = (width: number): number | null => {
+  if (!Number.isFinite(width)) return null
+  const rounded = Math.round(width)
+  if (!Number.isFinite(rounded) || rounded <= 0) return null
+  return rounded
+}
+
+export async function getSavedSqlColumnWidths(savedId: string): Promise<Record<string, number>> {
+  if (!savedId) return {}
+  const db = await openLocal()
+  const rows = await db.select(
+    `SELECT column_name, width FROM ${WIDTH_TABLE} WHERE saved_id = $1`,
+    [savedId],
+  )
+  const list = Array.isArray(rows) ? (rows as WidthRow[]) : []
+  const map: Record<string, number> = {}
+  for (const row of list) {
+    const name = row.column_name?.trim()
+    const width = sanitizeWidth(Number(row.width ?? NaN))
+    if (name && width) {
+      map[name] = width
+    }
+  }
+  return map
+}
+
+export async function replaceSavedSqlColumnWidths(
+  savedId: string,
+  widths: Record<string, number>,
+): Promise<void> {
+  if (!savedId) return
+  const entries = Object.entries(widths)
+    .map(([name, width]) => [name.trim(), sanitizeWidth(width)] as const)
+    .filter(([, width]) => width && width > 0) as Array<[string, number]>
+
+  const db = await openLocal()
+  await db.execute(`DELETE FROM ${WIDTH_TABLE} WHERE saved_id = $1`, [savedId])
+  if (entries.length === 0) return
+  const now = Date.now()
+  for (const [name, width] of entries) {
+    await db.execute(
+      `INSERT INTO ${WIDTH_TABLE} (saved_id, column_name, width, updated_at) VALUES ($1, $2, $3, $4)`,
+      [savedId, name, width, now],
+    )
+  }
+}
+
+export async function deleteSavedSqlColumnWidths(savedId: string): Promise<void> {
+  if (!savedId) return
+  const db = await openLocal()
+  await db.execute(`DELETE FROM ${WIDTH_TABLE} WHERE saved_id = $1`, [savedId])
 }
