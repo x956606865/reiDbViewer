@@ -4,8 +4,9 @@ mod api_scripts;
 mod migrations;
 
 use api_scripts::{
-    cancel_api_script_run, cleanup_api_script_cache, ensure_api_script_run_zip, execute_api_script,
-    export_api_script_run_zip, list_api_script_runs, read_api_script_run_log, ApiScriptManager,
+    cancel_api_script_run, clear_api_script_runs, cleanup_api_script_cache, delete_api_script_run,
+    ensure_api_script_run_zip, execute_api_script, export_api_script_run_zip, list_api_script_runs,
+    read_api_script_run_log, ApiScriptManager,
 };
 use regex::Regex;
 use reqwest::{Client, StatusCode};
@@ -894,6 +895,8 @@ fn main() {
             export_api_script_run_zip,
             read_api_script_run_log,
             cleanup_api_script_cache,
+            delete_api_script_run,
+            clear_api_script_runs,
             list_api_script_runs
         ])
         .run(tauri::generate_context!())

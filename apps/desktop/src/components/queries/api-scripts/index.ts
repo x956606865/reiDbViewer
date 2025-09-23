@@ -4,3 +4,4 @@ export { QueryApiScriptRunnerBar } from "./ScriptRunnerBar";
 export { QueryApiScriptRunStatusCard } from "./ScriptRunStatusCard";
 export { QueryApiScriptRunHistoryList } from "./ScriptRunHistoryList";
 export { ActiveApiScriptRunIndicator } from "./ActiveRunIndicator";
+export { QueryApiScriptTaskDrawer } from "./ScriptTaskDrawer";

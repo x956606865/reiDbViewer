@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Stack } from "@mantine/core";
 import type { SavedQueryVariableDef, CalcItemDef } from "@rei-db-view/types/appdb";
 import { PaginationSettings } from "./PaginationSettings";
 import { RunParamsPanel } from "./RunParamsPanel";
@@ -76,7 +75,6 @@ export function RunQueryPanel({
   onRunCalc,
   // count updates
   onUpdateTotal,
-  scriptRunner,
 }: {
   userConnId?: string | null;
   currentConn: { id: string; alias: string; host?: string | null } | null;
@@ -114,7 +112,6 @@ export function RunQueryPanel({
   calcResults: Record<string, CalcResultState>;
   onRunCalc: (item: CalcItemDef) => Promise<void>;
   onUpdateTotal: (totalRows: number | null, totalPages: number | null) => void;
-  scriptRunner?: React.ReactNode;
 }) {
   return (
     <>
@@ -153,15 +150,14 @@ export function RunQueryPanel({
       <ResultsPanel
         isExecuting={isExecuting}
         top={
-          <Stack gap="sm">
+          runtimeCalcItems.length > 0 ? (
             <RuntimeCalcCards
               items={runtimeCalcItems}
               calcResults={calcResults}
               onRunCalc={onRunCalc}
               withContainer={false}
             />
-            {scriptRunner}
-          </Stack>
+          ) : undefined
         }
         textResult={textResult}
         gridCols={gridCols}

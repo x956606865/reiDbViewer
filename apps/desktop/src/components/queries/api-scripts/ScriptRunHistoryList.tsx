@@ -13,7 +13,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconDownload, IconFileText, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { IconDownload, IconFileText, IconRefresh, IconTrash, IconTrashX } from "@tabler/icons-react";
 import type {
   QueryApiRunStatus,
   QueryApiScriptRunRecord,
@@ -63,6 +63,11 @@ export function QueryApiScriptRunHistoryList({
   onCleanup,
   cleanupDisabled,
   downloadingRunId,
+  onDelete,
+  deleteDisabled,
+  onClear,
+  clearDisabled,
+  deletingRunId,
 }: {
   runs: QueryApiScriptRunRecord[];
   loading?: boolean;
@@ -74,6 +79,11 @@ export function QueryApiScriptRunHistoryList({
   onCleanup?: () => void;
   cleanupDisabled?: boolean;
   downloadingRunId?: string | null;
+  onDelete?: (run: QueryApiScriptRunRecord) => void;
+  deleteDisabled?: boolean;
+  onClear?: () => void;
+  clearDisabled?: boolean;
+  deletingRunId?: string | null;
 }) {
   return (
     <Paper withBorder p="sm" radius="md">
@@ -91,6 +101,20 @@ export function QueryApiScriptRunHistoryList({
             ) : null}
           </Group>
           <Group gap="xs">
+            {onClear ? (
+              <Tooltip label="清空历史（跳过执行中的任务）">
+                <ActionIcon
+                  size="sm"
+                  variant="subtle"
+                  color="red"
+                  onClick={onClear}
+                  disabled={clearDisabled || loading || runs.length === 0}
+                  aria-label="清空历史"
+                >
+                  <IconTrashX size={16} />
+                </ActionIcon>
+              </Tooltip>
+            ) : null}
             {onCleanup ? (
               <Tooltip label="清理超过 24 小时的临时文件">
                 <ActionIcon
@@ -124,7 +148,7 @@ export function QueryApiScriptRunHistoryList({
             {emptyHint}
           </Text>
         ) : (
-          <ScrollArea h={220} type="auto">
+          <ScrollArea h={360} type="auto">
             <Stack gap="sm">
               {runs.map((run, index) => {
                 const meta = STATUS_META[run.status];
@@ -143,6 +167,8 @@ export function QueryApiScriptRunHistoryList({
                   : run.outputDir
                     ? '查看执行日志'
                     : '尝试加载执行日志';
+                const canDelete = onDelete && exportable;
+                const isDeleting = deletingRunId === run.id;
                 return (
                   <React.Fragment key={run.id}>
                     <Stack gap={4}>
@@ -189,6 +215,20 @@ export function QueryApiScriptRunHistoryList({
                                 <IconFileText size={16} />
                               </ActionIcon>
                             </Tooltip>
+                            {onDelete ? (
+                              <Tooltip label={canDelete ? '删除该记录' : '任务执行中，暂不可删除'}>
+                                <ActionIcon
+                                  size="sm"
+                                  variant="light"
+                                  color="red"
+                                  onClick={() => onDelete(run)}
+                                  disabled={!canDelete || deleteDisabled || isDeleting}
+                                  aria-label="删除记录"
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            ) : null}
                           </Group>
                         </Group>
                       </Group>

@@ -527,6 +527,15 @@ pub struct ListApiScriptRunsArgs {
     pub query_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearApiScriptRunsArgs {
+    #[serde(default)]
+    pub script_id: Option<String>,
+    #[serde(default)]
+    pub query_id: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ApiScriptRunListItem {
     pub id: String,
@@ -694,6 +703,14 @@ struct RunStoragePaths {
     zip_path: Option<String>,
 }
 
+#[derive(Clone)]
+struct RunCleanupTarget {
+    id: String,
+    output_dir: Option<String>,
+    manifest_path: Option<String>,
+    zip_path: Option<String>,
+}
+
 async fn fetch_run_storage(
     pool: &SqlitePool,
     run_id: &str,
@@ -721,6 +738,56 @@ async fn fetch_run_storage(
     } else {
         Ok(None)
     }
+}
+
+fn cleanup_run_storage(
+    app: &AppHandle,
+    output_dir: Option<String>,
+    manifest_path: Option<String>,
+    zip_path: Option<String>,
+) -> Result<(), String> {
+    let cache_root = cache_root(app)?;
+
+    if let Some(dir_text) = output_dir {
+        let dir_path = PathBuf::from(&dir_text);
+        if ensure_path_within(&cache_root, &dir_path).is_ok() {
+            if dir_path.exists() {
+                if let Err(err) = fs::remove_dir_all(&dir_path) {
+                    if err.kind() != std::io::ErrorKind::NotFound {
+                        return Err(map_io_error(err));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(manifest_text) = manifest_path {
+        let manifest_path = PathBuf::from(&manifest_text);
+        if ensure_path_within(&cache_root, &manifest_path).is_ok() {
+            if manifest_path.exists() {
+                if let Err(err) = fs::remove_file(&manifest_path) {
+                    if err.kind() != std::io::ErrorKind::NotFound {
+                        return Err(map_io_error(err));
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(zip_text) = zip_path {
+        let zip_path = PathBuf::from(&zip_text);
+        if ensure_path_within(&cache_root, &zip_path).is_ok() {
+            if zip_path.exists() {
+                if let Err(err) = fs::remove_file(&zip_path) {
+                    if err.kind() != std::io::ErrorKind::NotFound {
+                        return Err(map_io_error(err));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn open_pg_pool(dsn: &str) -> Result<PgPool, String> {
@@ -1891,6 +1958,151 @@ pub async fn cleanup_api_script_cache(
     }
 
     Ok(cleaned)
+}
+
+#[tauri::command]
+pub async fn delete_api_script_run(app: AppHandle, run_id: String) -> Result<bool, String> {
+    let normalized = run_id.trim().to_string();
+    if normalized.is_empty() {
+        return Err("run_id_required".to_string());
+    }
+
+    let sqlite_pool = open_sqlite_pool(&app).await?;
+    let row = sqlx::query(
+        "SELECT status, output_dir, manifest_path, zip_path FROM query_api_script_runs WHERE id = ? LIMIT 1",
+    )
+    .bind(&normalized)
+    .fetch_optional(&sqlite_pool)
+    .await
+    .map_err(map_sql_error)?;
+
+    let Some(row) = row else {
+        return Ok(false);
+    };
+
+    let status: String = row.try_get("status").map_err(map_sql_error)?;
+    let lowered = status.to_lowercase();
+    if lowered == "running" || lowered == "pending" {
+        return Err("运行中的任务无法删除。".to_string());
+    }
+
+    let output_dir: Option<String> = row.try_get("output_dir").map_err(map_sql_error)?;
+    let manifest_path: Option<String> = row.try_get("manifest_path").map_err(map_sql_error)?;
+    let zip_path: Option<String> = row.try_get("zip_path").map_err(map_sql_error)?;
+
+    let result = sqlx::query(
+        "DELETE FROM query_api_script_runs WHERE id = ? AND status NOT IN ('running', 'pending')",
+    )
+    .bind(&normalized)
+    .execute(&sqlite_pool)
+    .await
+    .map_err(map_sql_error)?;
+
+    if result.rows_affected() == 0 {
+        return Err("任务状态已更新，删除失败，请重试。".to_string());
+    }
+
+    cleanup_run_storage(&app, output_dir, manifest_path, zip_path)?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn clear_api_script_runs(
+    app: AppHandle,
+    args: ClearApiScriptRunsArgs,
+) -> Result<u32, String> {
+    let script_filter = args
+        .script_id
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+    let query_filter = args
+        .query_id
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.to_string());
+
+    if script_filter.is_none() && query_filter.is_none() {
+        return Err("缺少查询或脚本上下文，无法清空历史记录。".to_string());
+    }
+
+    let sqlite_pool = open_sqlite_pool(&app).await?;
+
+    let mut sql = String::from(
+        "SELECT id, status, output_dir, manifest_path, zip_path FROM query_api_script_runs",
+    );
+    let mut filters: Vec<&'static str> = Vec::new();
+    let mut arguments = SqliteArguments::default();
+
+    if let Some(script_id) = script_filter.as_ref() {
+        filters.push("script_id = ?");
+        arguments.add(script_id.clone());
+    }
+
+    if let Some(query_id) = query_filter.as_ref() {
+        filters.push("query_id = ?");
+        arguments.add(query_id.clone());
+    }
+
+    if !filters.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&filters.join(" AND "));
+    }
+
+    let rows = sqlx::query_with(&sql, arguments)
+        .fetch_all(&sqlite_pool)
+        .await
+        .map_err(map_sql_error)?;
+
+    if rows.is_empty() {
+        return Ok(0);
+    }
+
+    let mut candidates: Vec<RunCleanupTarget> = Vec::new();
+    for row in rows {
+        let status: String = row.try_get("status").map_err(map_sql_error)?;
+        let lowered = status.to_lowercase();
+        if lowered == "running" || lowered == "pending" {
+            continue;
+        }
+        candidates.push(RunCleanupTarget {
+            id: row.try_get("id").map_err(map_sql_error)?,
+            output_dir: row.try_get("output_dir").map_err(map_sql_error)?,
+            manifest_path: row.try_get("manifest_path").map_err(map_sql_error)?,
+            zip_path: row.try_get("zip_path").map_err(map_sql_error)?,
+        });
+    }
+
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+
+    let mut tx = sqlite_pool.begin().await.map_err(map_sql_error)?;
+    let mut removed: Vec<RunCleanupTarget> = Vec::new();
+    for target in &candidates {
+        let result = sqlx::query(
+            "DELETE FROM query_api_script_runs WHERE id = ? AND status NOT IN ('running', 'pending')",
+        )
+        .bind(&target.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sql_error)?;
+        if result.rows_affected() > 0 {
+            removed.push(target.clone());
+        }
+    }
+    tx.commit().await.map_err(map_sql_error)?;
+
+    let mut count: u32 = 0;
+    for target in removed {
+        cleanup_run_storage(&app, target.output_dir, target.manifest_path, target.zip_path)?;
+        count += 1;
+    }
+
+    Ok(count)
 }
 
 #[tauri::command]

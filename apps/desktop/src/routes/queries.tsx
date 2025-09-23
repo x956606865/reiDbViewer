@@ -30,13 +30,7 @@ import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
 import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
 import type { SavedItem } from '@/components/queries/types';
-import {
-  QueryApiScriptList,
-  QueryApiScriptEditorDrawer,
-  QueryApiScriptRunnerBar,
-  QueryApiScriptRunStatusCard,
-  QueryApiScriptRunHistoryList,
-} from '@/components/queries/api-scripts';
+import { QueryApiScriptEditorDrawer, QueryApiScriptTaskDrawer } from '@/components/queries/api-scripts';
 import type { QueryApiScriptSummary, QueryApiScriptRunRecord } from '@/services/queryApiScripts';
 import {
   getSavedSql,
@@ -69,6 +63,8 @@ import {
   ensureApiScriptRunZip,
   readApiScriptRunLog,
   cleanupApiScriptCache,
+  deleteApiScriptRun,
+  clearApiScriptRuns,
   type ApiScriptRequestLogEntry,
 } from '@/services/apiScriptRunner';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
@@ -281,6 +277,8 @@ export default function QueriesPage() {
   const [scriptRunning, setScriptRunning] = useState(false);
   const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [clearingRuns, setClearingRuns] = useState(false);
   const [logViewer, setLogViewer] = useState<{
     run: QueryApiScriptRunRecord;
     entries: ApiScriptRequestLogEntry[];
@@ -526,13 +524,6 @@ export default function QueriesPage() {
       });
     },
     [currentId]
-  );
-
-  const handleSelectScriptFromList = useCallback(
-    (id: string) => {
-      setSelectedScriptId(id);
-    },
-    [setSelectedScriptId],
   );
 
   const handleSelectScript = useCallback(
@@ -830,6 +821,79 @@ export default function QueriesPage() {
     }
   }, [cleanupBusy, refreshScriptRunsHistory]);
 
+  const handleDeleteHistoryRun = useCallback(
+    async (run: QueryApiScriptRunRecord) => {
+      if (!run) return;
+      if (deletingRunId) return;
+      if (run.status === 'running' || run.status === 'pending') return;
+      const info = extractRunScriptInfo(run);
+      const label = info?.name ?? `任务 ${run.id.slice(0, 8)}`;
+      const confirmed = window.confirm(`确认删除「${label}」的历史记录？该操作不可撤销。`);
+      if (!confirmed) return;
+      setDeletingRunId(run.id);
+      try {
+        const deleted = await deleteApiScriptRun(run.id);
+        notifications.show({
+          color: deleted ? 'teal' : 'gray',
+          title: deleted ? '删除成功' : '记录不存在',
+          message: deleted ? '已移除选中的任务记录。' : '任务记录可能已被移除。',
+          icon: <IconCheck size={16} />,
+        });
+        await refreshScriptRunsHistory();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifications.show({
+          color: 'red',
+          title: '删除失败',
+          message,
+          icon: <IconX size={16} />,
+        });
+      } finally {
+        setDeletingRunId(null);
+      }
+    },
+    [deletingRunId, refreshScriptRunsHistory],
+  );
+
+  const handleClearHistory = useCallback(async () => {
+    if (clearingRuns) return;
+    if (!currentId) {
+      notifications.show({
+        color: 'orange',
+        title: '无法清空历史',
+        message: '请先保存查询，才能管理对应的脚本任务历史。',
+        icon: <IconAlertTriangle size={16} />,
+      });
+      return;
+    }
+    const confirmed = window.confirm('确认清空当前查询的脚本任务历史？正在执行的任务会被保留。');
+    if (!confirmed) return;
+    setClearingRuns(true);
+    try {
+      const removed = await clearApiScriptRuns({ queryId: currentId });
+      notifications.show({
+        color: 'teal',
+        title: '历史已清空',
+        message:
+          removed > 0
+            ? `已移除 ${removed} 条历史记录。`
+            : '没有可清理的历史记录。',
+        icon: <IconCheck size={16} />,
+      });
+      await refreshScriptRunsHistory();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notifications.show({
+        color: 'red',
+        title: '清空失败',
+        message,
+        icon: <IconX size={16} />,
+      });
+    } finally {
+      setClearingRuns(false);
+    }
+  }, [clearingRuns, currentId, refreshScriptRunsHistory]);
+
   const handleCloseLogViewer = useCallback(() => setLogViewer(null), []);
 
   const statusRun = activeScriptRun ?? null;
@@ -841,49 +905,56 @@ export default function QueriesPage() {
     [logViewer],
   );
 
-  const scriptRunnerNode =
+  const scriptTaskDrawer =
     mode === 'run'
       ? (
-          <Stack gap="sm">
-            <QueryApiScriptRunnerBar
-              scripts={apiScripts}
-              selectedId={selectedScriptId}
-              onSelect={handleSelectScript}
-              onCreate={handleCreateScript}
-              onEdit={handleEditScript}
-              onRun={handleRunScript}
-              disabled={!currentId || isExecuting}
-              running={scriptRunning}
-              hasFreshResult={hasFreshResultForScript}
-              loading={scriptsLoading}
-            />
-            <QueryApiScriptRunStatusCard
-              run={statusRun}
-              loading={showSpinner}
-              error={scriptRunError}
-              onRefresh={refreshScriptRunsHistory}
-              onCancel={() => handleCancelRunRequest(statusRun)}
-              cancelDisabled={
-                Boolean(
-                  !statusRun ||
-                    statusRun.status !== 'running' ||
-                    (cancelingRunId && cancelingRunId !== statusRun.id),
-                )
-              }
-              canceling={cancelingRunId === statusRun?.id}
-            />
-            <QueryApiScriptRunHistoryList
-              runs={scriptRunRecords}
-              loading={scriptRunLoading}
-              error={scriptRunError}
-              onRefresh={refreshScriptRunsHistory}
-              onExport={handleManualExport}
-              onViewLog={handleOpenLogViewer}
-              onCleanup={handleCleanupCache}
-              cleanupDisabled={cleanupBusy}
-              downloadingRunId={downloadingRunId}
-            />
-          </Stack>
+          <QueryApiScriptTaskDrawer
+            runner={{
+              scripts: apiScripts,
+              selectedId: selectedScriptId,
+              onSelect: handleSelectScript,
+              onCreate: handleCreateScript,
+              onEdit: handleEditScript,
+              onDuplicate: handleDuplicateScript,
+              onDelete: handleDeleteScript,
+              onRun: handleRunScript,
+              disabled: !currentId || isExecuting,
+              running: scriptRunning,
+              hasFreshResult: hasFreshResultForScript,
+              loading: scriptsLoading,
+              busy: scriptSaving || scriptDeleting,
+              error: scriptLoadError ?? (scriptEditorOpen ? null : scriptSubmitError),
+            }}
+            status={{
+              run: statusRun,
+              loading: showSpinner,
+              error: scriptRunError,
+              onRefresh: refreshScriptRunsHistory,
+              onCancel: statusRun ? () => handleCancelRunRequest(statusRun) : undefined,
+              cancelDisabled: Boolean(
+                !statusRun ||
+                  statusRun.status !== 'running' ||
+                  (cancelingRunId && cancelingRunId !== statusRun.id),
+              ),
+              canceling: cancelingRunId === statusRun?.id,
+            }}
+            history={{
+              runs: scriptRunRecords,
+              loading: scriptRunLoading,
+              error: scriptRunError,
+              onRefresh: refreshScriptRunsHistory,
+              onExport: handleManualExport,
+              onViewLog: handleOpenLogViewer,
+              onCleanup: handleCleanupCache,
+              cleanupDisabled: cleanupBusy,
+              downloadingRunId,
+              onDelete: handleDeleteHistoryRun,
+              deleteDisabled: scriptRunLoading || clearingRuns,
+              deletingRunId,
+              onClear: handleClearHistory,
+              clearDisabled: clearingRuns || scriptRunLoading,
+            }}
+          />
         )
       : null;
 
@@ -2060,24 +2131,11 @@ export default function QueriesPage() {
                 calcResults={calcResults}
                 onRunCalc={(ci) => runCalcItem(ci)}
                 onUpdateTotal={onUpdateTotals}
-                scriptRunner={scriptRunnerNode}
               />
             )}
           </Stack>
         </ScrollArea>
-        {mode !== 'temp' ? (
-          <QueryApiScriptList
-            scripts={apiScripts}
-            selectedId={selectedScriptId}
-            onSelect={handleSelectScriptFromList}
-            onCreate={handleCreateScript}
-            onDuplicate={(script) => handleDuplicateScript(script.id)}
-            onDelete={handleDeleteScript}
-            busy={scriptSaving || scriptDeleting}
-            loading={scriptsLoading}
-            error={scriptLoadError ?? (scriptEditorOpen ? null : scriptSubmitError)}
-          />
-        ) : null}
+        {scriptTaskDrawer}
       </Group>
       {scriptEditorOpen && scriptEditorForm ? (
         <QueryApiScriptEditorDrawer

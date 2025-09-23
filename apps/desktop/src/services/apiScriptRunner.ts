@@ -90,3 +90,33 @@ export async function cleanupApiScriptCache(olderThanMs?: number): Promise<numbe
     throw error
   }
 }
+
+export async function deleteApiScriptRun(runId: string): Promise<boolean> {
+  const trimmed = runId?.trim()
+  if (!trimmed) {
+    throw new Error('run_id_required')
+  }
+  try {
+    const deleted = await invoke<boolean>('delete_api_script_run', { runId: trimmed })
+    return Boolean(deleted)
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    throw error
+  }
+}
+
+export async function clearApiScriptRuns(opts: { queryId?: string | null; scriptId?: string | null }): Promise<number> {
+  const queryId = opts?.queryId?.trim()
+  const scriptId = opts?.scriptId?.trim()
+  const payload = {
+    queryId: queryId && queryId.length > 0 ? queryId : null,
+    scriptId: scriptId && scriptId.length > 0 ? scriptId : null,
+  }
+  try {
+    const removed = await invoke<number>('clear_api_script_runs', { args: payload })
+    return typeof removed === 'number' ? removed : 0
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    throw error
+  }
+}
