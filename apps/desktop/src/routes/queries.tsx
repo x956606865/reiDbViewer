@@ -281,9 +281,6 @@ export default function QueriesPage() {
   const [scriptRunning, setScriptRunning] = useState(false);
   const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
   const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
-  const [downloadPromptRun, setDownloadPromptRun] =
-    useState<QueryApiScriptRunRecord | null>(null);
-  const promptedRunIdsRef = useRef<Set<string>>(new Set());
   const [logViewer, setLogViewer] = useState<{
     run: QueryApiScriptRunRecord;
     entries: ApiScriptRequestLogEntry[];
@@ -452,7 +449,6 @@ export default function QueriesPage() {
     loading: scriptRunLoading,
     error: scriptRunError,
     activeRun: activeScriptRun,
-    latestRun: latestScriptRun,
     pendingEventCount: scriptRunPendingEvents,
     refresh: refreshScriptRunsHistory,
   } = useApiScriptRuns(mode === 'temp' ? null : currentId, {
@@ -466,23 +462,6 @@ export default function QueriesPage() {
     if (!selectedScriptId) return;
     void refreshScriptRunsHistory();
   }, [mode, currentId, selectedScriptId, refreshScriptRunsHistory]);
-
-  useEffect(() => {
-    if (!scriptRunRecords || scriptRunRecords.length === 0) return;
-    for (const run of scriptRunRecords) {
-      const isTerminal =
-        run.status === 'succeeded' ||
-        run.status === 'completed_with_errors' ||
-        run.status === 'failed' ||
-        run.status === 'cancelled';
-      if (!isTerminal) continue;
-      if (!run.zipPath) continue;
-      if (promptedRunIdsRef.current.has(run.id)) continue;
-      promptedRunIdsRef.current.add(run.id);
-      setDownloadPromptRun(run);
-      break;
-    }
-  }, [scriptRunRecords]);
 
   const latestRunSignature = useMemo(
     () => JSON.stringify({ id: currentId ?? '', values: runValues }),
@@ -800,9 +779,7 @@ export default function QueriesPage() {
 
   const handleManualExport = useCallback(
     async (run: QueryApiScriptRunRecord) => {
-      const ok = await performSaveRunZip(run);
-      if (!ok) return;
-      promptedRunIdsRef.current.add(run.id);
+      await performSaveRunZip(run);
     },
     [performSaveRunZip],
   );
@@ -853,27 +830,11 @@ export default function QueriesPage() {
     }
   }, [cleanupBusy, refreshScriptRunsHistory]);
 
-  const handleDownloadPromptConfirm = useCallback(async () => {
-    if (!downloadPromptRun) return;
-    const ok = await performSaveRunZip(downloadPromptRun);
-    if (ok) {
-      setDownloadPromptRun(null);
-    }
-  }, [downloadPromptRun, performSaveRunZip]);
-
-  const handleDownloadPromptLater = useCallback(() => {
-    setDownloadPromptRun(null);
-  }, []);
-
   const handleCloseLogViewer = useCallback(() => setLogViewer(null), []);
 
-  const statusRun = activeScriptRun ?? latestScriptRun ?? null;
+  const statusRun = activeScriptRun ?? null;
   const showSpinner = Boolean(
     activeScriptRun || (!statusRun && (scriptRunLoading || scriptRunPendingEvents > 0)),
-  );
-  const promptScriptInfo = useMemo(
-    () => (downloadPromptRun ? extractRunScriptInfo(downloadPromptRun) : null),
-    [downloadPromptRun],
   );
   const logViewerInfo = useMemo(
     () => (logViewer ? extractRunScriptInfo(logViewer.run) : null),
@@ -1853,35 +1814,6 @@ export default function QueriesPage() {
             归档
           </Button>
         </Group>
-      </Modal>
-      <Modal
-        opened={!!downloadPromptRun}
-        onClose={handleDownloadPromptLater}
-        title="导出脚本结果"
-        centered
-        closeOnClickOutside={!downloadingRunId}
-        closeOnEscape={!downloadingRunId}
-      >
-        <Stack gap="sm">
-          <Text size="sm">
-            {promptScriptInfo?.name ?? downloadPromptRun?.id.slice(0, 8)} 的任务已完成，是否立即保存结果 ZIP？
-          </Text>
-          <Group justify="flex-end">
-            <Button
-              variant="default"
-              onClick={handleDownloadPromptLater}
-              disabled={Boolean(downloadingRunId)}
-            >
-              稍后再说
-            </Button>
-            <Button
-              onClick={handleDownloadPromptConfirm}
-              loading={downloadingRunId === downloadPromptRun?.id}
-            >
-              立即保存
-            </Button>
-          </Group>
-        </Stack>
       </Modal>
       <Modal
         opened={!!logViewer}
