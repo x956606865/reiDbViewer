@@ -36,7 +36,7 @@ export type UseApiScriptRunsResult = {
 
 export function useApiScriptRuns(
   queryId: string | null | undefined,
-  options?: { limit?: number; scriptId?: string | null },
+  options?: { limit?: number; scriptId?: string | null; includeAllQueries?: boolean },
 ): UseApiScriptRunsResult {
   const mountedRef = useRef(true)
   useEffect(() => () => {
@@ -44,11 +44,14 @@ export function useApiScriptRuns(
   }, [])
 
   const limit = options?.limit ?? DEFAULT_LIMIT
+  const includeAll = options?.includeAllQueries === true
 
   const [runs, setRuns] = useState<QueryApiScriptRunRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pendingEvents, setPendingEvents] = useState<Record<string, ApiScriptRunEventPayload>>({})
+  const [pendingEvents, setPendingEvents] = useState<
+    Record<string, { payload: ApiScriptRunEventPayload; receivedAt: number }>
+  >({})
 
   const pendingEventsRef = useRef(pendingEvents)
   useEffect(() => {
@@ -67,7 +70,7 @@ export function useApiScriptRuns(
 
   const refresh = useCallback(async () => {
     if (!mountedRef.current) return
-    if (!queryId) {
+    if (!includeAll && !queryId) {
       setRuns([])
       setLoading(false)
       return
@@ -75,12 +78,24 @@ export function useApiScriptRuns(
     setLoading(true)
     setError(null)
     try {
-      const list = await listRecentScriptRuns({ queryId, limit })
+      const scriptId = scriptIdRef.current
+      const fetchOpts: { limit: number; scriptId?: string; queryId?: string } = { limit }
+      if (scriptId && typeof scriptId === 'string' && scriptId.trim().length > 0) {
+        fetchOpts.scriptId = scriptId
+      }
+      if (!includeAll && queryId) {
+        fetchOpts.queryId = queryId
+      }
+      const list = await listRecentScriptRuns(fetchOpts)
       if (!mountedRef.current) return
+      const pendingPayloads = Object.fromEntries(
+        Object.entries(pendingEventsRef.current).map(([id, entry]) => [id, entry.payload]),
+      )
+      const now = Date.now()
       const { runs: mergedRuns, resolved } = applyPendingEventsToRuns(
         list,
-        pendingEventsRef.current,
-        Date.now(),
+        pendingPayloads,
+        now,
       )
       if (resolved.length > 0) {
         setPendingEvents((prev) => {
@@ -90,6 +105,9 @@ export function useApiScriptRuns(
         })
       }
       setRuns(mergedRuns)
+      if (includeAll && !queryId && mergedRuns.length === 0) {
+        setPendingEvents(() => ({}))
+      }
     } catch (err) {
       if (!mountedRef.current) return
       setError(describeError(err))
@@ -97,7 +115,7 @@ export function useApiScriptRuns(
       if (!mountedRef.current) return
       setLoading(false)
     }
-  }, [limit, queryId])
+  }, [includeAll, limit, queryId])
 
   const refreshRef = useRef<() => Promise<void>>(async () => {})
   useEffect(() => {
@@ -108,12 +126,12 @@ export function useApiScriptRuns(
     setRuns([])
     setPendingEvents({})
     setError(null)
-    if (!queryId) {
+    if (!includeAll && !queryId) {
       setLoading(false)
       return
     }
     void refresh()
-  }, [queryId, refresh])
+  }, [includeAll, queryId, refresh])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -147,10 +165,13 @@ export function useApiScriptRuns(
         return
       }
       const currentQuery = queryIdRef.current
-      if (!currentQuery) return
+      if (!includeAll && !currentQuery) return
       setPendingEvents((prev) => {
         if (prev[payload.run_id]) return prev
-        return { ...prev, [payload.run_id]: payload }
+        return {
+          ...prev,
+          [payload.run_id]: { payload, receivedAt: now },
+        }
       })
 
       setRuns((prev) => {
@@ -158,7 +179,7 @@ export function useApiScriptRuns(
         const stub: QueryApiScriptRunRecord = {
           id: payload.run_id,
           scriptId: scriptIdRef.current ?? '',
-          queryId: currentQuery,
+          queryId: includeAll ? '' : currentQuery ?? '',
           status: normalizeRunStatus(payload.status, 'pending'),
           scriptSnapshot: {},
           progressSnapshot: {},
@@ -214,6 +235,24 @@ export function useApiScriptRuns(
     () => Object.keys(pendingEvents).length,
     [pendingEvents],
   )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    if (Object.keys(pendingEvents).length === 0) return undefined
+    const timer = window.setTimeout(() => {
+      const now = Date.now()
+      setPendingEvents((prev) => {
+        const entries = Object.entries(prev)
+        if (entries.length === 0) return prev
+        const filtered = entries.filter(([, value]) => now - value.receivedAt < 5000)
+        if (filtered.length === entries.length) return prev
+        return Object.fromEntries(filtered)
+      })
+    }, 5200)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [pendingEvents])
 
   return {
     runs,
