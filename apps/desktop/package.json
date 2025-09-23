@@ -26,6 +26,7 @@
     "@tabler/icons-react": "^3.20.0",
     "@tanstack/react-query": "^5.50.0",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
     "@tauri-apps/plugin-sql": "^2.0.0",
     "ai": "^5.0.45",
     "mantine-react-table": "2.0.0-beta.9",

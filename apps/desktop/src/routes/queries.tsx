@@ -8,6 +8,7 @@ import React, {
 import {
   Button,
   Group,
+  Loader,
   LoadingOverlay,
   Modal,
   Paper,
@@ -17,7 +18,7 @@ import {
   Title,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconCheck, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconX } from '@tabler/icons-react';
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
@@ -29,6 +30,14 @@ import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
 import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
 import type { SavedItem } from '@/components/queries/types';
+import {
+  QueryApiScriptList,
+  QueryApiScriptEditorDrawer,
+  QueryApiScriptRunnerBar,
+  QueryApiScriptRunStatusCard,
+  QueryApiScriptRunHistoryList,
+} from '@/components/queries/api-scripts';
+import type { QueryApiScriptSummary, QueryApiScriptRunRecord } from '@/services/queryApiScripts';
 import {
   getSavedSql,
   createSavedSql,
@@ -51,11 +60,26 @@ import {
   explainTempSql,
   QueryError,
   DEFAULT_PAGE_SIZE,
+  type ExecuteResult,
 } from '@/services/pgExec';
+import {
+  executeApiScript,
+  cancelApiScriptRun,
+  exportApiScriptRunZip,
+  ensureApiScriptRunZip,
+  readApiScriptRunLog,
+  cleanupApiScriptCache,
+  type ApiScriptRequestLogEntry,
+} from '@/services/apiScriptRunner';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
-import { listConnections } from '@/lib/localStore';
+import { listConnections, getDsnForConn } from '@/lib/localStore';
 import { normalizeCalcItems, normalizeCalcItem } from '@/lib/calc-item-utils';
+import { useQueryApiScripts } from '@/lib/use-query-api-scripts';
+import { useApiScriptRuns } from '@/lib/use-api-script-runs';
+import { compileSql } from '@/lib/sql-template';
+import { extractRunScriptInfo } from '@/lib/api-script-run-utils';
+import { saveDialog } from '@/lib/tauri-dialog';
 
 type QueryTimingState = {
   totalMs?: number | null;
@@ -252,6 +276,21 @@ export default function QueriesPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
   const lastExecSignatureRef = useRef<string | null>(null);
+  const lastRunResultRef = useRef<ExecuteResult | null>(null);
+  const [lastResultAt, setLastResultAt] = useState<number | null>(null);
+  const [scriptRunning, setScriptRunning] = useState(false);
+  const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
+  const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
+  const [downloadPromptRun, setDownloadPromptRun] =
+    useState<QueryApiScriptRunRecord | null>(null);
+  const promptedRunIdsRef = useRef<Set<string>>(new Set());
+  const [logViewer, setLogViewer] = useState<{
+    run: QueryApiScriptRunRecord;
+    entries: ApiScriptRequestLogEntry[];
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
+  const [cleanupBusy, setCleanupBusy] = useState(false);
   const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState(false);
@@ -375,10 +414,83 @@ export default function QueriesPage() {
     calcAutoTriggeredRef.current = {};
   }, [calcItems]);
 
+  useEffect(() => {
+    lastRunResultRef.current = null;
+    setLastResultAt(null);
+  }, [runValues]);
+
   const currentConn = useMemo(() => {
     if (!userConnId) return null;
     return connItems.find((x) => x.id === userConnId) || null;
   }, [connItems, userConnId]);
+
+  const {
+    scripts: apiScripts,
+    loading: scriptsLoading,
+    loadError: scriptLoadError,
+    selectedId: selectedScriptId,
+    setSelectedId: setSelectedScriptId,
+    refresh: refreshScripts,
+    openCreate: openCreateScript,
+    openEdit: openEditScript,
+    openDuplicate: openDuplicateScript,
+    editorOpen: scriptEditorOpen,
+    editorMode: scriptEditorMode,
+    editorForm: scriptEditorForm,
+    setEditorForm: setScriptEditorForm,
+    closeEditor: closeScriptEditor,
+    saveEditor: saveScriptEditor,
+    deleteById: deleteScriptById,
+    saving: scriptSaving,
+    deleting: scriptDeleting,
+    submitError: scriptSubmitError,
+    setSubmitError: setScriptSubmitError,
+  } = useQueryApiScripts(mode === 'temp' ? null : currentId);
+
+  const {
+    runs: scriptRunRecords,
+    loading: scriptRunLoading,
+    error: scriptRunError,
+    activeRun: activeScriptRun,
+    latestRun: latestScriptRun,
+    pendingEventCount: scriptRunPendingEvents,
+    refresh: refreshScriptRunsHistory,
+  } = useApiScriptRuns(mode === 'temp' ? null : currentId, {
+    limit: 30,
+    scriptId: mode === 'run' ? selectedScriptId : null,
+  });
+
+  useEffect(() => {
+    if (!scriptRunRecords || scriptRunRecords.length === 0) return;
+    for (const run of scriptRunRecords) {
+      const isTerminal =
+        run.status === 'succeeded' ||
+        run.status === 'completed_with_errors' ||
+        run.status === 'failed' ||
+        run.status === 'cancelled';
+      if (!isTerminal) continue;
+      if (!run.zipPath) continue;
+      if (promptedRunIdsRef.current.has(run.id)) continue;
+      promptedRunIdsRef.current.add(run.id);
+      setDownloadPromptRun(run);
+      break;
+    }
+  }, [scriptRunRecords]);
+
+  const latestRunSignature = useMemo(
+    () => JSON.stringify({ id: currentId ?? '', values: runValues }),
+    [currentId, runValues],
+  );
+
+  const hasFreshResultForScript = useMemo(
+    () =>
+      Boolean(
+        lastResultAt &&
+          lastExecSignatureRef.current === latestRunSignature &&
+          lastRunResultRef.current,
+      ),
+    [lastResultAt, latestRunSignature],
+  );
 
   const onDetectVars = () => {
     try {
@@ -430,6 +542,383 @@ export default function QueriesPage() {
     [currentId]
   );
 
+  const handleSelectScriptFromList = useCallback(
+    (id: string) => {
+      setSelectedScriptId(id);
+    },
+    [setSelectedScriptId],
+  );
+
+  const handleSelectScript = useCallback(
+    (id: string | null) => {
+      setSelectedScriptId(id);
+    },
+    [setSelectedScriptId],
+  );
+
+  const handleCreateScript = useCallback(() => {
+    if (!currentId) {
+      notifications.show({
+        color: 'orange',
+        title: '请先保存查询',
+        message: '保存当前查询后才能创建 API 脚本。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    setScriptSubmitError(null);
+    openCreateScript();
+  }, [currentId, openCreateScript, setScriptSubmitError]);
+
+  const handleEditScript = useCallback(
+    (id: string) => {
+      setScriptSubmitError(null);
+      void openEditScript(id);
+    },
+    [openEditScript, setScriptSubmitError],
+  );
+
+  const handleDuplicateScript = useCallback(
+    (id: string) => {
+      setScriptSubmitError(null);
+      void openDuplicateScript(id);
+    },
+    [openDuplicateScript, setScriptSubmitError],
+  );
+
+  const handleDeleteScript = useCallback(
+    async (script: QueryApiScriptSummary) => {
+      const confirmed = window.confirm(`确定删除脚本「${script.name}」吗？`);
+      if (!confirmed) return;
+      const ok = await deleteScriptById(script.id);
+      if (ok) {
+        notifications.show({
+          color: 'teal',
+          title: '删除成功',
+          message: `已删除脚本「${script.name}」。`,
+          icon: <IconCheck size={16} />,
+        });
+      } else {
+        notifications.show({
+          color: 'red',
+          title: '删除失败',
+          message: '删除失败，请稍后重试。',
+          icon: <IconX size={16} />,
+        });
+      }
+    },
+    [deleteScriptById],
+  );
+
+  const handleCloseScriptEditor = useCallback(() => {
+    closeScriptEditor();
+    setScriptSubmitError(null);
+  }, [closeScriptEditor, setScriptSubmitError]);
+
+  const handleRunScript = useCallback(async () => {
+    if (mode !== 'run') {
+      notifications.show({
+        color: 'gray',
+        title: '无法执行',
+        message: '请先切换到运行模式再执行脚本。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    if (!currentId) {
+      notifications.show({
+        color: 'red',
+        title: '无法执行',
+        message: '请先保存查询后再配置脚本执行。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    if (!selectedScriptId) {
+      notifications.show({
+        color: 'red',
+        title: '未选择脚本',
+        message: '请选择要执行的脚本。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    if (!hasFreshResultForScript || !lastRunResultRef.current) {
+      notifications.show({
+        color: 'orange',
+        title: '需要最新结果',
+        message: '请先执行查询并确保结果最新，再运行脚本。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    if (!userConnId) {
+      notifications.show({
+        color: 'red',
+        title: '缺少连接',
+        message: '请先选择数据库连接。',
+        icon: <IconX size={16} />,
+      });
+      return;
+    }
+    setScriptRunning(true);
+    try {
+      const compiled = compileSql(sql, vars, runValues);
+      const connectionDsn = await getDsnForConn(userConnId);
+      await executeApiScript({
+        scriptId: selectedScriptId,
+        queryId: currentId,
+        runSignature: latestRunSignature,
+        executedSql: lastRunResultRef.current.sql,
+        params: lastRunResultRef.current.params ?? [],
+        executedAt: lastResultAt ?? Date.now(),
+        userConnId,
+        connectionDsn,
+        baseSql: compiled.text,
+        baseParams: compiled.values,
+      });
+      await refreshScriptRunsHistory();
+      notifications.show({
+        color: 'teal',
+        title: '脚本任务已提交',
+        message: '任务将在后台执行，执行结果稍后可在任务历史查看。',
+        icon: <IconCheck size={16} />,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notifications.show({
+        color: 'red',
+        title: '执行失败',
+        message,
+        icon: <IconX size={16} />,
+      });
+    } finally {
+      setScriptRunning(false);
+    }
+  }, [
+    mode,
+    currentId,
+    selectedScriptId,
+    hasFreshResultForScript,
+    latestRunSignature,
+    lastResultAt,
+    userConnId,
+    sql,
+    vars,
+    runValues,
+    refreshScriptRunsHistory,
+  ]);
+
+  const handleCancelRunRequest = useCallback(
+    async (run: QueryApiScriptRunRecord | null) => {
+      if (!run) return;
+      if (run.status !== 'running' && run.status !== 'pending') return;
+      if (cancelingRunId) return;
+      setCancelingRunId(run.id);
+      try {
+        await cancelApiScriptRun(run.id);
+        notifications.show({
+          color: 'orange',
+          title: '正在取消任务',
+          message: '已通知后台取消该脚本执行。',
+          icon: <IconAlertTriangle size={16} />,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifications.show({
+          color: 'red',
+          title: '取消失败',
+          message,
+          icon: <IconX size={16} />,
+        });
+      } finally {
+        setCancelingRunId(null);
+      }
+    },
+    [cancelingRunId],
+  );
+
+  const performSaveRunZip = useCallback(
+    async (run: QueryApiScriptRunRecord) => {
+      const info = extractRunScriptInfo(run);
+      const base = (info.name ?? `run-${run.id.slice(0, 8)}`).replace(/[^a-zA-Z0-9-_]+/g, '_');
+      const suggested = `${base || run.id}.zip`;
+      try {
+        if (!run.zipPath) {
+          try {
+            await ensureApiScriptRunZip(run.id);
+            await refreshScriptRunsHistory();
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            notifications.show({
+              color: 'red',
+              title: '生成 ZIP 失败',
+              message,
+              icon: <IconX size={16} />,
+            });
+            return false;
+          }
+        }
+        const target = await saveDialog({
+          title: '保存脚本运行结果',
+          defaultPath: suggested,
+          filters: [{ name: 'ZIP', extensions: ['zip'] }],
+        });
+        if (!target) return false;
+        setDownloadingRunId(run.id);
+        await exportApiScriptRunZip(run.id, target);
+        notifications.show({
+          color: 'teal',
+          title: '导出成功',
+          message: `已保存到 ${target}`,
+          icon: <IconCheck size={16} />,
+        });
+        await refreshScriptRunsHistory();
+        return true;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifications.show({
+          color: 'red',
+          title: '导出失败',
+          message,
+          icon: <IconX size={16} />,
+        });
+        return false;
+      } finally {
+        setDownloadingRunId(null);
+      }
+    },
+    [refreshScriptRunsHistory],
+  );
+
+  const handleManualExport = useCallback(
+    async (run: QueryApiScriptRunRecord) => {
+      const ok = await performSaveRunZip(run);
+      if (!ok) return;
+      promptedRunIdsRef.current.add(run.id);
+    },
+    [performSaveRunZip],
+  );
+
+  const handleOpenLogViewer = useCallback(
+    async (run: QueryApiScriptRunRecord) => {
+      setLogViewer({ run, entries: [], loading: true, error: null });
+      try {
+        const entries = await readApiScriptRunLog(run.id, 500);
+        setLogViewer({ run, entries, loading: false, error: null });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setLogViewer({ run, entries: [], loading: false, error: message });
+      }
+    },
+    [],
+  );
+
+  const handleCleanupCache = useCallback(async () => {
+    if (cleanupBusy) return;
+    const confirmed = window.confirm('确认清理超过 24 小时的脚本缓存文件？');
+    if (!confirmed) return;
+    setCleanupBusy(true);
+    try {
+      const cleaned = await cleanupApiScriptCache();
+      notifications.show({
+        color: 'teal',
+        title: '清理完成',
+        message:
+          cleaned > 0
+            ? `已清理 ${cleaned} 个任务缓存`
+            : '没有需要清理的缓存文件。',
+        icon: <IconCheck size={16} />,
+      });
+      if (cleaned > 0) {
+        await refreshScriptRunsHistory();
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      notifications.show({
+        color: 'red',
+        title: '清理失败',
+        message,
+        icon: <IconX size={16} />,
+      });
+    } finally {
+      setCleanupBusy(false);
+    }
+  }, [cleanupBusy, refreshScriptRunsHistory]);
+
+  const handleDownloadPromptConfirm = useCallback(async () => {
+    if (!downloadPromptRun) return;
+    const ok = await performSaveRunZip(downloadPromptRun);
+    if (ok) {
+      setDownloadPromptRun(null);
+    }
+  }, [downloadPromptRun, performSaveRunZip]);
+
+  const handleDownloadPromptLater = useCallback(() => {
+    setDownloadPromptRun(null);
+  }, []);
+
+  const handleCloseLogViewer = useCallback(() => setLogViewer(null), []);
+
+  const statusRun = activeScriptRun ?? latestScriptRun ?? null;
+  const showSpinner = Boolean(
+    activeScriptRun || (!statusRun && (scriptRunLoading || scriptRunPendingEvents > 0)),
+  );
+  const promptScriptInfo = useMemo(
+    () => (downloadPromptRun ? extractRunScriptInfo(downloadPromptRun) : null),
+    [downloadPromptRun],
+  );
+  const logViewerInfo = useMemo(
+    () => (logViewer ? extractRunScriptInfo(logViewer.run) : null),
+    [logViewer],
+  );
+
+  const scriptRunnerNode =
+    mode === 'run'
+      ? (
+          <Stack gap="sm">
+            <QueryApiScriptRunnerBar
+              scripts={apiScripts}
+              selectedId={selectedScriptId}
+              onSelect={handleSelectScript}
+              onCreate={handleCreateScript}
+              onEdit={handleEditScript}
+              onRun={handleRunScript}
+              disabled={!currentId || isExecuting}
+              running={scriptRunning}
+              hasFreshResult={hasFreshResultForScript}
+              loading={scriptsLoading}
+            />
+            <QueryApiScriptRunStatusCard
+              run={statusRun}
+              loading={showSpinner}
+              error={scriptRunError}
+              onRefresh={refreshScriptRunsHistory}
+              onCancel={() => handleCancelRunRequest(statusRun)}
+              cancelDisabled={
+                Boolean(
+                  !statusRun ||
+                    statusRun.status !== 'running' ||
+                    (cancelingRunId && cancelingRunId !== statusRun.id),
+                )
+              }
+              canceling={cancelingRunId === statusRun?.id}
+            />
+            <QueryApiScriptRunHistoryList
+              runs={scriptRunRecords}
+              loading={scriptRunLoading}
+              error={scriptRunError}
+              onRefresh={refreshScriptRunsHistory}
+              onExport={handleManualExport}
+              onViewLog={handleOpenLogViewer}
+              onCleanup={handleCleanupCache}
+              cleanupDisabled={cleanupBusy}
+              downloadingRunId={downloadingRunId}
+            />
+          </Stack>
+        )
+      : null;
+
   const openDeleteDialog = useCallback((item: SavedItem) => {
     setDeleteBusy(false);
     setDeleteTarget(item);
@@ -457,6 +946,8 @@ export default function QueriesPage() {
     setQueryTiming(null);
     calcAutoTriggeredRef.current = {};
     lastExecSignatureRef.current = null;
+    lastRunResultRef.current = null;
+    setLastResultAt(null);
   };
 
   const onTempQueryMode = () => {
@@ -481,6 +972,8 @@ export default function QueriesPage() {
     setTempSql((prev) => (prev && prev.trim().length > 0 ? prev : defaultTempSql));
     calcAutoTriggeredRef.current = {};
     lastExecSignatureRef.current = null;
+    lastRunResultRef.current = null;
+    setLastResultAt(null);
   };
 
   const loadAndOpen = useCallback(
@@ -514,6 +1007,8 @@ export default function QueriesPage() {
         setMode(focusMode);
         calcAutoTriggeredRef.current = {};
         lastExecSignatureRef.current = null;
+        lastRunResultRef.current = null;
+        setLastResultAt(null);
       } catch (e: any) {
         setError(String(e?.message || e));
       }
@@ -659,6 +1154,10 @@ export default function QueriesPage() {
     forceCount?: boolean;
     countOnly?: boolean;
   }) => {
+    if (!override?.countOnly) {
+      lastRunResultRef.current = null;
+      setLastResultAt(null);
+    }
     if (mode === 'temp') {
       if (!userConnId) {
         setError('未设置当前连接，请先在 Connections 选择。');
@@ -716,6 +1215,8 @@ export default function QueriesPage() {
           queryMs: resQueryMs,
           countMs: resCountMs,
         });
+        lastRunResultRef.current = res;
+        setLastResultAt(Date.now());
         if (res.page) setPgPage(res.page);
         if (res.pageSize) setPgSize(res.pageSize);
         if (res.totalRows != null) {
@@ -758,6 +1259,8 @@ export default function QueriesPage() {
                 queryMs: res2.timing?.queryMs ?? null,
                 countMs: res2.timing?.countMs ?? null,
               });
+              lastRunResultRef.current = res2;
+              setLastResultAt(Date.now());
             } catch (ex: any) {
               const msg2 =
                 ex instanceof QueryError ? ex.message : String(ex?.message || ex);
@@ -833,6 +1336,8 @@ export default function QueriesPage() {
         queryMs: resQueryMs,
         countMs: resCountMs,
       });
+      lastRunResultRef.current = res;
+      setLastResultAt(Date.now());
       if (res.page) setPgPage(res.page);
       if (res.pageSize) setPgSize(res.pageSize);
       if (res.totalRows != null) {
@@ -1342,6 +1847,107 @@ export default function QueriesPage() {
           </Button>
         </Group>
       </Modal>
+      <Modal
+        opened={!!downloadPromptRun}
+        onClose={handleDownloadPromptLater}
+        title="导出脚本结果"
+        centered
+        closeOnClickOutside={!downloadingRunId}
+        closeOnEscape={!downloadingRunId}
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            {promptScriptInfo?.name ?? downloadPromptRun?.id.slice(0, 8)} 的任务已完成，是否立即保存结果 ZIP？
+          </Text>
+          <Group justify="flex-end">
+            <Button
+              variant="default"
+              onClick={handleDownloadPromptLater}
+              disabled={Boolean(downloadingRunId)}
+            >
+              稍后再说
+            </Button>
+            <Button
+              onClick={handleDownloadPromptConfirm}
+              loading={downloadingRunId === downloadPromptRun?.id}
+            >
+              立即保存
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+      <Modal
+        opened={!!logViewer}
+        onClose={handleCloseLogViewer}
+        title={`执行日志${logViewerInfo?.name ? ` - ${logViewerInfo.name}` : ''}`}
+        size="70%"
+        centered
+      >
+        {logViewer?.loading ? (
+          <Group justify="center" py="md">
+            <Loader size="sm" />
+          </Group>
+        ) : logViewer?.error ? (
+          <Text size="sm" c="red">
+            {logViewer.error}
+          </Text>
+        ) : logViewer ? (
+          logViewer.entries.length > 0 ? (
+            <ScrollArea h={360} type="auto">
+              <Stack gap="xs">
+                {logViewer.entries.map((entry, idx) => {
+                  const timestampLabel = new Date(entry.timestamp).toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                  });
+                  return (
+                    <Paper key={`${entry.timestamp}-${entry.request_index}-${idx}`} withBorder p="xs" radius="sm">
+                      <Stack gap={4}>
+                        <Group gap="md" wrap="wrap">
+                          <Text size="xs" c="dimmed">
+                            时间：{timestampLabel}
+                          </Text>
+                          <Text size="xs">批次 {entry.fetch_index + 1}</Text>
+                          <Text size="xs">请求 #{entry.request_index}</Text>
+                          <Text size="xs">行 {entry.start_row} - {entry.end_row}</Text>
+                          <Text size="xs">条数 {entry.request_size}</Text>
+                          <Text size="xs">
+                            状态：{entry.status != null ? entry.status : '无返回'}
+                          </Text>
+                          <Text size="xs">耗时：{entry.duration_ms} ms</Text>
+                        </Group>
+                        {entry.error ? (
+                          <Text size="xs" c="red">
+                            错误：{entry.error}
+                          </Text>
+                        ) : (
+                          <Text size="xs" c="teal">
+                            请求成功
+                          </Text>
+                        )}
+                        {entry.response_excerpt ? (
+                          <Text size="xs" c="dimmed">
+                            响应摘要：{entry.response_excerpt}
+                          </Text>
+                        ) : null}
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            </ScrollArea>
+          ) : (
+            <Text size="sm" c="dimmed">
+              暂无日志记录。
+            </Text>
+          )
+        ) : null}
+      </Modal>
       <Group align="flex-start" style={{ height: '100%' }}>
         <SavedQueriesSidebar
           items={items}
@@ -1515,11 +2121,39 @@ export default function QueriesPage() {
                 calcResults={calcResults}
                 onRunCalc={(ci) => runCalcItem(ci)}
                 onUpdateTotal={onUpdateTotals}
+                scriptRunner={scriptRunnerNode}
               />
             )}
           </Stack>
         </ScrollArea>
+        {mode !== 'temp' ? (
+          <QueryApiScriptList
+            scripts={apiScripts}
+            selectedId={selectedScriptId}
+            onSelect={handleSelectScriptFromList}
+            onCreate={handleCreateScript}
+            onDuplicate={(script) => handleDuplicateScript(script.id)}
+            onDelete={handleDeleteScript}
+            busy={scriptSaving || scriptDeleting}
+            loading={scriptsLoading}
+            error={scriptLoadError ?? (scriptEditorOpen ? null : scriptSubmitError)}
+          />
+        ) : null}
       </Group>
+      {scriptEditorOpen && scriptEditorForm ? (
+        <QueryApiScriptEditorDrawer
+          opened={scriptEditorOpen}
+          mode={scriptEditorMode ?? 'create'}
+          form={scriptEditorForm}
+          setForm={setScriptEditorForm}
+          saving={scriptSaving}
+          deleting={scriptDeleting}
+          submitError={scriptSubmitError}
+          onSubmit={saveScriptEditor}
+          onDelete={scriptEditorForm.id ? () => deleteScriptById(scriptEditorForm.id!) : undefined}
+          onClose={handleCloseScriptEditor}
+        />
+      ) : null}
     </Stack>
   );
 }

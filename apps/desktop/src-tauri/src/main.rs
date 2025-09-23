@@ -1,7 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console on Windows in release
 
+mod api_scripts;
 mod migrations;
 
+use api_scripts::{
+    cancel_api_script_run, cleanup_api_script_cache, ensure_api_script_run_zip, execute_api_script,
+    export_api_script_run_zip, read_api_script_run_log, ApiScriptManager,
+};
 use regex::Regex;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -873,6 +878,8 @@ async fn assistant_chat(payload: AssistantChatRequest) -> Result<AssistantChatRe
 
 fn main() {
     tauri::Builder::default()
+        .manage(ApiScriptManager::default())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:rdv_local.db", migrations::migrations())
@@ -880,7 +887,13 @@ fn main() {
         )
         .invoke_handler(tauri::generate_handler![
             assistant_chat,
-            assistant_list_models
+            assistant_list_models,
+            execute_api_script,
+            cancel_api_script_run,
+            ensure_api_script_run_zip,
+            export_api_script_run_zip,
+            read_api_script_run_log,
+            cleanup_api_script_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

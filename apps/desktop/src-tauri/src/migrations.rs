@@ -84,5 +84,63 @@ pub fn migrations() -> Vec<Migration> {
         "#,
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 4,
+            description: "query_api_scripts",
+            sql: r#"
+        CREATE TABLE IF NOT EXISTS query_api_scripts (
+          id TEXT PRIMARY KEY,
+          query_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT NULL,
+          method TEXT NOT NULL CHECK (method IN ('GET', 'POST', 'PUT', 'PATCH', 'DELETE')),
+          endpoint TEXT NOT NULL,
+          headers TEXT NOT NULL DEFAULT '[]',
+          body_template TEXT NULL,
+          fetch_size INTEGER NOT NULL CHECK (fetch_size BETWEEN 1 AND 1000),
+          send_batch_size INTEGER NOT NULL CHECK (send_batch_size BETWEEN 1 AND 1000),
+          sleep_ms INTEGER NOT NULL CHECK (sleep_ms BETWEEN 0 AND 600000),
+          request_timeout_ms INTEGER NOT NULL CHECK (request_timeout_ms BETWEEN 1000 AND 600000),
+          error_policy TEXT NOT NULL CHECK (error_policy IN ('continue', 'abort')),
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE (query_id, name)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_query_api_scripts_query ON query_api_scripts(query_id);
+
+        CREATE TABLE IF NOT EXISTS query_api_script_runs (
+          id TEXT PRIMARY KEY,
+          script_id TEXT NOT NULL,
+          query_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN (
+            'pending',
+            'running',
+            'succeeded',
+            'completed_with_errors',
+            'failed',
+            'cancelled'
+          )),
+          script_snapshot TEXT NOT NULL,
+          progress_snapshot TEXT NOT NULL DEFAULT '{}',
+          error_message TEXT NULL,
+          output_dir TEXT NULL,
+          manifest_path TEXT NULL,
+          zip_path TEXT NULL,
+          total_batches INTEGER NULL,
+          processed_batches INTEGER NULL,
+          success_rows INTEGER NULL,
+          error_rows INTEGER NULL,
+          started_at INTEGER NULL,
+          finished_at INTEGER NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_query_api_script_runs_script ON query_api_script_runs(script_id);
+        CREATE INDEX IF NOT EXISTS idx_query_api_script_runs_created ON query_api_script_runs(created_at DESC);
+        "#,
+            kind: MigrationKind::Up,
+        },
     ]
 }
