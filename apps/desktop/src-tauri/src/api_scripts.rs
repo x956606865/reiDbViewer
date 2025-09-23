@@ -5,7 +5,7 @@ use reqwest::{Client, Method};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::postgres::{PgArguments, PgPool, PgPoolOptions};
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{Arguments, Row, SqlitePool};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
@@ -514,6 +514,123 @@ async fn open_sqlite_pool(app: &AppHandle) -> Result<SqlitePool, String> {
         .connect_with(options)
         .await
         .map_err(map_sql_error)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListApiScriptRunsArgs {
+    #[serde(default)]
+    pub limit: Option<u32>,
+    #[serde(default)]
+    pub script_id: Option<String>,
+    #[serde(default)]
+    pub query_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ApiScriptRunListItem {
+    pub id: String,
+    pub script_id: String,
+    pub query_id: String,
+    pub status: String,
+    pub script_snapshot: String,
+    pub progress_snapshot: Option<String>,
+    pub error_message: Option<String>,
+    pub output_dir: Option<String>,
+    pub manifest_path: Option<String>,
+    pub zip_path: Option<String>,
+    pub total_batches: Option<i64>,
+    pub processed_batches: Option<i64>,
+    pub success_rows: Option<i64>,
+    pub error_rows: Option<i64>,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[tauri::command]
+pub async fn list_api_script_runs(
+    app: AppHandle,
+    args: ListApiScriptRunsArgs,
+) -> Result<Vec<ApiScriptRunListItem>, String> {
+    println!(
+        "list_api_script_runs called: limit={:?}, script_id={:?}, query_id={:?}",
+        args.limit, args.script_id, args.query_id
+    );
+    let sqlite_pool = open_sqlite_pool(&app).await?;
+    let limit = args.limit.unwrap_or(30).clamp(1, 100) as i64;
+
+    let mut sql = String::from(
+        "SELECT id, script_id, query_id, status, script_snapshot, progress_snapshot, error_message, \
+         output_dir, manifest_path, zip_path, total_batches, processed_batches, success_rows, error_rows, \
+         started_at, finished_at, created_at, updated_at FROM query_api_script_runs",
+    );
+
+    let mut filters: Vec<&'static str> = Vec::new();
+    let mut arguments = SqliteArguments::default();
+
+    if let Some(script_id) = args
+        .script_id
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        filters.push("script_id = ?");
+        arguments.add(script_id.to_string());
+    }
+
+    if let Some(query_id) = args
+        .query_id
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        filters.push("query_id = ?");
+        arguments.add(query_id.to_string());
+    }
+
+    if !filters.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&filters.join(" AND "));
+    }
+
+    sql.push_str(" ORDER BY created_at DESC LIMIT ?");
+    arguments.add(limit);
+
+    let rows = sqlx::query_with(&sql, arguments)
+        .fetch_all(&sqlite_pool)
+        .await
+        .map_err(map_sql_error)?;
+
+    println!("list_api_script_runs fetched {} rows", rows.len());
+
+    let mut result = Vec::with_capacity(rows.len());
+    for row in rows {
+        let item = ApiScriptRunListItem {
+            id: row.try_get("id").map_err(map_sql_error)?,
+            script_id: row.try_get("script_id").map_err(map_sql_error)?,
+            query_id: row.try_get("query_id").map_err(map_sql_error)?,
+            status: row.try_get("status").map_err(map_sql_error)?,
+            script_snapshot: row.try_get("script_snapshot").map_err(map_sql_error)?,
+            progress_snapshot: row.try_get("progress_snapshot").map_err(map_sql_error)?,
+            error_message: row.try_get("error_message").map_err(map_sql_error)?,
+            output_dir: row.try_get("output_dir").map_err(map_sql_error)?,
+            manifest_path: row.try_get("manifest_path").map_err(map_sql_error)?,
+            zip_path: row.try_get("zip_path").map_err(map_sql_error)?,
+            total_batches: row.try_get("total_batches").map_err(map_sql_error)?,
+            processed_batches: row.try_get("processed_batches").map_err(map_sql_error)?,
+            success_rows: row.try_get("success_rows").map_err(map_sql_error)?,
+            error_rows: row.try_get("error_rows").map_err(map_sql_error)?,
+            started_at: row.try_get("started_at").map_err(map_sql_error)?,
+            finished_at: row.try_get("finished_at").map_err(map_sql_error)?,
+            created_at: row.try_get("created_at").map_err(map_sql_error)?,
+            updated_at: row.try_get("updated_at").map_err(map_sql_error)?,
+        };
+        result.push(item);
+    }
+
+    Ok(result)
 }
 
 fn validate_connection_dsn(dsn: &str) -> Result<(), String> {

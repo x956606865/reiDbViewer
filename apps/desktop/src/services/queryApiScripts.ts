@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import Database from '@tauri-apps/plugin-sql'
 import { z } from 'zod'
 
@@ -631,27 +632,26 @@ export async function listRecentScriptRuns(
   opts?: { limit?: number; scriptId?: string; queryId?: string },
 ): Promise<QueryApiScriptRunRecord[]> {
   const limit = Math.max(1, Math.min(100, opts?.limit ?? 20))
-  const filters: string[] = []
-  const params: any[] = []
-  if (opts?.scriptId) {
-    filters.push(`script_id = $${params.length + 1}`)
-    params.push(opts.scriptId)
+  if (process.env.NODE_ENV !== 'production') {
+    console.debug(
+      'listRecentScriptRuns args',
+      JSON.stringify(
+        {
+          limit,
+          scriptId: opts?.scriptId ?? null,
+          queryId: opts?.queryId ?? null,
+        },
+        null,
+        2,
+      ),
+    )
   }
-  if (opts?.queryId) {
-    filters.push(`query_id = $${params.length + 1}`)
-    params.push(opts.queryId)
-  }
-  const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : ''
-  const db = await openLocal()
-  const rows = await db.select<QueryApiRunRow[]>(
-    `SELECT id, script_id, query_id, status, script_snapshot, progress_snapshot, error_message,
-            output_dir, manifest_path, zip_path, total_batches, processed_batches,
-            success_rows, error_rows, started_at, finished_at, created_at, updated_at
-     FROM query_api_script_runs
-     ${whereClause}
-     ORDER BY created_at DESC
-     LIMIT ${limit}`,
-    params,
-  )
+  const rows = await invoke<QueryApiRunRow[]>('list_api_script_runs', {
+    args: {
+      limit,
+      scriptId: opts?.scriptId ?? null,
+      queryId: opts?.queryId ?? null,
+    },
+  })
   return (rows ?? []).map(runRowToRecord)
 }

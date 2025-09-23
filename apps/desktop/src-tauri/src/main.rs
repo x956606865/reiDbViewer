@@ -5,7 +5,7 @@ mod migrations;
 
 use api_scripts::{
     cancel_api_script_run, cleanup_api_script_cache, ensure_api_script_run_zip, execute_api_script,
-    export_api_script_run_zip, read_api_script_run_log, ApiScriptManager,
+    export_api_script_run_zip, list_api_script_runs, read_api_script_run_log, ApiScriptManager,
 };
 use regex::Regex;
 use reqwest::{Client, StatusCode};
@@ -893,7 +893,8 @@ fn main() {
             ensure_api_script_run_zip,
             export_api_script_run_zip,
             read_api_script_run_log,
-            cleanup_api_script_cache
+            cleanup_api_script_cache,
+            list_api_script_runs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

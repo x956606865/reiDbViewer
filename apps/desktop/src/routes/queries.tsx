@@ -461,6 +461,13 @@ export default function QueriesPage() {
   });
 
   useEffect(() => {
+    if (mode !== 'run') return;
+    if (!currentId) return;
+    if (!selectedScriptId) return;
+    void refreshScriptRunsHistory();
+  }, [mode, currentId, selectedScriptId, refreshScriptRunsHistory]);
+
+  useEffect(() => {
     if (!scriptRunRecords || scriptRunRecords.length === 0) return;
     for (const run of scriptRunRecords) {
       const isTerminal =

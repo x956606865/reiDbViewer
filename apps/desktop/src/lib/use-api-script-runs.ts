@@ -38,14 +38,22 @@ export function useApiScriptRuns(
   queryId: string | null | undefined,
   options?: { limit?: number; scriptId?: string | null; includeAllQueries?: boolean },
 ): UseApiScriptRunsResult {
-  const mountedRef = useRef(true)
-  useEffect(() => () => {
-    mountedRef.current = false
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
   }, [])
 
   const limit = options?.limit ?? DEFAULT_LIMIT
   const includeAll = options?.includeAllQueries === true
-
+  const normalizedScriptId = useMemo(() => {
+    const value = options?.scriptId
+    if (typeof value !== 'string') return null
+    const trimmed = value.trim()
+    return trimmed.length > 0 ? trimmed : null
+  }, [options?.scriptId])
   const [runs, setRuns] = useState<QueryApiScriptRunRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,16 +69,28 @@ export function useApiScriptRuns(
   const queryIdRef = useRef<string | null | undefined>(queryId)
   useEffect(() => {
     queryIdRef.current = queryId
-  }, [queryId])
+    if (includeAll) {
+      void refreshRef.current()
+      return
+    }
+    if (queryId) {
+      void refreshRef.current()
+    }
+  }, [includeAll, queryId])
 
-  const scriptIdRef = useRef<string | null | undefined>(options?.scriptId)
+  const scriptIdRef = useRef<string | null>(normalizedScriptId)
   useEffect(() => {
-    scriptIdRef.current = options?.scriptId
-  }, [options?.scriptId])
+    scriptIdRef.current = normalizedScriptId
+    if (normalizedScriptId) {
+      void refreshRef.current()
+    }
+  }, [normalizedScriptId])
 
   const refresh = useCallback(async () => {
     if (!mountedRef.current) return
-    if (!includeAll && !queryId) {
+    const currentQueryId = queryIdRef.current
+    const currentScriptId = scriptIdRef.current
+    if (!includeAll && !currentQueryId) {
       setRuns([])
       setLoading(false)
       return
@@ -78,13 +98,12 @@ export function useApiScriptRuns(
     setLoading(true)
     setError(null)
     try {
-      const scriptId = scriptIdRef.current
       const fetchOpts: { limit: number; scriptId?: string; queryId?: string } = { limit }
-      if (scriptId && typeof scriptId === 'string' && scriptId.trim().length > 0) {
-        fetchOpts.scriptId = scriptId
+      if (currentScriptId) {
+        fetchOpts.scriptId = currentScriptId
       }
-      if (!includeAll && queryId) {
-        fetchOpts.queryId = queryId
+      if (!includeAll && currentQueryId) {
+        fetchOpts.queryId = currentQueryId
       }
       const list = await listRecentScriptRuns(fetchOpts)
       if (!mountedRef.current) return
@@ -111,13 +130,14 @@ export function useApiScriptRuns(
     } catch (err) {
       if (!mountedRef.current) return
       setError(describeError(err))
+      console.error('useApiScriptRuns.refresh error', err)
     } finally {
       if (!mountedRef.current) return
       setLoading(false)
     }
-  }, [includeAll, limit, queryId])
+  }, [includeAll, limit])
 
-  const refreshRef = useRef<() => Promise<void>>(async () => {})
+  const refreshRef = useRef(refresh)
   useEffect(() => {
     refreshRef.current = refresh
   }, [refresh])
@@ -130,8 +150,7 @@ export function useApiScriptRuns(
       setLoading(false)
       return
     }
-    void refresh()
-  }, [includeAll, queryId, refresh])
+  }, [includeAll, queryId, normalizedScriptId])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
