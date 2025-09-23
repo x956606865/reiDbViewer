@@ -9,7 +9,7 @@ use sqlx::sqlite::{SqliteArguments, SqliteConnectOptions, SqliteJournalMode, Sql
 use sqlx::{Arguments, Row, SqlitePool};
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -163,10 +163,10 @@ struct ManifestFiles {
 
 #[derive(Debug, Deserialize, Default)]
 struct ManifestFileSection {
-    #[serde(default)]
-    successParts: Vec<String>,
-    #[serde(default)]
-    errorParts: Vec<String>,
+    #[serde(default, rename = "successParts")]
+    success_parts: Vec<String>,
+    #[serde(default, rename = "errorParts")]
+    error_parts: Vec<String>,
     #[serde(default)]
     logs: Vec<String>,
     #[serde(default)]
@@ -457,14 +457,19 @@ fn read_manifest_files(path: &Path) -> Result<ManifestFiles, String> {
     let text = fs::read_to_string(path).map_err(map_io_error)?;
     let doc: ManifestDocument = serde_json::from_str(&text).map_err(map_json_error)?;
     let files = doc.files;
-    let manifest_name = files
-        .manifest
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or_else(|| MANIFEST_FILE_NAME.to_string());
+    let success_parts = sanitize_manifest_list(files.success_parts)?;
+    let error_parts = sanitize_manifest_list(files.error_parts)?;
+    let logs = sanitize_manifest_list(files.logs)?;
+    let manifest_name = match files.manifest {
+        Some(name) if !name.trim().is_empty() => {
+            validate_manifest_member(&name)?.to_string_lossy().into_owned()
+        }
+        _ => MANIFEST_FILE_NAME.to_string(),
+    };
     Ok(ManifestFiles {
-        success_parts: files.successParts,
-        error_parts: files.errorParts,
-        logs: files.logs,
+        success_parts,
+        error_parts,
+        logs,
         manifest: manifest_name,
     })
 }
@@ -586,7 +591,7 @@ pub async fn list_api_script_runs(
         .filter(|value| !value.is_empty())
     {
         filters.push("script_id = ?");
-        arguments.add(script_id.to_string());
+        let _ = arguments.add(script_id.to_string());
     }
 
     if let Some(query_id) = args
@@ -596,7 +601,7 @@ pub async fn list_api_script_runs(
         .filter(|value| !value.is_empty())
     {
         filters.push("query_id = ?");
-        arguments.add(query_id.to_string());
+        let _ = arguments.add(query_id.to_string());
     }
 
     if !filters.is_empty() {
@@ -605,7 +610,7 @@ pub async fn list_api_script_runs(
     }
 
     sql.push_str(" ORDER BY created_at DESC LIMIT ?");
-    arguments.add(limit);
+    let _ = arguments.add(limit);
 
     let rows = sqlx::query_with(&sql, arguments)
         .fetch_all(&sqlite_pool)
@@ -750,9 +755,9 @@ fn cleanup_run_storage(
 
     if let Some(dir_text) = output_dir {
         let dir_path = PathBuf::from(&dir_text);
-        if ensure_path_within(&cache_root, &dir_path).is_ok() {
-            if dir_path.exists() {
-                if let Err(err) = fs::remove_dir_all(&dir_path) {
+        if let Ok(safe_path) = ensure_path_within(&cache_root, &dir_path) {
+            if safe_path.exists() {
+                if let Err(err) = fs::remove_dir_all(&safe_path) {
                     if err.kind() != std::io::ErrorKind::NotFound {
                         return Err(map_io_error(err));
                     }
@@ -763,9 +768,9 @@ fn cleanup_run_storage(
 
     if let Some(manifest_text) = manifest_path {
         let manifest_path = PathBuf::from(&manifest_text);
-        if ensure_path_within(&cache_root, &manifest_path).is_ok() {
-            if manifest_path.exists() {
-                if let Err(err) = fs::remove_file(&manifest_path) {
+        if let Ok(safe_path) = ensure_path_within(&cache_root, &manifest_path) {
+            if safe_path.exists() {
+                if let Err(err) = fs::remove_file(&safe_path) {
                     if err.kind() != std::io::ErrorKind::NotFound {
                         return Err(map_io_error(err));
                     }
@@ -776,9 +781,9 @@ fn cleanup_run_storage(
 
     if let Some(zip_text) = zip_path {
         let zip_path = PathBuf::from(&zip_text);
-        if ensure_path_within(&cache_root, &zip_path).is_ok() {
-            if zip_path.exists() {
-                if let Err(err) = fs::remove_file(&zip_path) {
+        if let Ok(safe_path) = ensure_path_within(&cache_root, &zip_path) {
+            if safe_path.exists() {
+                if let Err(err) = fs::remove_file(&safe_path) {
                     if err.kind() != std::io::ErrorKind::NotFound {
                         return Err(map_io_error(err));
                     }
@@ -913,11 +918,13 @@ fn create_zip_archive(run_dir: &Path, files: &ManifestFiles) -> Result<PathBuf, 
     let options = FileOptions::default().compression_method(CompressionMethod::Deflated);
 
     let mut add_file = |name: &str| -> Result<(), String> {
-        let path = run_dir.join(name);
-        if !path.exists() {
+        let relative = validate_manifest_member(name)?;
+        let joined = run_dir.join(&relative);
+        let safe_path = ensure_path_within(run_dir, &joined)?;
+        if !safe_path.exists() {
             return Ok(());
         }
-        let mut source = File::open(&path).map_err(map_io_error)?;
+        let mut source = File::open(&safe_path).map_err(map_io_error)?;
         writer.start_file(name, options).map_err(map_io_error)?;
         std::io::copy(&mut source, &mut writer).map_err(map_io_error)?;
         Ok(())
@@ -1171,12 +1178,83 @@ fn cache_root(app: &AppHandle) -> Result<PathBuf, String> {
         .join(CACHE_SUBDIR))
 }
 
-fn ensure_path_within(base: &Path, candidate: &Path) -> Result<(), String> {
-    if candidate.starts_with(base) {
-        Ok(())
+fn normalize_components(path: &Path) -> Result<PathBuf, String> {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::RootDir => normalized.push(component.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    return Err("缓存路径无效".to_string());
+                }
+            }
+            Component::Normal(part) => normalized.push(part),
+        }
+    }
+    Ok(normalized)
+}
+
+fn normalize_base_path(base: &Path) -> Result<PathBuf, String> {
+    if !base.is_absolute() {
+        return Err("缓存路径无效".to_string());
+    }
+    if base.exists() {
+        fs::canonicalize(base).map_err(map_io_error)
+    } else {
+        normalize_components(base)
+    }
+}
+
+fn resolve_candidate_path(base: &Path, candidate: &Path) -> Result<PathBuf, String> {
+    let combined = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        base.join(candidate)
+    };
+    normalize_components(&combined)
+}
+
+fn ensure_path_within(base: &Path, candidate: &Path) -> Result<PathBuf, String> {
+    let base_normalized = normalize_base_path(base)?;
+    let candidate_normalized = resolve_candidate_path(&base_normalized, candidate)?;
+    if candidate_normalized.starts_with(&base_normalized) {
+        Ok(candidate_normalized)
     } else {
         Err("缓存路径无效".to_string())
     }
+}
+
+fn validate_manifest_member(name: &str) -> Result<PathBuf, String> {
+    if name.trim().is_empty() {
+        return Err("manifest_entry_invalid".to_string());
+    }
+    let path = Path::new(name);
+    if path.is_absolute() {
+        return Err("manifest_entry_invalid".to_string());
+    }
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::Normal(part) => normalized.push(part),
+            _ => return Err("manifest_entry_invalid".to_string()),
+        }
+    }
+    if normalized.as_os_str().is_empty() {
+        return Err("manifest_entry_invalid".to_string());
+    }
+    Ok(normalized)
+}
+
+fn sanitize_manifest_list(items: Vec<String>) -> Result<Vec<String>, String> {
+    let mut sanitized = Vec::with_capacity(items.len());
+    for item in items {
+        let normalized = validate_manifest_member(&item)?;
+        sanitized.push(normalized.to_string_lossy().into_owned());
+    }
+    Ok(sanitized)
 }
 
 async fn perform_api_script_run(
@@ -1743,8 +1821,10 @@ pub async fn ensure_api_script_run_zip(app: AppHandle, run_id: String) -> Result
 
     if let Some(zip_text) = storage.zip_path.as_ref() {
         let zip_path = PathBuf::from(zip_text);
-        if ensure_path_within(&cache_root, &zip_path).is_ok() && zip_path.exists() {
-            return Ok(zip_text.clone());
+        if let Ok(safe_zip) = ensure_path_within(&cache_root, &zip_path) {
+            if safe_zip.exists() {
+                return Ok(zip_text.clone());
+            }
         }
     }
 
@@ -1755,14 +1835,12 @@ pub async fn ensure_api_script_run_zip(app: AppHandle, run_id: String) -> Result
         .manifest_path
         .ok_or_else(|| "manifest_not_available".to_string())?;
 
-    let output_dir = PathBuf::from(&output_dir_text);
-    ensure_path_within(&cache_root, &output_dir)?;
+    let output_dir = ensure_path_within(&cache_root, &PathBuf::from(&output_dir_text))?;
     if !output_dir.exists() {
         return Err("output_dir_missing".to_string());
     }
 
-    let manifest_path = PathBuf::from(&manifest_path_text);
-    ensure_path_within(&cache_root, &manifest_path)?;
+    let manifest_path = ensure_path_within(&cache_root, &PathBuf::from(&manifest_path_text))?;
     if !manifest_path.exists() {
         return Err("manifest_file_missing".to_string());
     }
@@ -1807,13 +1885,11 @@ pub async fn export_api_script_run_zip(
     let zip_path_text = storage
         .zip_path
         .ok_or_else(|| "zip_not_available".to_string())?;
-    let zip_path = PathBuf::from(&zip_path_text);
+    let cache_root = cache_root(&app)?;
+    let zip_path = ensure_path_within(&cache_root, &PathBuf::from(&zip_path_text))?;
     if !zip_path.exists() {
         return Err("zip_file_missing".to_string());
     }
-
-    let cache_root = cache_root(&app)?;
-    ensure_path_within(&cache_root, &zip_path)?;
 
     let destination_path = PathBuf::from(&destination);
     if let Some(parent) = destination_path.parent() {
@@ -1863,7 +1939,7 @@ pub async fn read_api_script_run_log(
     }
 
     let cache_root = cache_root(&app)?;
-    ensure_path_within(&cache_root, &log_path)?;
+    let log_path = ensure_path_within(&cache_root, &log_path)?;
 
     let log_text = tokio_fs::read_to_string(&log_path)
         .await
@@ -1922,9 +1998,9 @@ pub async fn cleanup_api_script_cache(
 
         if let Some(dir_text) = output_dir.as_ref() {
             let dir_path = PathBuf::from(dir_text);
-            if ensure_path_within(&cache_root, &dir_path).is_ok() {
-                if dir_path.exists() {
-                    if let Err(err) = fs::remove_dir_all(&dir_path) {
+            if let Ok(safe_dir) = ensure_path_within(&cache_root, &dir_path) {
+                if safe_dir.exists() {
+                    if let Err(err) = fs::remove_dir_all(&safe_dir) {
                         if err.kind() != std::io::ErrorKind::NotFound {
                             return Err(map_io_error(err));
                         }
@@ -1935,10 +2011,12 @@ pub async fn cleanup_api_script_cache(
 
         if let Some(zip_text) = zip_path.as_ref() {
             let zip_path = PathBuf::from(zip_text);
-            if ensure_path_within(&cache_root, &zip_path).is_ok() && zip_path.exists() {
-                if let Err(err) = fs::remove_file(&zip_path) {
-                    if err.kind() != std::io::ErrorKind::NotFound {
-                        return Err(map_io_error(err));
+            if let Ok(safe_zip) = ensure_path_within(&cache_root, &zip_path) {
+                if safe_zip.exists() {
+                    if let Err(err) = fs::remove_file(&safe_zip) {
+                        if err.kind() != std::io::ErrorKind::NotFound {
+                            return Err(map_io_error(err));
+                        }
                     }
                 }
             }
@@ -2039,12 +2117,12 @@ pub async fn clear_api_script_runs(
 
     if let Some(script_id) = script_filter.as_ref() {
         filters.push("script_id = ?");
-        arguments.add(script_id.clone());
+        let _ = arguments.add(script_id.clone());
     }
 
     if let Some(query_id) = query_filter.as_ref() {
         filters.push("query_id = ?");
-        arguments.add(query_id.clone());
+        let _ = arguments.add(query_id.clone());
     }
 
     if !filters.is_empty() {
@@ -2149,9 +2227,12 @@ pub async fn execute_api_script(
 mod tests {
     use super::{
         build_csv_record, chunk_records, collect_csv_headers, create_manifest,
-        validate_connection_dsn, value_to_csv_field, ManifestFiles, RunSummary,
+        ensure_path_within, sanitize_manifest_list, validate_connection_dsn,
+        validate_manifest_member, value_to_csv_field, ManifestFiles, RunSummary,
     };
     use serde_json::json;
+    use std::{env, fs, path::PathBuf};
+    use uuid::Uuid;
 
     #[test]
     fn validates_postgres_dsn() {
@@ -2255,5 +2336,40 @@ mod tests {
         assert_eq!(manifest["finishedAt"], json!(2000));
         let generated = manifest["generatedAt"].as_i64().unwrap();
         assert!(generated >= 1000);
+    }
+
+    #[test]
+    fn validate_manifest_member_rejects_traversal() {
+        assert!(validate_manifest_member("../../etc/passwd").is_err());
+        assert!(validate_manifest_member("/absolute/path").is_err());
+
+        let normalized = validate_manifest_member("./logs/run.log").unwrap();
+        assert_eq!(normalized, PathBuf::from("logs/run.log"));
+
+        let sanitized = sanitize_manifest_list(vec!["./a.csv".to_string(), "logs/out.log".to_string()])
+            .expect("sanitize should succeed");
+        assert_eq!(sanitized, vec!["a.csv".to_string(), "logs/out.log".to_string()]);
+    }
+
+    #[test]
+    fn ensure_path_within_blocks_escape() {
+        let base = env::temp_dir().join(format!("rdv_api_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&base).expect("create base dir");
+
+        let base = fs::canonicalize(&base).expect("canonicalize base dir");
+
+        let relative_inside = PathBuf::from("nested/inside.txt");
+        let absolute_inside = base.join("nested/inside.txt");
+
+        let resolved_rel = ensure_path_within(&base, &relative_inside).expect("relative inside");
+        assert!(resolved_rel.starts_with(&base));
+
+        let resolved_abs = ensure_path_within(&base, &absolute_inside).expect("absolute inside");
+        assert!(resolved_abs.starts_with(&base));
+
+        assert!(ensure_path_within(&base, &PathBuf::from("../escape.txt")).is_err());
+        assert!(ensure_path_within(&base, &base.join("../escape.txt")).is_err());
+
+        let _ = fs::remove_dir_all(&base);
     }
 }
