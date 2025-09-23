@@ -36,6 +36,12 @@ import {
 } from '@/lib/saved-sql-import-export';
 import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 import { usePersistentSet } from '@/lib/use-persistent-set';
+import {
+  useSavedQueriesApi,
+  isSavedQueriesApiError,
+  type SavedQueryListItem,
+  type SavedQueryUpdateInput,
+} from '@/lib/saved-queries-api';
 
 type CalcResultState = {
   loading?: boolean;
@@ -43,6 +49,15 @@ type CalcResultState = {
   error?: string;
   groupRows?: Array<{ name: string; value: any }>;
 };
+
+const toSavedItem = (summary: SavedQueryListItem): SavedItem => ({
+  id: summary.id,
+  name: summary.name,
+  description: summary.description,
+  variables: summary.variables,
+  createdAt: summary.createdAt,
+  updatedAt: summary.updatedAt,
+});
 
 export default function SavedQueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
@@ -127,6 +142,8 @@ export default function SavedQueriesPage() {
     () => new Set<string>(),
   );
 
+  const savedQueriesApi = useSavedQueriesApi();
+
   useEffect(() => {
     fetch('/api/user/connections', { cache: 'no-store' })
       .then(async (r) => (r.ok ? r.json() : { items: [] }))
@@ -149,25 +166,27 @@ export default function SavedQueriesPage() {
     [name, sql]
   );
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setError(null);
     setInfo(null);
     setSuggestedSQL(null);
-    fetch('/api/user/saved-sql', { cache: 'no-store' })
-      .then(async (r) => {
-        const j = await r.json().catch(() => ({}));
-        if (r.status === 501 && j?.suggestedSQL) {
-          setSuggestedSQL(j.suggestedSQL);
-          throw new Error('功能未初始化：请在 APP_DB 执行建表 SQL 后重试。');
+    try {
+      const list = await savedQueriesApi.list();
+      setItems(list.map(toSavedItem));
+    } catch (err) {
+      if (isSavedQueriesApiError(err)) {
+        if (err.type === 'not_initialized' && err.suggestedSQL) {
+          setSuggestedSQL(err.suggestedSQL);
         }
-        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-        setItems(j.items || []);
-      })
-      .catch((e) => setError(String(e?.message || e)));
-  }, []);
+        setError(err.message);
+      } else {
+        setError(String((err as any)?.message || err));
+      }
+    }
+  }, [savedQueriesApi]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
   // 连接切换后，清空预览与结果，避免误会
   useEffect(() => {
@@ -259,22 +278,32 @@ export default function SavedQueriesPage() {
         calcItems?: any[];
       }> = [];
       for (const it of items) {
-        const r = await fetch(`/api/user/saved-sql/${it.id}`, {
-          cache: 'no-store',
-        });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j?.error)
-          throw new Error(j?.error || `导出失败：读取 ${it.name} 失败`);
-        details.push({
-          name: j.name,
-          description: j.description ?? null,
-          sql: j.sql,
-          variables: Array.isArray(j.variables) ? j.variables : [],
-          dynamicColumns: Array.isArray(j.dynamicColumns)
-            ? j.dynamicColumns
-            : [],
-          calcItems: Array.isArray(j.calcItems) ? j.calcItems : [],
-        });
+        try {
+          const record = await savedQueriesApi.get(it.id);
+          details.push({
+            name: record.name,
+            description: record.description ?? null,
+            sql: record.sql,
+            variables: Array.isArray(record.variables)
+              ? record.variables
+              : [],
+            dynamicColumns: Array.isArray(record.dynamicColumns)
+              ? record.dynamicColumns
+              : [],
+            calcItems: Array.isArray(record.calcItems)
+              ? record.calcItems
+              : [],
+          });
+        } catch (err) {
+          if (isSavedQueriesApiError(err)) {
+            if (err.type === 'not_initialized' && err.suggestedSQL) {
+              setSuggestedSQL(err.suggestedSQL);
+              throw new Error('功能未初始化：请先在 APP_DB 执行建表/ALTER SQL 后重试。');
+            }
+            throw new Error(err.message);
+          }
+          throw err;
+        }
       }
       const payload = {
         version: 'rdv.saved-sql.v1',
@@ -303,7 +332,7 @@ export default function SavedQueriesPage() {
     } finally {
       setBusy(null);
     }
-  }, [items]);
+  }, [items, savedQueriesApi]);
 
   // import click handled in SavedQueriesSidebar
 
@@ -328,67 +357,53 @@ export default function SavedQueriesPage() {
           skipCount = 0,
           overwriteCount = 0;
         for (const it of itemsToImport) {
-          const res = await fetch('/api/user/saved-sql', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              name: it.name,
-              description: it.description ?? undefined,
-              sql: it.sql,
-              variables: it.variables,
-              dynamicColumns: it.dynamicColumns || [],
-              calcItems: it.calcItems || [],
-            }),
-          });
-          const j = await res.json().catch(() => ({}));
-          if (res.status === 501 && j?.suggestedSQL) {
-            setSuggestedSQL(j.suggestedSQL);
-            throw new Error(
-              '功能未初始化：请先在 APP_DB 执行建表/ALTER SQL 后重试。'
-            );
-          }
-          if (
-            res.status === 409 &&
-            j?.error === 'name_exists' &&
-            j?.existingId
-          ) {
-            if (overwrite) {
-              const res2 = await fetch(`/api/user/saved-sql/${j.existingId}`, {
-                method: 'PATCH',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({
-                  name: it.name,
-                  description: it.description ?? null,
-                  sql: it.sql,
-                  variables: it.variables,
-                  dynamicColumns: it.dynamicColumns || [],
-                  calcItems: it.calcItems || [],
-                }),
-              });
-              if (!res2.ok) throw new Error(`覆盖失败：${it.name}`);
-              overwriteCount++;
-            } else {
-              skipCount++;
-            }
-          } else if (!res.ok) {
-            throw new Error(
-              j?.error || `导入失败（HTTP ${res.status}）：${it.name}`
-            );
-          } else {
+          const payload = {
+            name: it.name,
+            description: it.description ?? null,
+            sql: it.sql,
+            variables: it.variables,
+            dynamicColumns: it.dynamicColumns || [],
+            calcItems: it.calcItems || [],
+          };
+          try {
+            await savedQueriesApi.create({
+              ...payload,
+              description: payload.description ?? undefined,
+            });
             okCount++;
+          } catch (err) {
+            if (isSavedQueriesApiError(err)) {
+              if (err.type === 'not_initialized' && err.suggestedSQL) {
+                setSuggestedSQL(err.suggestedSQL);
+                throw new Error(
+                  '功能未初始化：请先在 APP_DB 执行建表/ALTER SQL 后重试。'
+                );
+              }
+              if (err.type === 'conflict' && err.existingId) {
+                if (overwrite) {
+                  await savedQueriesApi.update(err.existingId, payload);
+                  overwriteCount++;
+                } else {
+                  skipCount++;
+                }
+                continue;
+              }
+              throw new Error(err.message || `导入失败：${it.name}`);
+            }
+            throw err;
           }
         }
         setInfo(
           `导入完成：新增 ${okCount}，覆盖 ${overwriteCount}，跳过 ${skipCount}`
         );
-        refresh();
+        await refresh();
       } catch (e: any) {
         setError(String(e?.message || e));
       } finally {
         setBusy(null);
       }
     },
-    [refresh]
+    [refresh, savedQueriesApi]
   );
 
   const onDetectVars = () => {
@@ -447,122 +462,47 @@ export default function SavedQueriesPage() {
   const onSave = async () => {
     setError(null);
     setInfo(null);
-    try {
-      const trimmed = name.trim();
-      if (!trimmed) throw new Error('名称不能为空');
-      const body = {
-        name: trimmed,
-        description: description.trim() || undefined,
-        sql,
-        variables: vars,
-        dynamicColumns: dynCols,
-        calcItems,
-      };
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError('名称不能为空');
+      return;
+    }
 
-      // 选择目标：优先当前编辑项；若与其他同名则提示“覆盖”并以对方 id 作为目标
-      const same = items.find(
-        (it) => it.name === trimmed && it.id !== currentId
-      );
-      let targetId: string | null = currentId || null;
-      if (!targetId && same) {
+    const basePayload = {
+      name: trimmed,
+      description: description.trim() || undefined,
+      sql,
+      variables: vars,
+      dynamicColumns: dynCols,
+      calcItems,
+    };
+
+    const updatePayload: SavedQueryUpdateInput = {
+      name: basePayload.name,
+      sql: basePayload.sql,
+      variables: basePayload.variables,
+      dynamicColumns: basePayload.dynamicColumns,
+      calcItems: basePayload.calcItems,
+    };
+    if (basePayload.description !== undefined) {
+      updatePayload.description = basePayload.description;
+    }
+
+    let targetId: string | null = currentId || null;
+    if (!targetId) {
+      const same = items.find((it) => it.name === trimmed && it.id !== currentId);
+      if (same) {
         const ok = window.confirm(
           `已存在同名查询“${trimmed}”。继续将覆盖该查询的内容，是否确认？`
         );
         if (!ok) return;
         targetId = same.id;
       }
+    }
 
-      let res: Response;
+    try {
       if (targetId) {
-        // 更新
-        res = await fetch(`/api/user/saved-sql/${targetId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-      } else {
-        // 新建
-        res = await fetch('/api/user/saved-sql', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-      }
-      const j = await res.json().catch(() => ({}));
-      if (res.status === 501 && j?.suggestedSQL) {
-        setSuggestedSQL(j.suggestedSQL);
-        const msg = '功能未初始化：请先在 APP_DB 执行建表 SQL。';
-        notifications.show({
-          color: 'red',
-          title: '保存失败',
-          message: msg,
-          icon: <IconX size={16} />,
-        });
-        throw new Error(msg);
-      }
-      if (res.status === 409 && j?.error === 'name_exists' && j?.existingId) {
-        const ok2 = window.confirm('同名查询已存在。是否覆盖该查询？');
-        if (!ok2) return;
-        // 覆盖到 existingId
-        const res2 = await fetch(`/api/user/saved-sql/${j.existingId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const j2 = await res2.json().catch(() => ({}));
-        if (!res2.ok) {
-          const em = j2?.error || `保存失败（HTTP ${res2.status}）`;
-          notifications.show({
-            color: 'red',
-            title: '保存失败',
-            message: em,
-            icon: <IconX size={16} />,
-          });
-          throw new Error(em);
-        }
-        // 若本次原本在编辑另一条（targetId）且与 existingId 不同，则将原条目标记为归档，避免重名重复
-        if (targetId && targetId !== j.existingId) {
-          await fetch(`/api/user/saved-sql/${targetId}`, {
-            method: 'PATCH',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ isArchived: true }),
-          }).catch(() => {});
-        }
-        setInfo('已覆盖保存。');
-        notifications.show({
-          color: 'teal',
-          title: '保存成功',
-          message: '已覆盖保存。',
-          icon: <IconCheck size={16} />,
-        });
-        setCurrentId(j.existingId);
-        refresh();
-        onSelectSaved(j.existingId);
-        return;
-      }
-      if (!res.ok) {
-        const em = j?.error || `保存失败（HTTP ${res.status}）`;
-        notifications.show({
-          color: 'red',
-          title: '保存失败',
-          message: em,
-          icon: <IconX size={16} />,
-        });
-        throw new Error(em);
-      }
-
-      if (j?.id) {
-        setCurrentId(j.id);
-        setInfo('已保存。');
-        notifications.show({
-          color: 'teal',
-          title: '保存成功',
-          message: `已创建：${trimmed}`,
-          icon: <IconCheck size={16} />,
-        });
-        refresh();
-        onSelectSaved(j.id);
-      } else {
+        await savedQueriesApi.update(targetId, updatePayload);
         setInfo('已保存。');
         notifications.show({
           color: 'teal',
@@ -570,20 +510,71 @@ export default function SavedQueriesPage() {
           message: `已更新：${trimmed}`,
           icon: <IconCheck size={16} />,
         });
-        refresh();
+        await refresh();
+      } else {
+        const { id: newId } = await savedQueriesApi.create(basePayload);
+        setCurrentId(newId ?? null);
+        setInfo('已保存。');
+        notifications.show({
+          color: 'teal',
+          title: '保存成功',
+          message: `已创建：${trimmed}`,
+          icon: <IconCheck size={16} />,
+        });
+        await refresh();
+        if (newId) onSelectSaved(newId);
       }
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      setError(msg);
-      if (!/保存失败/.test(msg) && !/功能未初始化/.test(msg)) {
-        // 若上面分支尚未弹过，则这里兜底弹一次
+    } catch (err) {
+      if (isSavedQueriesApiError(err)) {
+        if (err.type === 'not_initialized' && err.suggestedSQL) {
+          setSuggestedSQL(err.suggestedSQL);
+          notifications.show({
+            color: 'red',
+            title: '保存失败',
+            message: err.message,
+            icon: <IconX size={16} />,
+          });
+          setError(err.message);
+          return;
+        }
+        if (err.type === 'conflict' && err.existingId) {
+          const ok2 = window.confirm('同名查询已存在。是否覆盖该查询？');
+          if (!ok2) return;
+          await savedQueriesApi.update(err.existingId, updatePayload);
+          if (targetId && targetId !== err.existingId) {
+            try {
+              await savedQueriesApi.archive(targetId);
+            } catch {}
+          }
+          setInfo('已覆盖保存。');
+          notifications.show({
+            color: 'teal',
+            title: '保存成功',
+            message: '已覆盖保存。',
+            icon: <IconCheck size={16} />,
+          });
+          setCurrentId(err.existingId);
+          await refresh();
+          onSelectSaved(err.existingId);
+          return;
+        }
         notifications.show({
           color: 'red',
           title: '保存失败',
-          message: msg,
+          message: err.message,
           icon: <IconX size={16} />,
         });
+        setError(err.message);
+        return;
       }
+      const msg = String((err as any)?.message || err);
+      notifications.show({
+        color: 'red',
+        title: '保存失败',
+        message: msg,
+        icon: <IconX size={16} />,
+      });
+      setError(msg);
     }
   };
 
@@ -624,21 +615,15 @@ export default function SavedQueriesPage() {
     if (!ok) return;
     try {
       const id = currentId;
-      const res = await fetch(`/api/user/saved-sql/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ isArchived: true }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(j?.error || `删除失败（HTTP ${res.status}）`);
+      await savedQueriesApi.archive(id);
       // 乐观刷新：本地先移除，再触发远端拉取
       setItems((prev) => prev.filter((x) => x.id !== id));
       clearEditor();
       setInfo('已删除。');
-      refresh();
+      await refresh();
     } catch (e: any) {
-      setError(String(e?.message || e));
+      if (isSavedQueriesApiError(e)) setError(e.message);
+      else setError(String(e?.message || e));
     }
   };
 
@@ -648,20 +633,14 @@ export default function SavedQueriesPage() {
     );
     if (!ok) return;
     try {
-      const res = await fetch(`/api/user/saved-sql/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ isArchived: true }),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok)
-        throw new Error(j?.error || `删除失败（HTTP ${res.status}）`);
+      await savedQueriesApi.archive(id);
       setItems((prev) => prev.filter((x) => x.id !== id));
       if (currentId === id) clearEditor();
       setInfo('已删除。');
-      refresh();
+      await refresh();
     } catch (e: any) {
-      setError(String(e?.message || e));
+      if (isSavedQueriesApiError(e)) setError(e.message);
+      else setError(String(e?.message || e));
     }
   };
 
@@ -936,18 +915,22 @@ export default function SavedQueriesPage() {
     setCalcResults({});
     // fetch details
     setError(null);
-    fetch(`/api/user/saved-sql/${id}`, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((j) => {
-        if (j?.error) throw new Error(j.error);
-        setName(j.name || '');
-        setDescription(j.description || '');
-        setSql(j.sql || '');
-        setVars(Array.isArray(j.variables) ? j.variables : []);
-        setDynCols(Array.isArray(j.dynamicColumns) ? j.dynamicColumns : []);
+    savedQueriesApi
+      .get(id)
+      .then((record) => {
+        setName(record.name || '');
+        setDescription(record.description || '');
+        setSql(record.sql || '');
+        const varList = Array.isArray(record.variables)
+          ? record.variables
+          : [];
+        setVars(varList);
+        setDynCols(
+          Array.isArray(record.dynamicColumns) ? record.dynamicColumns : []
+        );
         setCalcItems(
-          Array.isArray(j.calcItems)
-            ? j.calcItems.map((item: CalcItemDef) => ({
+          Array.isArray(record.calcItems)
+            ? record.calcItems.map((item: CalcItemDef) => ({
                 ...item,
                 runMode: item.runMode ?? 'manual',
                 kind: item.kind ?? 'single',
@@ -955,10 +938,13 @@ export default function SavedQueriesPage() {
             : []
         );
         const initVals: Record<string, any> = {};
-        for (const v of j.variables || []) initVals[v.name] = v.default ?? '';
-        setRunValues(initVals); // 载入时用默认值初始化运行值
+        for (const v of varList) initVals[v.name] = v.default ?? '';
+        setRunValues(initVals);
       })
-      .catch((e) => setError(String(e?.message || e)));
+      .catch((e) => {
+        if (isSavedQueriesApiError(e)) setError(e.message);
+        else setError(String((e as any)?.message || e));
+      });
   };
   const onOpenItemRun = (it: SavedItem) => {
     onSelectSaved(it.id);
