@@ -25,17 +25,17 @@ import type {
   DynamicColumnDef,
   CalcItemDef,
 } from '@rei-db-view/types/appdb';
-import type { SavedItem, TreeNode } from '../../components/queries/types';
+import type { SavedItem } from '../../components/queries/types';
 import { EditQueryPanel } from '../../components/queries/EditQueryPanel';
 import { RunQueryPanel } from '../../components/queries/RunQueryPanel';
 import { useCurrentConnId } from '@/lib/current-conn';
 import { SavedQueriesSidebar } from '../../components/queries/SavedQueriesSidebar';
-import { buildSavedTree } from '../../components/queries/tree-utils';
 import {
   parseSavedQueriesExport,
   normalizeImportItems,
 } from '@/lib/saved-sql-import-export';
 import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
+import { usePersistentSet } from '@/lib/use-persistent-set';
 
 type CalcResultState = {
   loading?: boolean;
@@ -122,16 +122,10 @@ export default function SavedQueriesPage() {
   const [connItems, setConnItems] = useState<
     Array<{ id: string; alias: string; host?: string | null }>
   >([]);
-  const [extraFolders, setExtraFolders] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('rdv.savedSql.extraFolders');
-      if (!raw) return new Set<string>();
-      const arr = JSON.parse(raw);
-      return new Set<string>(Array.isArray(arr) ? arr : []);
-    } catch {
-      return new Set<string>();
-    }
-  });
+  const [extraFolders, setExtraFolders] = usePersistentSet<string>(
+    'rdv.savedSql.extraFolders',
+    () => new Set<string>(),
+  );
 
   useEffect(() => {
     fetch('/api/user/connections', { cache: 'no-store' })
@@ -140,26 +134,15 @@ export default function SavedQueriesPage() {
       .catch(() => {});
   }, []);
 
-  const currentConnLabel = useMemo(() => {
-    if (!userConnId) return '';
-    const it = connItems.find((x) => x.id === userConnId);
-    if (!it) return userConnId;
-    return it.host ? `${it.alias} (${it.host})` : it.alias;
-  }, [connItems, userConnId]);
   const currentConn = useMemo(() => {
     if (!userConnId)
       return null as null | { id: string; alias: string; host?: string | null };
     return connItems.find((x) => x.id === userConnId) || null;
   }, [connItems, userConnId]);
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('rdv.savedSql.expanded');
-      if (!raw) return new Set<string>(['/']);
-      return new Set<string>(JSON.parse(raw));
-    } catch {
-      return new Set<string>(['/']);
-    }
-  });
+  const [expanded, setExpanded] = usePersistentSet<string>(
+    'rdv.savedSql.expanded',
+    () => new Set<string>(['/']),
+  );
 
   const canSave = useMemo(
     () => name.trim().length > 0 && sql.trim().length > 0,
@@ -192,24 +175,12 @@ export default function SavedQueriesPage() {
     setRows([]);
     setGridCols([]);
     setTextResult(null);
+    setCalcResults({});
+    setPgPage(1);
+    setPgTotalRows(null);
+    setPgTotalPages(null);
+    setPgCountLoaded(false);
   }, [userConnId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'rdv.savedSql.expanded',
-        JSON.stringify(Array.from(expanded))
-      );
-    } catch {}
-  }, [expanded]);
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'rdv.savedSql.extraFolders',
-        JSON.stringify(Array.from(extraFolders))
-      );
-    } catch {}
-  }, [extraFolders]);
 
   const toggleFolder = (path: string) => {
     setExpanded((prev) => {
@@ -418,11 +389,6 @@ export default function SavedQueriesPage() {
       }
     },
     [refresh]
-  );
-
-  const tree = useMemo(
-    () => buildSavedTree(items, extraFolders),
-    [items, extraFolders]
   );
 
   const onDetectVars = () => {
@@ -644,6 +610,12 @@ export default function SavedQueriesPage() {
     setPreviewSQL('');
     setRows([]);
     setGridCols([]);
+    setTextResult(null);
+    setCalcResults({});
+    setPgPage(1);
+    setPgTotalRows(null);
+    setPgTotalPages(null);
+    setPgCountLoaded(false);
   };
 
   const onDelete = async () => {
@@ -1137,5 +1109,3 @@ export default function SavedQueriesPage() {
     </Stack>
   );
 }
-
-// Tree moved to components/queries/Tree
