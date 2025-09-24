@@ -32,6 +32,8 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: defaultTempSql,
       vars: [],
       runValues: {},
+      dynCols: [],
+      calcItems: [],
     })
   })
 
@@ -45,6 +47,8 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: defaultTempSql,
       vars: [{ name: 'foo', type: 'text' } as SavedQueryVariableDef],
       runValues: { foo: 'bar' as const },
+      dynCols: [] as DynamicColumnDef[],
+      calcItems: [] as CalcItemDef[],
     }
     const store = {
       [RUN_KEY_DRAFT]: { draftOnly: 1 },
@@ -63,6 +67,8 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: defaultTempSql,
       vars: [],
       runValues: {},
+      dynCols: [],
+      calcItems: [],
     })
     expect(nextStore['saved-1']).toEqual({ foo: 'bar' })
     expect(nextStore[RUN_KEY_DRAFT]).toEqual({})
@@ -79,6 +85,8 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: '   ',
       vars: [] as SavedQueryVariableDef[],
       runValues: { foo: 'baz' },
+      dynCols: [] as DynamicColumnDef[],
+      calcItems: [] as CalcItemDef[],
     }
     const store = {
       [RUN_KEY_DRAFT]: {},
@@ -94,11 +102,13 @@ describe('useSavedSqlSelection helpers', () => {
     expect(nextState.currentId).toBeNull()
     expect(nextState.tempSql).toBe(defaultTempSql)
     expect(nextState.runValues).toEqual({})
+    expect(nextState.dynCols).toEqual([])
+    expect(nextState.calcItems).toEqual([])
     expect(nextStore['saved-2']).toEqual({ foo: 'baz' })
     expect(nextStore[RUN_KEY_TEMP]).toEqual({})
   })
 
-  it('loadSavedSelection merges stored values with defaults and returns extras', () => {
+  it('loadSavedSelection merges stored values with defaults and loads metadata', () => {
     const state = {
       mode: 'temp' as const,
       currentId: null,
@@ -108,6 +118,8 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: defaultTempSql,
       vars: [],
       runValues: {},
+      dynCols: [] as DynamicColumnDef[],
+      calcItems: [] as CalcItemDef[],
     }
     const store = {
       [RUN_KEY_DRAFT]: {},
@@ -124,17 +136,24 @@ describe('useSavedSqlSelection helpers', () => {
         { name: 'foo', type: 'text', default: 'fallback' } as SavedQueryVariableDef,
         { name: 'bar', type: 'number', default: 42 } as SavedQueryVariableDef,
       ],
-      dynamicColumns: [
-        { key: 'col1', title: 'Col 1', path: ['a'] } as unknown as DynamicColumnDef,
+      dynamicColumns: [{ name: 'col1', code: 'return row.a', manualTrigger: false } as DynamicColumnDef],
+      calcItems: [
+        {
+          name: 'count_all',
+          type: 'sql',
+          code: 'select count(*) from demo',
+          runMode: 'manual',
+          kind: 'single',
+        } satisfies CalcItemDef,
       ],
-      calcItems: [{ id: 'c1', type: 'count' } as CalcItemDef],
     }
 
-    const {
-      state: nextState,
-      store: nextStore,
-      extras,
-    } = loadSavedSelection(state, store, record, { focusMode: 'run' })
+    const { state: nextState, store: nextStore } = loadSavedSelection(
+      state,
+      store,
+      record,
+      { focusMode: 'run' },
+    )
 
     expect(nextState).toEqual({
       mode: 'run',
@@ -145,9 +164,9 @@ describe('useSavedSqlSelection helpers', () => {
       tempSql: defaultTempSql,
       vars: record.variables,
       runValues: { foo: 'persisted', bar: 42 },
+      dynCols: record.dynamicColumns,
+      calcItems: record.calcItems,
     })
     expect(nextStore['saved-3']).toEqual({ foo: 'persisted', bar: 42 })
-    expect(extras.dynamicColumns).toEqual(record.dynamicColumns)
-    expect(extras.calcItems).toEqual(record.calcItems)
   })
 })

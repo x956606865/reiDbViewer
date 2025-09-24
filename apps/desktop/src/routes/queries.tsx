@@ -85,6 +85,8 @@ import {
 } from '@/lib/notifications';
 import { useSavedSqlSelection } from '../hooks/queries/useSavedSqlSelection';
 import { usePaginationState } from '../hooks/queries/usePaginationState';
+import { useQueryResultState } from '../hooks/queries/useQueryResultState';
+import { useSavedSqlColumnWidths } from '../hooks/queries/useSavedSqlColumnWidths';
 
 type QueryTimingState = {
   totalMs?: number | null;
@@ -162,6 +164,10 @@ export default function QueriesPage() {
     setVars,
     runValues,
     setRunValues,
+    dynCols,
+    setDynCols,
+    calcItems,
+    setCalcItems,
     startNew: startNewSelection,
     switchToTemp: switchToTempSelection,
     loadSaved: loadSavedSelection,
@@ -189,16 +195,23 @@ export default function QueriesPage() {
     setCountLoaded: setPgCountLoaded,
     reset: resetPagination,
   } = pagination;
-  const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([]);
-  const [calcItems, setCalcItems] = useState<CalcItemDef[]>([]);
-  const [previewSQL, setPreviewSQL] = useState('');
-  const [rows, setRows] = useState<Array<Record<string, unknown>>>([]);
-  const [gridCols, setGridCols] = useState<string[]>([]);
-  const [savedColumnWidths, setSavedColumnWidths] = useState<Record<string, number>>({});
+  const {
+    previewSQL,
+    setPreviewSQL,
+    rows,
+    setRows,
+    gridCols,
+    setGridCols,
+    textResult,
+    setTextResult,
+    isPreviewing,
+    setIsPreviewing,
+    reset: resetResultState,
+  } = useQueryResultState();
+  const { widths: savedColumnWidths, setWidths: setSavedColumnWidths } =
+    useSavedSqlColumnWidths(currentId, getSavedSqlColumnWidths);
   const savedColumnWidthsRef = useRef<Record<string, number>>({});
-  const [textResult, setTextResult] = useState<string | null>(null);
   const sqlPreviewRef = useRef<HTMLDivElement | null>(null);
-  const [isPreviewing, setIsPreviewing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   useEffect(() => {
     emitQueryExecutingEvent(isExecuting, 'desktop/queries');
@@ -285,24 +298,6 @@ export default function QueriesPage() {
   useEffect(() => {
     savedColumnWidthsRef.current = savedColumnWidths;
   }, [savedColumnWidths]);
-
-  useEffect(() => {
-    if (!currentId) {
-      setSavedColumnWidths({});
-      return;
-    }
-    let cancelled = false;
-    getSavedSqlColumnWidths(currentId)
-      .then((map) => {
-        if (!cancelled) setSavedColumnWidths(map);
-      })
-      .catch(() => {
-        if (!cancelled) setSavedColumnWidths({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentId]);
 
   useEffect(() => {
     calcAutoTriggeredRef.current = {};
@@ -873,14 +868,9 @@ export default function QueriesPage() {
 
   const onNew = () => {
     startNewSelection();
-    setDynCols([]);
-    setCalcItems([]);
-    setPreviewSQL('');
-    setRows([]);
-    setGridCols([]);
+    resetResultState();
     setSavedColumnWidths({});
     setCalcResults({});
-    setTextResult(null);
     setInfo('已切换为新建模式。');
     setQueryTiming(null);
     calcAutoTriggeredRef.current = {};
@@ -893,12 +883,9 @@ export default function QueriesPage() {
     switchToTempSelection();
     setError(null);
     setInfo('已切换为临时查询模式。');
-    setPreviewSQL('');
-    setRows([]);
-    setGridCols([]);
+    resetResultState();
     setSavedColumnWidths({});
     setCalcResults({});
-    setTextResult(null);
     setQueryTiming(null);
     resetPagination();
     calcAutoTriggeredRef.current = {};
@@ -912,14 +899,10 @@ export default function QueriesPage() {
       setError(null);
       setInfo(null);
       try {
-        const extras = await loadSavedSelection(id, focusMode);
+        await loadSavedSelection(id, focusMode);
+        setCalcItems((items) => normalizeCalcItems(items));
         setSavedColumnWidths({});
-        setDynCols(extras.dynamicColumns || []);
-        setCalcItems(normalizeCalcItems(extras.calcItems));
-        setPreviewSQL('');
-        setRows([]);
-        setGridCols([]);
-        setTextResult(null);
+        resetResultState();
         resetPagination();
         setCalcResults({});
         setQueryTiming(null);
@@ -931,7 +914,7 @@ export default function QueriesPage() {
         setError(String(e?.message || e));
       }
     },
-    [loadSavedSelection, normalizeCalcItems, resetPagination]
+    [loadSavedSelection, normalizeCalcItems, resetPagination, resetResultState]
   );
 
   const onSave = async (asNew?: boolean) => {

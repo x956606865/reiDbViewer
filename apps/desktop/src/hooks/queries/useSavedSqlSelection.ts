@@ -16,6 +16,8 @@ export type SavedSqlSelectionState = {
   tempSql: string
   vars: SavedQueryVariableDef[]
   runValues: Record<string, any>
+  dynCols: DynamicColumnDef[]
+  calcItems: CalcItemDef[]
 }
 
 export type RunValueStore = Record<string, Record<string, any>>
@@ -63,6 +65,8 @@ export const createInitialSelectionState = ({
   tempSql: defaultTempSql,
   vars: [],
   runValues: {},
+  dynCols: [],
+  calcItems: [],
 })
 
 const mergeRunValuesWithDefaults = (
@@ -129,6 +133,8 @@ export const startNewSelection = (
     tempSql: state.tempSql,
     vars: [],
     runValues: {},
+    dynCols: [],
+    calcItems: [],
   }
   return { state: nextState, store: nextStore }
 }
@@ -152,6 +158,8 @@ export const switchToTempSelection = (
     tempSql: nextTempSql,
     vars: state.vars,
     runValues: storedTempValues,
+    dynCols: [],
+    calcItems: [],
   }
   return { state: nextState, store: nextStore }
 }
@@ -169,11 +177,7 @@ export const loadSavedSelection = (
     calcItems: CalcItemDef[]
   },
   { focusMode }: { focusMode: Exclude<SavedSqlMode, 'temp'> },
-): {
-  state: SavedSqlSelectionState
-  store: RunValueStore
-  extras: { dynamicColumns: DynamicColumnDef[]; calcItems: CalcItemDef[] }
-} => {
+): { state: SavedSqlSelectionState; store: RunValueStore } => {
   const activeKey = resolveRunKey(state.mode, state.currentId)
   const persistedStore = syncRunValues(store, activeKey, state.runValues)
   const applied = applyRunValuesFromDefs(persistedStore, record.id, record.variables)
@@ -186,14 +190,12 @@ export const loadSavedSelection = (
     tempSql: state.tempSql,
     vars: record.variables,
     runValues: applied.values,
+    dynCols: record.dynamicColumns ?? [],
+    calcItems: record.calcItems ?? [],
   }
   return {
     state: nextState,
     store: applied.store,
-    extras: {
-      dynamicColumns: record.dynamicColumns,
-      calcItems: record.calcItems,
-    },
   }
 }
 
@@ -209,11 +211,6 @@ type UseSavedSqlSelectionOptions = {
     dynamicColumns: DynamicColumnDef[]
     calcItems: CalcItemDef[]
   } | null>
-}
-
-type LoadSavedExtras = {
-  dynamicColumns: DynamicColumnDef[]
-  calcItems: CalcItemDef[]
 }
 
 type SavedSelectionResult = {
@@ -233,9 +230,13 @@ type SavedSelectionResult = {
   setVars: Dispatch<SetStateAction<SavedQueryVariableDef[]>>
   runValues: Record<string, any>
   setRunValues: Dispatch<SetStateAction<Record<string, any>>>
+  dynCols: DynamicColumnDef[]
+  setDynCols: Dispatch<SetStateAction<DynamicColumnDef[]>>
+  calcItems: CalcItemDef[]
+  setCalcItems: Dispatch<SetStateAction<CalcItemDef[]>>
   startNew: () => void
   switchToTemp: () => void
-  loadSaved: (id: string, focusMode: Exclude<SavedSqlMode, 'temp'>) => Promise<LoadSavedExtras>
+  loadSaved: (id: string, focusMode: Exclude<SavedSqlMode, 'temp'>) => Promise<void>
 }
 
 export const useSavedSqlSelection = ({
@@ -251,19 +252,26 @@ export const useSavedSqlSelection = ({
   const [tempSql, setTempSql] = useState(defaultTempSql)
   const [vars, setVars] = useState<SavedQueryVariableDef[]>([])
   const [runValues, setRunValuesState] = useState<Record<string, any>>({})
+  const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([])
+  const [calcItems, setCalcItems] = useState<CalcItemDef[]>([])
 
   const runStoreRef = useRef<RunValueStore>(createInitialRunValueStore())
 
-  const buildSnapshot = useCallback((): SavedSqlSelectionState => ({
-    mode,
-    currentId,
-    name,
-    description,
-    sql,
-    tempSql,
-    vars,
-    runValues,
-  }), [mode, currentId, name, description, sql, tempSql, vars, runValues])
+  const buildSnapshot = useCallback(
+    (): SavedSqlSelectionState => ({
+      mode,
+      currentId,
+      name,
+      description,
+      sql,
+      tempSql,
+      vars,
+      runValues,
+      dynCols,
+      calcItems,
+    }),
+    [mode, currentId, name, description, sql, tempSql, vars, runValues, dynCols, calcItems],
+  )
 
   const applyState = useCallback((next: SavedSqlSelectionState) => {
     setMode(next.mode)
@@ -274,6 +282,8 @@ export const useSavedSqlSelection = ({
     setTempSql(next.tempSql)
     setVars(next.vars)
     setRunValuesState(next.runValues)
+    setDynCols(next.dynCols)
+    setCalcItems(next.calcItems)
   }, [])
 
   const setRunValues = useCallback<React.Dispatch<React.SetStateAction<Record<string, any>>>>(
@@ -317,7 +327,6 @@ export const useSavedSqlSelection = ({
       })
       runStoreRef.current = result.store
       applyState(result.state)
-      return result.extras
     },
     [applyState, buildSnapshot, loadSavedSql],
   )
@@ -340,6 +349,10 @@ export const useSavedSqlSelection = ({
       setVars,
       runValues,
       setRunValues,
+      dynCols,
+      setDynCols,
+      calcItems,
+      setCalcItems,
       startNew,
       switchToTemp,
       loadSaved,
@@ -356,6 +369,10 @@ export const useSavedSqlSelection = ({
       vars,
       runValues,
       setRunValues,
+      dynCols,
+      setDynCols,
+      calcItems,
+      setCalcItems,
       startNew,
       switchToTemp,
       loadSaved,
