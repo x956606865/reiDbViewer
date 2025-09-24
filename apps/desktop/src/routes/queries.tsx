@@ -17,7 +17,6 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconCheck, IconX } from '@tabler/icons-react';
 import type {
   SavedQueryVariableDef,
@@ -76,6 +75,16 @@ import { useApiScriptRuns } from '@/lib/use-api-script-runs';
 import { compileSql } from '@/lib/sql-template';
 import { extractRunScriptInfo } from '@/lib/api-script-run-utils';
 import { saveDialog } from '@/lib/tauri-dialog';
+import { usePersistentSet } from '@/lib/use-persistent-set';
+import {
+  confirmDanger,
+  notifyError,
+  notifyInfo,
+  notifySuccess,
+  notifyWarning,
+} from '@/lib/notifications';
+import { useSavedSqlSelection } from '../hooks/queries/useSavedSqlSelection';
+import { usePaginationState } from '../hooks/queries/usePaginationState';
 
 type QueryTimingState = {
   totalMs?: number | null;
@@ -108,51 +117,6 @@ const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): b
   return true;
 };
 
-const shallowEqualRecord = (
-  a: Record<string, any>,
-  b: Record<string, any>,
-): boolean => {
-  if (a === b) return true;
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
-  if (keysA.length !== keysB.length) return false;
-  for (const key of keysA) {
-    if (a[key] !== b[key]) return false;
-  }
-  return true;
-};
-
-const RUN_KEY_DRAFT = '__draft__';
-const RUN_KEY_TEMP = '__temp__';
-
-const resolveRunKey = (
-  mode: 'edit' | 'run' | 'temp',
-  id: string | null,
-): string => {
-  if (mode === 'temp') return RUN_KEY_TEMP;
-  if (!id) return RUN_KEY_DRAFT;
-  return id;
-};
-
-const mergeRunValuesWithDefaults = (
-  defs: SavedQueryVariableDef[],
-  existing?: Record<string, any>,
-): Record<string, any> => {
-  const merged: Record<string, any> = {};
-  for (const def of defs) {
-    const name = def?.name;
-    if (!name) continue;
-    if (existing && Object.prototype.hasOwnProperty.call(existing, name)) {
-      merged[name] = existing[name];
-    } else if (def.default !== undefined) {
-      merged[name] = def.default;
-    } else {
-      merged[name] = '';
-    }
-  }
-  return merged;
-};
-
 function toSavedItem(summary: SavedSqlSummary): SavedItem {
   return {
     id: summary.id,
@@ -176,73 +140,55 @@ const defaultSql = 'SELECT * FROM users LIMIT 10';
 const defaultTempSql = 'SELECT 1;';
 const PAGE_SIZE_STORAGE_KEY = 'rdv.desktop.queries.pageSize';
 
-const readStoredPageSize = () => {
-  if (typeof window === 'undefined') return DEFAULT_PAGE_SIZE;
-  try {
-    const raw = window.localStorage.getItem(PAGE_SIZE_STORAGE_KEY);
-    if (!raw) return DEFAULT_PAGE_SIZE;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_PAGE_SIZE;
-  } catch {
-    return DEFAULT_PAGE_SIZE;
-  }
-};
-
 export default function QueriesPage() {
   const [items, setItems] = useState<SavedItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const [mode, setMode] = useState<'edit' | 'run' | 'temp'>('run');
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [sql, setSql] = useState(defaultSql);
-  const [tempSql, setTempSql] = useState(defaultTempSql);
-  const [vars, setVars] = useState<SavedQueryVariableDef[]>([]);
-  const runValueStoreRef = useRef<Record<string, Record<string, any>>>(
-    {
-      [RUN_KEY_DRAFT]: {},
-      [RUN_KEY_TEMP]: {},
-    }
-  );
-  const [runValues, setRunValuesState] = useState<Record<string, any>>({});
-  const runKey = resolveRunKey(mode, currentId);
-  const syncRunValues = useCallback((key: string, values: Record<string, any>) => {
-    const store = runValueStoreRef.current;
-    const existing = store[key];
-    if (existing && shallowEqualRecord(existing, values)) return;
-    runValueStoreRef.current = {
-      ...store,
-      [key]: values,
-    };
-  }, []);
-  const setRunValues = useCallback<React.Dispatch<React.SetStateAction<Record<string, any>>>>(
-    (update) => {
-      setRunValuesState((prev) => {
-        const next =
-          typeof update === 'function'
-            ? (update(prev) as Record<string, any>)
-            : (update as Record<string, any>);
-        syncRunValues(runKey, next);
-        return next;
-      });
-    },
-    [runKey, syncRunValues],
-  );
-  const applyRunValues = useCallback(
-    (key: string, defs: SavedQueryVariableDef[]) => {
-      const store = runValueStoreRef.current;
-      const merged = mergeRunValuesWithDefaults(defs, store[key]);
-      const nextStore = {
-        ...store,
-        [key]: merged,
-      };
-      runValueStoreRef.current = nextStore;
-      setRunValuesState(merged);
-    },
-    [],
-  );
+  const {
+    mode,
+    setMode,
+    currentId,
+    setCurrentId,
+    name,
+    setName,
+    description,
+    setDescription,
+    sql,
+    setSql,
+    tempSql,
+    setTempSql,
+    vars,
+    setVars,
+    runValues,
+    setRunValues,
+    startNew: startNewSelection,
+    switchToTemp: switchToTempSelection,
+    loadSaved: loadSavedSelection,
+  } = useSavedSqlSelection({
+    defaultSql,
+    defaultTempSql,
+    loadSavedSql: getSavedSql,
+  });
+  const pagination = usePaginationState({
+    storageKey: PAGE_SIZE_STORAGE_KEY,
+    defaultPageSize: DEFAULT_PAGE_SIZE,
+  });
+  const {
+    enabled: pgEnabled,
+    setEnabled: setPgEnabled,
+    page: pgPage,
+    setPage: setPgPage,
+    pageSize: pgSize,
+    setPageSize: setPgSize,
+    totalRows: pgTotalRows,
+    setTotalRows: setPgTotalRows,
+    totalPages: pgTotalPages,
+    setTotalPages: setPgTotalPages,
+    countLoaded: pgCountLoaded,
+    setCountLoaded: setPgCountLoaded,
+    reset: resetPagination,
+  } = pagination;
   const [dynCols, setDynCols] = useState<DynamicColumnDef[]>([]);
   const [calcItems, setCalcItems] = useState<CalcItemDef[]>([]);
   const [previewSQL, setPreviewSQL] = useState('');
@@ -260,12 +206,6 @@ export default function QueriesPage() {
       if (isExecuting) emitQueryExecutingEvent(false, 'desktop/queries');
     };
   }, [isExecuting]);
-  const [pgEnabled, setPgEnabled] = useState(true);
-  const [pgSize, setPgSize] = useState<number>(() => readStoredPageSize());
-  const [pgPage, setPgPage] = useState(1);
-  const [pgTotalRows, setPgTotalRows] = useState<number | null>(null);
-  const [pgTotalPages, setPgTotalPages] = useState<number | null>(null);
-  const [pgCountLoaded, setPgCountLoaded] = useState(false);
   const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   const [queryTiming, setQueryTiming] = useState<QueryTimingState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SavedItem | null>(null);
@@ -294,25 +234,14 @@ export default function QueriesPage() {
   const [connItems, setConnItems] = useState<
     Array<{ id: string; alias: string; host?: string | null }>
   >([]);
-  const [extraFolders, setExtraFolders] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('rdv.savedSql.extraFolders');
-      if (!raw) return new Set<string>();
-      const arr = JSON.parse(raw);
-      return new Set<string>(Array.isArray(arr) ? arr : []);
-    } catch {
-      return new Set<string>();
-    }
-  });
-  const [expanded, setExpanded] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem('rdv.savedSql.expanded');
-      if (!raw) return new Set<string>(['/']);
-      return new Set<string>(JSON.parse(raw));
-    } catch {
-      return new Set<string>(['/']);
-    }
-  });
+  const [extraFolders, setExtraFolders] = usePersistentSet<string>(
+    'rdv.savedSql.extraFolders',
+    () => new Set<string>(),
+  );
+  const [expanded, setExpanded] = usePersistentSet<string>(
+    'rdv.savedSql.expanded',
+    () => new Set<string>(['/']),
+  );
 
   const canSave = useMemo(
     () => name.trim().length > 0 && sql.trim().length > 0,
@@ -336,13 +265,6 @@ export default function QueriesPage() {
       .then((list) => setItems(list.map(toSavedItem)))
       .catch((e: any) => setError(String(e?.message || e)));
   }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pgSize));
-    } catch {}
-  }, [pgSize]);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -381,24 +303,6 @@ export default function QueriesPage() {
       cancelled = true;
     };
   }, [currentId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'rdv.savedSql.expanded',
-        JSON.stringify(Array.from(expanded))
-      );
-    } catch {}
-  }, [expanded]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        'rdv.savedSql.extraFolders',
-        JSON.stringify(Array.from(extraFolders))
-      );
-    } catch {}
-  }, [extraFolders]);
 
   useEffect(() => {
     calcAutoTriggeredRef.current = {};
@@ -535,7 +439,7 @@ export default function QueriesPage() {
 
   const handleCreateScript = useCallback(() => {
     if (!currentId) {
-      notifications.show({
+      notifyWarning({
         color: 'orange',
         title: '请先保存查询',
         message: '保存当前查询后才能创建 API 脚本。',
@@ -565,18 +469,18 @@ export default function QueriesPage() {
 
   const handleDeleteScript = useCallback(
     async (script: QueryApiScriptSummary) => {
-      const confirmed = window.confirm(`确定删除脚本「${script.name}」吗？`);
+      const confirmed = await confirmDanger(`确定删除脚本「${script.name}」吗？`);
       if (!confirmed) return;
       const ok = await deleteScriptById(script.id);
       if (ok) {
-        notifications.show({
+        notifySuccess({
           color: 'teal',
           title: '删除成功',
           message: `已删除脚本「${script.name}」。`,
           icon: <IconCheck size={16} />,
         });
       } else {
-        notifications.show({
+        notifyError({
           color: 'red',
           title: '删除失败',
           message: '删除失败，请稍后重试。',
@@ -594,7 +498,7 @@ export default function QueriesPage() {
 
   const handleRunScript = useCallback(async () => {
     if (mode !== 'run') {
-      notifications.show({
+      notifyInfo({
         color: 'gray',
         title: '无法执行',
         message: '请先切换到运行模式再执行脚本。',
@@ -603,7 +507,7 @@ export default function QueriesPage() {
       return;
     }
     if (!currentId) {
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '无法执行',
         message: '请先保存查询后再配置脚本执行。',
@@ -612,7 +516,7 @@ export default function QueriesPage() {
       return;
     }
     if (!selectedScriptId) {
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '未选择脚本',
         message: '请选择要执行的脚本。',
@@ -621,7 +525,7 @@ export default function QueriesPage() {
       return;
     }
     if (!hasFreshResultForScript || !lastRunResultRef.current) {
-      notifications.show({
+      notifyWarning({
         color: 'orange',
         title: '需要最新结果',
         message: '请先执行查询并确保结果最新，再运行脚本。',
@@ -630,7 +534,7 @@ export default function QueriesPage() {
       return;
     }
     if (!userConnId) {
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '缺少连接',
         message: '请先选择数据库连接。',
@@ -655,7 +559,7 @@ export default function QueriesPage() {
         baseParams: compiled.values,
       });
       await refreshScriptRunsHistory();
-      notifications.show({
+      notifySuccess({
         color: 'teal',
         title: '脚本任务已提交',
         message: '任务将在后台执行，执行结果稍后可在任务历史查看。',
@@ -663,7 +567,7 @@ export default function QueriesPage() {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '执行失败',
         message,
@@ -694,7 +598,7 @@ export default function QueriesPage() {
       setCancelingRunId(run.id);
       try {
         await cancelApiScriptRun(run.id);
-        notifications.show({
+        notifyWarning({
           color: 'orange',
           title: '正在取消任务',
           message: '已通知后台取消该脚本执行。',
@@ -702,7 +606,7 @@ export default function QueriesPage() {
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        notifications.show({
+        notifyError({
           color: 'red',
           title: '取消失败',
           message,
@@ -727,7 +631,7 @@ export default function QueriesPage() {
             await refreshScriptRunsHistory();
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            notifications.show({
+            notifyError({
               color: 'red',
               title: '生成 ZIP 失败',
               message,
@@ -744,7 +648,7 @@ export default function QueriesPage() {
         if (!target) return false;
         setDownloadingRunId(run.id);
         await exportApiScriptRunZip(run.id, target);
-        notifications.show({
+        notifySuccess({
           color: 'teal',
           title: '导出成功',
           message: `已保存到 ${target}`,
@@ -754,7 +658,7 @@ export default function QueriesPage() {
         return true;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        notifications.show({
+        notifyError({
           color: 'red',
           title: '导出失败',
           message,
@@ -791,12 +695,12 @@ export default function QueriesPage() {
 
   const handleCleanupCache = useCallback(async () => {
     if (cleanupBusy) return;
-    const confirmed = window.confirm('确认清理超过 24 小时的脚本缓存文件？');
+    const confirmed = await confirmDanger('确认清理超过 24 小时的脚本缓存文件？');
     if (!confirmed) return;
     setCleanupBusy(true);
     try {
       const cleaned = await cleanupApiScriptCache();
-      notifications.show({
+      notifySuccess({
         color: 'teal',
         title: '清理完成',
         message:
@@ -810,7 +714,7 @@ export default function QueriesPage() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '清理失败',
         message,
@@ -828,12 +732,14 @@ export default function QueriesPage() {
       if (run.status === 'running' || run.status === 'pending') return;
       const info = extractRunScriptInfo(run);
       const label = info?.name ?? `任务 ${run.id.slice(0, 8)}`;
-      const confirmed = window.confirm(`确认删除「${label}」的历史记录？该操作不可撤销。`);
+      const confirmed = await confirmDanger(
+        `确认删除「${label}」的历史记录？该操作不可撤销。`,
+      );
       if (!confirmed) return;
       setDeletingRunId(run.id);
       try {
         const deleted = await deleteApiScriptRun(run.id);
-        notifications.show({
+        notifySuccess({
           color: deleted ? 'teal' : 'gray',
           title: deleted ? '删除成功' : '记录不存在',
           message: deleted ? '已移除选中的任务记录。' : '任务记录可能已被移除。',
@@ -842,7 +748,7 @@ export default function QueriesPage() {
         await refreshScriptRunsHistory();
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        notifications.show({
+        notifyError({
           color: 'red',
           title: '删除失败',
           message,
@@ -858,7 +764,7 @@ export default function QueriesPage() {
   const handleClearHistory = useCallback(async () => {
     if (clearingRuns) return;
     if (!currentId) {
-      notifications.show({
+      notifyWarning({
         color: 'orange',
         title: '无法清空历史',
         message: '请先保存查询，才能管理对应的脚本任务历史。',
@@ -866,12 +772,14 @@ export default function QueriesPage() {
       });
       return;
     }
-    const confirmed = window.confirm('确认清空当前查询的脚本任务历史？正在执行的任务会被保留。');
+    const confirmed = await confirmDanger(
+      '确认清空当前查询的脚本任务历史？正在执行的任务会被保留。',
+    );
     if (!confirmed) return;
     setClearingRuns(true);
     try {
       const removed = await clearApiScriptRuns({ queryId: currentId });
-      notifications.show({
+      notifySuccess({
         color: 'teal',
         title: '历史已清空',
         message:
@@ -883,7 +791,7 @@ export default function QueriesPage() {
       await refreshScriptRunsHistory();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '清空失败',
         message,
@@ -964,15 +872,7 @@ export default function QueriesPage() {
   }, []);
 
   const onNew = () => {
-    syncRunValues(runKey, runValues);
-    syncRunValues(RUN_KEY_DRAFT, {});
-    setRunValuesState({});
-    setMode('edit');
-    setCurrentId(null);
-    setName('');
-    setDescription('');
-    setSql('');
-    setVars([]);
+    startNewSelection();
     setDynCols([]);
     setCalcItems([]);
     setPreviewSQL('');
@@ -990,11 +890,7 @@ export default function QueriesPage() {
   };
 
   const onTempQueryMode = () => {
-    syncRunValues(runKey, runValues);
-    syncRunValues(RUN_KEY_TEMP, {});
-    setRunValuesState(runValueStoreRef.current[RUN_KEY_TEMP] ?? {});
-    setMode('temp');
-    setCurrentId(null);
+    switchToTempSelection();
     setError(null);
     setInfo('已切换为临时查询模式。');
     setPreviewSQL('');
@@ -1004,11 +900,7 @@ export default function QueriesPage() {
     setCalcResults({});
     setTextResult(null);
     setQueryTiming(null);
-    setPgPage(1);
-    setPgTotalRows(null);
-    setPgTotalPages(null);
-    setPgCountLoaded(false);
-    setTempSql((prev) => (prev && prev.trim().length > 0 ? prev : defaultTempSql));
+    resetPagination();
     calcAutoTriggeredRef.current = {};
     lastExecSignatureRef.current = null;
     lastRunResultRef.current = null;
@@ -1017,33 +909,20 @@ export default function QueriesPage() {
 
   const loadAndOpen = useCallback(
     async (id: string, focusMode: 'run' | 'edit') => {
-      syncRunValues(runKey, runValues);
       setError(null);
       setInfo(null);
       try {
-        const res = await getSavedSql(id);
-        if (!res) throw new Error('未找到 Saved SQL');
+        const extras = await loadSavedSelection(id, focusMode);
         setSavedColumnWidths({});
-        setCurrentId(res.id);
-        setName(res.name);
-        setDescription(res.description ?? '');
-        setSql(res.sql);
-        const varDefs = res.variables || [];
-        setVars(varDefs);
-        applyRunValues(res.id, varDefs);
-        setDynCols(res.dynamicColumns || []);
-        setCalcItems(normalizeCalcItems(res.calcItems));
+        setDynCols(extras.dynamicColumns || []);
+        setCalcItems(normalizeCalcItems(extras.calcItems));
         setPreviewSQL('');
         setRows([]);
         setGridCols([]);
         setTextResult(null);
-        setPgPage(1);
-        setPgTotalRows(null);
-        setPgTotalPages(null);
-        setPgCountLoaded(false);
+        resetPagination();
         setCalcResults({});
         setQueryTiming(null);
-        setMode(focusMode);
         calcAutoTriggeredRef.current = {};
         lastExecSignatureRef.current = null;
         lastRunResultRef.current = null;
@@ -1052,7 +931,7 @@ export default function QueriesPage() {
         setError(String(e?.message || e));
       }
     },
-    [applyRunValues, runKey, runValues, syncRunValues]
+    [loadSavedSelection, normalizeCalcItems, resetPagination]
   );
 
   const onSave = async (asNew?: boolean) => {
@@ -1072,7 +951,7 @@ export default function QueriesPage() {
       if (!currentId || asNew) {
         const res = await createSavedSql(payload);
         setCurrentId(res.id);
-        notifications.show({
+        notifySuccess({
           color: 'teal',
           title: '保存成功',
           message: '已创建 Saved SQL',
@@ -1080,7 +959,7 @@ export default function QueriesPage() {
         });
       } else {
         await updateSavedSql(currentId, payload);
-        notifications.show({
+        notifySuccess({
           color: 'teal',
           title: '保存成功',
           message: '已更新 Saved SQL',
@@ -1090,7 +969,7 @@ export default function QueriesPage() {
       refresh();
     } catch (e: any) {
       const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-      notifications.show({
+      notifyError({
         color: 'red',
         title: '保存失败',
         message: msg,
@@ -1270,7 +1149,7 @@ export default function QueriesPage() {
       } catch (e: any) {
         if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
           setPreviewSQL(e.previewInline || '');
-          const ok = window.confirm('该 SQL 可能修改数据，是否继续执行？');
+          const ok = await confirmDanger('该 SQL 可能修改数据，是否继续执行？');
           if (!ok) {
             setError('已取消执行。');
             setQueryTiming(null);
@@ -1426,7 +1305,7 @@ export default function QueriesPage() {
     } catch (e: any) {
       if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
         setPreviewSQL(e.previewInline || '');
-        const ok = window.confirm('该 SQL 可能修改数据，是否继续执行？');
+        const ok = await confirmDanger('该 SQL 可能修改数据，是否继续执行？');
         if (!ok) {
           setError('已取消执行。');
           setQueryTiming(null);
@@ -1587,7 +1466,7 @@ export default function QueriesPage() {
         const text = await file.text();
         const parsed = parseSavedQueriesExport(text);
         if (!parsed.ok) throw new Error(parsed.error);
-        const overwrite = window.confirm(
+        const overwrite = await confirmDanger(
           '导入：遇到同名查询是否覆盖？确定=覆盖，取消=跳过'
         );
         const stats = await importSavedSql(parsed.data, { overwrite });
