@@ -152,7 +152,7 @@ export function createRunScriptAction(deps: RunScriptDependencies) {
         color: 'orange',
         title: '需要最新结果',
         message: '请先执行查询并确保结果最新，再运行脚本。',
-        icon: ICON_ERROR,
+        icon: ICON_WARNING,
       })
       return
     }
@@ -310,7 +310,7 @@ export function useQueryApiScriptTask({
         color: 'orange',
         title: '请先保存查询',
         message: '保存当前查询后才能创建 API 脚本。',
-        icon: ICON_ERROR,
+        icon: ICON_WARNING,
       })
       return
     }

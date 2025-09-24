@@ -4,8 +4,10 @@ import path from 'node:path'
 export default defineConfig({
   test: {
     globals: true,
+  },
+  resolve: {
     alias: {
-      '@/': path.resolve(__dirname, 'apps/desktop/src/') + '/',
+      '@': path.resolve(__dirname, 'apps/desktop/src'),
     },
   },
 })
