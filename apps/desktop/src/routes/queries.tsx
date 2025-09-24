@@ -44,13 +44,7 @@ import {
   replaceSavedSqlColumnWidths,
 } from '@/services/savedSql';
 import {
-  previewSavedSql,
-  executeSavedSql,
-  explainSavedSql,
   computeCalcSql,
-  previewTempSql,
-  executeTempSql,
-  explainTempSql,
   QueryError,
   DEFAULT_PAGE_SIZE,
   type ExecuteResult,
@@ -87,13 +81,7 @@ import { useSavedSqlSelection } from '../hooks/queries/useSavedSqlSelection';
 import { usePaginationState } from '../hooks/queries/usePaginationState';
 import { useQueryResultState } from '../hooks/queries/useQueryResultState';
 import { useSavedSqlColumnWidths } from '../hooks/queries/useSavedSqlColumnWidths';
-
-type QueryTimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-  countMs?: number | null;
-};
+import { useQueryExecutor, type QueryTimingState } from '../hooks/queries/useQueryExecutor';
 
 type CalcTimingState = {
   totalMs?: number | null;
@@ -212,6 +200,11 @@ export default function QueriesPage() {
     useSavedSqlColumnWidths(currentId, getSavedSqlColumnWidths);
   const savedColumnWidthsRef = useRef<Record<string, number>>({});
   const sqlPreviewRef = useRef<HTMLDivElement | null>(null);
+  const scrollSqlPreview = useCallback(() => {
+    requestAnimationFrame(() => {
+      sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }, []);
   const [isExecuting, setIsExecuting] = useState(false);
   useEffect(() => {
     emitQueryExecutingEvent(isExecuting, 'desktop/queries');
@@ -995,423 +988,6 @@ export default function QueriesPage() {
     }
   };
 
-  const onPreview = async (override?: { page?: number; pageSize?: number }) => {
-    if (mode === 'temp') {
-      if (!tempSql.trim()) {
-        setError('请先输入 SQL。');
-        return;
-      }
-      setIsPreviewing(true);
-      setError(null);
-      try {
-        const res = await previewTempSql(tempSql);
-        setPreviewSQL(res.previewInline || res.previewText);
-        requestAnimationFrame(() => {
-          sqlPreviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
-        setInfo('已生成 SQL 预览');
-        if (override?.pageSize) setPgSize(override.pageSize);
-        if (override?.page) setPgPage(override.page);
-      } catch (e: any) {
-        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-        setError(msg);
-      } finally {
-        setIsPreviewing(false);
-      }
-      return;
-    }
-    if (!currentId) {
-      setError('请先选择或保存查询再预览。');
-      return;
-    }
-    setIsPreviewing(true);
-    setError(null);
-    try {
-      const res = await previewSavedSql({
-        savedId: currentId,
-        values: runValues,
-      });
-      setPreviewSQL(res.previewInline || res.previewText);
-      requestAnimationFrame(() => {
-        sqlPreviewRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-        });
-      });
-      setInfo('已生成 SQL 预览');
-      if (override?.pageSize) setPgSize(override.pageSize);
-      if (override?.page) setPgPage(override.page);
-    } catch (e: any) {
-      const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-      setError(msg);
-    } finally {
-      setIsPreviewing(false);
-    }
-  };
-
-  const onExecute = async (override?: {
-    page?: number;
-    pageSize?: number;
-    forceCount?: boolean;
-    countOnly?: boolean;
-  }) => {
-    if (!override?.countOnly) {
-      lastRunResultRef.current = null;
-      setLastResultAt(null);
-    }
-    if (mode === 'temp') {
-      if (!userConnId) {
-        setError('未设置当前连接，请先在 Connections 选择。');
-        return;
-      }
-      if (!tempSql.trim()) {
-        setError('请先输入 SQL。');
-        return;
-      }
-      setIsExecuting(true);
-      setError(null);
-      setInfo(null);
-      setQueryTiming(null);
-      const start = getNow();
-      const pagination = {
-        enabled: pgEnabled,
-        page: override?.page ?? pgPage,
-        pageSize: override?.pageSize ?? pgSize,
-        withCount: override?.forceCount || (!pgCountLoaded && pgEnabled) || false,
-        countOnly: !!override?.countOnly,
-      };
-      try {
-        const res = await executeTempSql({
-          sql: tempSql,
-          userConnId,
-          pagination,
-          allowWrite: false,
-        });
-        const elapsedMs = Math.round(getNow() - start);
-        const resConnectMs = res.timing?.connectMs ?? null;
-        const resQueryMs = res.timing?.queryMs ?? null;
-        const resCountMs = res.timing?.countMs ?? null;
-        if (override?.countOnly) {
-          if (res.totalRows != null) {
-            setPgTotalRows(res.totalRows);
-            setPgTotalPages(res.totalPages ?? null);
-            setPgCountLoaded(true);
-            setInfo('已刷新计数');
-          }
-          setQueryTiming((prev) => ({
-            totalMs: elapsedMs,
-            connectMs: resConnectMs,
-            queryMs: prev?.queryMs ?? null,
-            countMs: resCountMs,
-          }));
-          return;
-        }
-        setPreviewSQL(res.sql);
-        setRows(res.rows);
-        setGridCols(res.columns);
-        setTextResult(null);
-        setQueryTiming({
-          totalMs: elapsedMs,
-          connectMs: resConnectMs,
-          queryMs: resQueryMs,
-          countMs: resCountMs,
-        });
-        lastRunResultRef.current = res;
-        setLastResultAt(Date.now());
-        if (res.page) setPgPage(res.page);
-        if (res.pageSize) setPgSize(res.pageSize);
-        if (res.totalRows != null) {
-          setPgTotalRows(res.totalRows);
-          setPgTotalPages(res.totalPages ?? null);
-          setPgCountLoaded(true);
-        } else if (res.countSkipped) {
-          setPgTotalRows(null);
-          setPgTotalPages(null);
-          setPgCountLoaded(false);
-        }
-      } catch (e: any) {
-        if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
-          setPreviewSQL(e.previewInline || '');
-          const ok = await confirmDanger('该 SQL 可能修改数据，是否继续执行？');
-          if (!ok) {
-            setError('已取消执行。');
-            setQueryTiming(null);
-          } else {
-            const retryStart = getNow();
-            try {
-              const res2 = await executeTempSql({
-                sql: tempSql,
-                userConnId,
-                pagination: {
-                  enabled: pgEnabled,
-                  page: pgPage,
-                  pageSize: pgSize,
-                },
-                allowWrite: true,
-              });
-              const retryElapsed = Math.round(getNow() - retryStart);
-              setPreviewSQL(res2.sql);
-              setRows(res2.rows);
-              setGridCols(res2.columns);
-              setTextResult(null);
-              setQueryTiming({
-                totalMs: retryElapsed,
-                connectMs: res2.timing?.connectMs ?? null,
-                queryMs: res2.timing?.queryMs ?? null,
-                countMs: res2.timing?.countMs ?? null,
-              });
-              lastRunResultRef.current = res2;
-              setLastResultAt(Date.now());
-            } catch (ex: any) {
-              const msg2 =
-                ex instanceof QueryError ? ex.message : String(ex?.message || ex);
-              setError(msg2);
-              setQueryTiming(null);
-            }
-          }
-        } else {
-          const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-          setError(msg);
-          setQueryTiming(null);
-        }
-      } finally {
-        setIsExecuting(false);
-      }
-      return;
-    }
-    if (!currentId) {
-      setError('请先选择或保存查询后再执行。');
-      return;
-    }
-    if (!userConnId) {
-      setError('未设置当前连接，请先在 Connections 选择。');
-      return;
-    }
-    setIsExecuting(true);
-    setError(null);
-    setInfo(null);
-    setQueryTiming(null);
-    const start = getNow();
-    try {
-      const pagination = {
-        enabled: pgEnabled,
-        page: override?.page ?? pgPage,
-        pageSize: override?.pageSize ?? pgSize,
-        withCount:
-          override?.forceCount || (!pgCountLoaded && pgEnabled) || false,
-        countOnly: !!override?.countOnly,
-      };
-      let res = await executeSavedSql({
-        savedId: currentId,
-        values: runValues,
-        userConnId,
-        pagination,
-        allowWrite: false,
-      });
-      const elapsedMs = Math.round(getNow() - start);
-      const resConnectMs = res.timing?.connectMs ?? null;
-      const resQueryMs = res.timing?.queryMs ?? null;
-      const resCountMs = res.timing?.countMs ?? null;
-      if (override?.countOnly) {
-        if (res.totalRows != null) {
-          setPgTotalRows(res.totalRows);
-          setPgTotalPages(res.totalPages ?? null);
-          setPgCountLoaded(true);
-          setInfo('已刷新计数');
-        }
-        setQueryTiming((prev) => ({
-          totalMs: elapsedMs,
-          connectMs: resConnectMs,
-          queryMs: prev?.queryMs ?? null,
-          countMs: resCountMs,
-        }));
-        return;
-      }
-      setPreviewSQL(res.sql);
-      setRows(res.rows);
-      setGridCols(res.columns);
-      setTextResult(null);
-      setQueryTiming({
-        totalMs: elapsedMs,
-        connectMs: resConnectMs,
-        queryMs: resQueryMs,
-        countMs: resCountMs,
-      });
-      lastRunResultRef.current = res;
-      setLastResultAt(Date.now());
-      if (res.page) setPgPage(res.page);
-      if (res.pageSize) setPgSize(res.pageSize);
-      if (res.totalRows != null) {
-        setPgTotalRows(res.totalRows);
-        setPgTotalPages(res.totalPages ?? null);
-        setPgCountLoaded(true);
-      } else if (res.countSkipped) {
-        setPgTotalRows(null);
-        setPgTotalPages(null);
-        setPgCountLoaded(false);
-      }
-
-      const resultRows = res.rows;
-      const pageSizeForAuto = res.pageSize ?? pagination.pageSize;
-      const isPagination = typeof override?.page === 'number';
-      if (!isPagination && override?.pageSize === undefined) {
-        const signature = JSON.stringify({
-          id: currentId ?? '',
-          values: runValues,
-        });
-        if (lastExecSignatureRef.current !== signature) {
-          calcAutoTriggeredRef.current = {};
-        }
-        lastExecSignatureRef.current = signature;
-      }
-
-      const autoItems: CalcItemDef[] = [];
-      for (const ci of runtimeCalcItemsRef.current) {
-        const mode = ci.runMode ?? 'manual';
-        if (mode === 'manual') continue;
-        if (mode === 'initial') {
-          if (isPagination) continue;
-          if (calcAutoTriggeredRef.current[ci.name]) continue;
-          calcAutoTriggeredRef.current[ci.name] = true;
-          autoItems.push(ci);
-        } else if (mode === 'always') {
-          autoItems.push(ci);
-        }
-      }
-      for (const ci of autoItems) {
-        await runCalcItem(ci, {
-          source: 'auto',
-          rowsOverride: ci.type === 'js' ? resultRows : undefined,
-          pageSizeOverride: pageSizeForAuto,
-        });
-      }
-    } catch (e: any) {
-      if (e instanceof QueryError && e.code === 'write_requires_confirmation') {
-        setPreviewSQL(e.previewInline || '');
-        const ok = await confirmDanger('该 SQL 可能修改数据，是否继续执行？');
-        if (!ok) {
-          setError('已取消执行。');
-          setQueryTiming(null);
-        } else {
-          const retryStart = getNow();
-          try {
-            const res2 = await executeSavedSql({
-              savedId: currentId,
-              values: runValues,
-              userConnId,
-              pagination: {
-                enabled: pgEnabled,
-              page: pgPage,
-              pageSize: pgSize,
-            },
-              allowWrite: true,
-            });
-            const retryElapsed = Math.round(getNow() - retryStart);
-            setPreviewSQL(res2.sql);
-            setRows(res2.rows);
-            setGridCols(res2.columns);
-            setTextResult(null);
-            setQueryTiming({
-              totalMs: retryElapsed,
-              connectMs: res2.timing?.connectMs ?? null,
-              queryMs: res2.timing?.queryMs ?? null,
-              countMs: res2.timing?.countMs ?? null,
-            });
-          } catch (ex: any) {
-            const msg2 =
-              ex instanceof QueryError ? ex.message : String(ex?.message || ex);
-            setError(msg2);
-            setQueryTiming(null);
-          }
-        }
-      } else {
-        const msg =
-          e instanceof QueryError ? e.message : String(e?.message || e);
-        setError(msg);
-        setQueryTiming(null);
-      }
-    } finally {
-      setIsExecuting(false);
-    }
-  };
-
-  const onExplain = async () => {
-    if (mode === 'temp') {
-      if (!userConnId) {
-        setError('未设置当前连接，请先在 Connections 选择。');
-        return;
-      }
-      if (!tempSql.trim()) {
-        setError('请先输入 SQL。');
-        return;
-      }
-      setIsExecuting(true);
-      setError(null);
-      setQueryTiming(null);
-      try {
-        const res = await explainTempSql({
-          sql: tempSql,
-          userConnId,
-          format: explainFormat,
-          analyze: explainAnalyze,
-        });
-        setPreviewSQL(res.previewInline);
-        if (explainFormat === 'json') {
-          setTextResult(JSON.stringify(res.rows ?? [], null, 2));
-          setRows([]);
-          setGridCols([]);
-        } else {
-          setTextResult(res.text ?? '');
-          setRows([]);
-          setGridCols([]);
-        }
-        setInfo('Explain 完成');
-      } catch (e: any) {
-        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-        setError(msg);
-      } finally {
-        setIsExecuting(false);
-      }
-      return;
-    }
-    if (!currentId) {
-      setError('请先选择查询再 Explain。');
-      return;
-    }
-    if (!userConnId) {
-      setError('未设置当前连接，请先在 Connections 选择。');
-      return;
-    }
-    setIsExecuting(true);
-    setError(null);
-    setQueryTiming(null);
-    try {
-      const res = await explainSavedSql({
-        savedId: currentId,
-        values: runValues,
-        userConnId,
-        format: explainFormat,
-        analyze: explainAnalyze,
-      });
-      setPreviewSQL(res.previewInline);
-      if (explainFormat === 'json') {
-        setTextResult(JSON.stringify(res.rows ?? [], null, 2));
-        setRows([]);
-        setGridCols([]);
-      } else {
-        setTextResult(res.text ?? '');
-        setRows([]);
-        setGridCols([]);
-      }
-      setInfo('Explain 完成');
-    } catch (e: any) {
-      const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-      setError(msg);
-    } finally {
-      setIsExecuting(false);
-    }
-  };
-
   const onExportAll = useCallback(async () => {
     setBusy('导出中...');
     try {
@@ -1713,6 +1289,51 @@ export default function QueriesPage() {
     },
     [mode, currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
   );
+
+  const { preview: onPreview, execute: onExecute, explain: onExplain } = useQueryExecutor({
+    mode,
+    currentId,
+    userConnId,
+    tempSql,
+    runValues,
+    pagination: {
+      enabled: pgEnabled,
+      page: pgPage,
+      pageSize: pgSize,
+      countLoaded: pgCountLoaded,
+      setPage: setPgPage,
+      setPageSize: setPgSize,
+      setTotalRows: setPgTotalRows,
+      setTotalPages: setPgTotalPages,
+      setCountLoaded: setPgCountLoaded,
+    },
+    result: {
+      setPreviewSQL,
+      setRows,
+      setGridCols,
+      setTextResult,
+      setIsPreviewing,
+    },
+    status: {
+      setError,
+      setInfo,
+      setIsExecuting,
+      setQueryTiming,
+      setLastResultAt,
+    },
+    refs: { lastRunResultRef },
+    runtime: {
+      calcAutoTriggeredRef,
+      lastExecSignatureRef,
+      runtimeCalcItemsRef,
+      runCalcItem,
+    },
+    getNow,
+    confirmDanger,
+    explainFormat,
+    explainAnalyze,
+    onPreviewApplied: scrollSqlPreview,
+  });
 
   return (
     <Stack gap="md" style={{ position: 'relative', height: '100%' }}>
