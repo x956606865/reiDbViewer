@@ -2,44 +2,19 @@
 
 import React from "react";
 import type { SavedQueryVariableDef, CalcItemDef } from "@rei-db-view/types/appdb";
-import { PaginationSettings } from "./PaginationSettings";
 import { RunParamsPanel } from "./RunParamsPanel";
-import { RunActionsBar } from "./RunActionsBar";
-import { SqlPreviewPanel } from "./SqlPreviewPanel";
-import { ResultsPanel } from "./ResultsPanel";
 import { RuntimeCalcCards } from "./RuntimeCalcCards";
-import { PaginationBar } from "./PaginationBar";
-
-type QueryTimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-  countMs?: number | null;
-};
-
-type CalcTimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-};
-
-type CalcResultState = {
-  loading?: boolean;
-  value?: any;
-  error?: string;
-  groupRows?: Array<{ name: string; value: any }>;
-  timing?: CalcTimingState;
-};
+import { QueryRunnerLayout } from "./QueryRunnerLayout";
+import type { QueryTimingState, CalcResultState } from "./types";
+import type { ExecuteOverride } from "../../hooks/queries/useQueryExecutor";
 
 export function RunQueryPanel({
-  // connection + vars
   userConnId,
   currentConn,
   currentQueryName,
   vars,
   runValues,
   setRunValues,
-  // pagination
   pgEnabled,
   setPgEnabled,
   pgSize,
@@ -49,7 +24,6 @@ export function RunQueryPanel({
   pgTotalRows,
   pgTotalPages,
   onResetCounters,
-  // actions
   onPreview,
   onExecute,
   onExplain,
@@ -58,23 +32,19 @@ export function RunQueryPanel({
   setExplainFormat,
   explainAnalyze,
   setExplainAnalyze,
-  // preview
   sqlPreviewRef,
   isPreviewing,
   previewSQL,
-  // results
   textResult,
   gridCols,
   rows,
   queryTiming,
   columnWidths,
   onColumnWidthsChange,
-  // calc
   runtimeCalcItems,
   calcResults,
   onRunCalc,
-  // count updates
-  onUpdateTotal,
+  onUpdateTotal: _onUpdateTotal,
 }: {
   userConnId?: string | null;
   currentConn: { id: string; alias: string; host?: string | null } | null;
@@ -92,7 +62,7 @@ export function RunQueryPanel({
   pgTotalPages: number | null;
   onResetCounters: () => void;
   onPreview: () => void;
-  onExecute: (override?: { page?: number; pageSize?: number; forceCount?: boolean; countOnly?: boolean }) => void;
+  onExecute: (override?: ExecuteOverride) => void;
   onExplain: () => void;
   isExecuting: boolean;
   explainFormat: "text" | "json";
@@ -113,87 +83,65 @@ export function RunQueryPanel({
   onRunCalc: (item: CalcItemDef) => Promise<void>;
   onUpdateTotal: (totalRows: number | null, totalPages: number | null) => void;
 }) {
+  const resultsTop =
+    runtimeCalcItems.length > 0 ? (
+      <RuntimeCalcCards
+        items={runtimeCalcItems}
+        calcResults={calcResults}
+        onRunCalc={onRunCalc}
+        withContainer={false}
+      />
+    ) : undefined;
+
   return (
-    <>
-      <RunParamsPanel
-        userConnId={userConnId}
-        currentConn={currentConn}
-        currentQueryName={currentQueryName}
-        vars={vars}
-        runValues={runValues}
-        setRunValues={setRunValues}
-      />
-
-      <PaginationSettings
-        pgEnabled={pgEnabled}
-        setPgEnabled={setPgEnabled}
-        pgSize={pgSize}
-        setPgSize={(n) => setPgSize(n)}
-        pgPage={pgPage}
-        setPgPage={(n) => setPgPage(n)}
-        resetCounters={onResetCounters}
-      />
-
-      <RunActionsBar
-        onPreview={() => onPreview()}
-        onExecute={() => onExecute()}
-        onExplain={() => onExplain()}
-        isExecuting={isExecuting}
-        explainFormat={explainFormat}
-        setExplainFormat={setExplainFormat}
-        explainAnalyze={explainAnalyze}
-        setExplainAnalyze={setExplainAnalyze}
-      />
-
-      <SqlPreviewPanel ref={sqlPreviewRef} isPreviewing={isPreviewing} previewSQL={previewSQL} />
-
-      <ResultsPanel
-        isExecuting={isExecuting}
-        top={
-          runtimeCalcItems.length > 0 ? (
-            <RuntimeCalcCards
-              items={runtimeCalcItems}
-              calcResults={calcResults}
-              onRunCalc={onRunCalc}
-              withContainer={false}
-            />
-          ) : undefined
-        }
-        textResult={textResult}
-        gridCols={gridCols}
-        rows={rows}
-        columnWidths={columnWidths}
-        onColumnWidthsChange={onColumnWidthsChange}
-        timing={queryTiming}
-        footer={
-          <PaginationBar
-            visible={pgEnabled && !textResult}
-            page={pgPage}
-            totalPages={pgTotalPages}
-            totalRows={pgTotalRows}
-            onFirst={() => {
-              setPgPage(1);
-              onExecute({ page: 1 });
-            }}
-            onPrev={() => {
-              const next = Math.max(1, pgPage - 1);
-              setPgPage(next);
-              onExecute({ page: next });
-            }}
-            onNext={() => {
-              const next = pgPage + 1;
-              setPgPage(next);
-              onExecute({ page: next });
-            }}
-            onLast={() => {
-              if (pgTotalPages) {
-                setPgPage(pgTotalPages);
-                onExecute({ page: pgTotalPages });
-              }
-            }}
-          />
-        }
-      />
-    </>
+    <QueryRunnerLayout
+      paramsSection={
+        <RunParamsPanel
+          userConnId={userConnId}
+          currentConn={currentConn}
+          currentQueryName={currentQueryName}
+          vars={vars}
+          runValues={runValues}
+          setRunValues={setRunValues}
+        />
+      }
+      pagination={{
+        enabled: pgEnabled,
+        setEnabled: setPgEnabled,
+        pageSize: pgSize,
+        setPageSize: setPgSize,
+        page: pgPage,
+        setPage: setPgPage,
+        totalRows: pgTotalRows,
+        totalPages: pgTotalPages,
+        resetCounters: onResetCounters,
+        execute: onExecute,
+      }}
+      actions={{
+        onPreview,
+        onExecute,
+        onExplain,
+        isExecuting,
+        explainFormat,
+        setExplainFormat,
+        explainAnalyze,
+        setExplainAnalyze,
+      }}
+      preview={{
+        ref: sqlPreviewRef,
+        isPreviewing,
+        sql: previewSQL,
+      }}
+      results={{
+        isExecuting,
+        top: resultsTop,
+        textResult,
+        gridCols,
+        rows,
+        timing: queryTiming,
+        columnWidths,
+        onColumnWidthsChange,
+      }}
+    />
   );
 }

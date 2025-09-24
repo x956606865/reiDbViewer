@@ -5,6 +5,7 @@ import type {
   SetStateAction,
 } from 'react'
 import type { CalcItemDef } from '@rei-db-view/types/appdb'
+import type { QueryTimingState } from '../../components/queries/types'
 import {
   QueryError,
   previewTempSql,
@@ -16,12 +17,7 @@ import {
   type ExecuteResult,
 } from '../../services/pgExec'
 
-export type QueryTimingState = {
-  totalMs?: number | null
-  connectMs?: number | null
-  queryMs?: number | null
-  countMs?: number | null
-}
+export type { QueryTimingState } from '../../components/queries/types'
 
 export type ExecuteOverride = {
   page?: number
@@ -451,4 +447,3 @@ export const __test__ = {
   updateCountResult,
   applyExecuteResult,
 }
-

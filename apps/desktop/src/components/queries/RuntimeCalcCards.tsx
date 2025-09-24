@@ -3,20 +3,7 @@
 import React from "react";
 import { Badge, Button, Code, Group, Paper, Text } from "@mantine/core";
 import type { CalcItemDef } from "@rei-db-view/types/appdb";
-
-type CalcTimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-};
-
-type CalcResultState = {
-  loading?: boolean;
-  value?: any;
-  error?: string;
-  groupRows?: Array<{ name: string; value: any }>;
-  timing?: CalcTimingState;
-};
+import type { CalcResultState, CalcTimingState } from "./types";
 
 const RUN_MODE_LABEL: Record<"always" | "initial" | "manual", string> = {
   always: "完全",

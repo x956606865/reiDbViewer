@@ -16,17 +16,11 @@ import {
 } from "@mantine/core";
 import { ResizableDataGrid } from "../../components/ResizableDataGrid";
 import { IconCopy } from "@tabler/icons-react";
-
-type TimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-  countMs?: number | null;
-};
+import type { QueryTimingState } from "./types";
 
 const formatDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`);
 
-const buildTimingLabel = (timing?: TimingState | null) => {
+const buildTimingLabel = (timing?: QueryTimingState | null) => {
   if (!timing) return null;
   const parts: string[] = [];
   const { totalMs, connectMs, queryMs, countMs } = timing;
@@ -54,7 +48,7 @@ export function ResultsPanel({
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
   footer?: React.ReactNode;
-  timing?: TimingState | null;
+  timing?: QueryTimingState | null;
   columnWidths?: Record<string, number>;
   onColumnWidthsChange?: (next: Record<string, number>) => void;
 }) {

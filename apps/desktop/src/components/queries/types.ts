@@ -19,3 +19,23 @@ export type TreeNode = {
   item?: SavedItem;
 };
 
+export type QueryTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+  countMs?: number | null;
+};
+
+export type CalcTimingState = {
+  totalMs?: number | null;
+  connectMs?: number | null;
+  queryMs?: number | null;
+};
+
+export type CalcResultState = {
+  loading?: boolean;
+  value?: any;
+  error?: string;
+  groupRows?: Array<{ name: string; value: any }>;
+  timing?: CalcTimingState;
+};

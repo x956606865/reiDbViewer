@@ -28,7 +28,7 @@ import { SavedQueriesSidebar } from '@/components/queries/SavedQueriesSidebar';
 import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
 import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
-import type { SavedItem } from '@/components/queries/types';
+import type { SavedItem, CalcResultState } from '@/components/queries/types';
 import { QueryApiScriptEditorDrawer, QueryApiScriptTaskDrawer } from '@/components/queries/api-scripts';
 import type { QueryApiScriptSummary, QueryApiScriptRunRecord } from '@/services/queryApiScripts';
 import {
@@ -82,20 +82,6 @@ import { usePaginationState } from '../hooks/queries/usePaginationState';
 import { useQueryResultState } from '../hooks/queries/useQueryResultState';
 import { useSavedSqlColumnWidths } from '../hooks/queries/useSavedSqlColumnWidths';
 import { useQueryExecutor, type QueryTimingState } from '../hooks/queries/useQueryExecutor';
-
-type CalcTimingState = {
-  totalMs?: number | null;
-  connectMs?: number | null;
-  queryMs?: number | null;
-};
-
-type CalcResultState = {
-  loading?: boolean;
-  value?: any;
-  error?: string;
-  groupRows?: Array<{ name: string; value: any }>;
-  timing?: CalcTimingState;
-};
 
 const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): boolean => {
   const keysA = Object.keys(a);
