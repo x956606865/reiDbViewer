@@ -121,6 +121,7 @@ describe('buildPaginationInput', () => {
     expect(input.page).toBe(3)
     expect(input.pageSize).toBe(25)
     expect(input.countOnly).toBe(true)
+    expect(input.withCount).toBe(true)
   })
 })
 
@@ -180,10 +181,77 @@ describe('updateCountResult', () => {
       timing: { connectMs: 5, countMs: 8 },
     }
 
-    updateCountResult(args as any, res, 15)
+    const updated = updateCountResult(args as any, res, 15)
 
     expect(totals).toEqual({ rows: 120, pages: 12 })
     expect(timing).toEqual({ totalMs: 15, connectMs: 5, queryMs: null, countMs: 8 })
+    expect(updated).toBe(true)
+  })
+
+  it('resets pagination state when count is skipped', () => {
+    let totalRows: number | null = 200
+    let totalPages: number | null = 20
+    let countLoaded = true
+    let timing: QueryTimingState | null = null
+
+    const args = {
+      mode: 'run' as const,
+      currentId: 'q',
+      userConnId: 'conn',
+      tempSql: '',
+      runValues: {},
+      pagination: {
+        enabled: true,
+        page: 1,
+        pageSize: 10,
+        countLoaded: true,
+        setPage: () => {},
+        setPageSize: () => {},
+        setTotalRows: (value: number | null) => {
+          totalRows = value
+        },
+        setTotalPages: (value: number | null) => {
+          totalPages = value
+        },
+        setCountLoaded: (value: boolean) => {
+          countLoaded = value
+        },
+      },
+      result: {} as any,
+      status: {
+        setError: () => {},
+        setInfo: () => {},
+        setIsExecuting: () => {},
+        setQueryTiming: (updater: any) => {
+          timing = typeof updater === 'function' ? updater(timing) : updater
+        },
+        setLastResultAt: () => {},
+      },
+      refs: { lastRunResultRef: { current: null } },
+      runtime: {} as any,
+      getNow: () => Date.now(),
+      confirmDanger: async () => true,
+      explainFormat: 'text' as const,
+      explainAnalyze: false,
+    }
+
+    const res: ExecuteResult = {
+      sql: 'select 1',
+      params: [],
+      rows: [],
+      columns: [],
+      rowCount: 0,
+      countSkipped: true,
+      timing: { connectMs: 2, countMs: 4 },
+    }
+
+    const updated = updateCountResult(args as any, res, 12)
+
+    expect(totalRows).toBeNull()
+    expect(totalPages).toBeNull()
+    expect(countLoaded).toBe(false)
+    expect(updated).toBe(false)
+    expect(timing).toEqual({ totalMs: 12, connectMs: 2, queryMs: null, countMs: 4 })
   })
 })
 
@@ -344,4 +412,3 @@ describe('applyExecuteResult', () => {
 
 // useQueryExecutor is indirectly exercised via helper tests above. This placeholder ensures the hook symbol is referenced to avoid tree-shaking issues.
 void useQueryExecutor
-

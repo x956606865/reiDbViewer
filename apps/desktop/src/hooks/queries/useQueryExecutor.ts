@@ -134,7 +134,11 @@ const buildPaginationInput = (
     enabled: pagination.enabled,
     page: override?.page ?? pagination.page,
     pageSize: override?.pageSize ?? pagination.pageSize,
-    withCount: override?.forceCount || (!pagination.countLoaded && pagination.enabled) || false,
+    withCount:
+      override?.forceCount ||
+      override?.countOnly ||
+      (!pagination.countLoaded && pagination.enabled) ||
+      false,
     countOnly: Boolean(override?.countOnly),
   }
 }
@@ -145,10 +149,15 @@ const updateCountResult = (
   elapsedMs: number,
 ) => {
   const { pagination, status } = ctx
-  if (res.totalRows != null) {
+  const hasTotals = res.totalRows != null
+  if (hasTotals) {
     pagination.setTotalRows(res.totalRows)
     pagination.setTotalPages(res.totalPages ?? null)
     pagination.setCountLoaded(true)
+  } else if (res.countSkipped) {
+    pagination.setTotalRows(null)
+    pagination.setTotalPages(null)
+    pagination.setCountLoaded(false)
   }
   status.setQueryTiming((prev) => ({
     totalMs: elapsedMs,
@@ -156,6 +165,7 @@ const updateCountResult = (
     queryMs: prev?.queryMs ?? null,
     countMs: res.timing?.countMs ?? null,
   }))
+  return hasTotals
 }
 
 const applyExecuteResult = async (
@@ -334,8 +344,10 @@ export const useQueryExecutor = (args: UseQueryExecutorArgs): UseQueryExecutorRe
         const res = await baseExecute(false)
         const elapsedMs = Math.round(args.getNow() - start)
         if (paginationInput.countOnly) {
-          updateCountResult(args, res, elapsedMs)
-          args.status.setInfo('已刷新计数')
+          const totalsUpdated = updateCountResult(args, res, elapsedMs)
+          if (totalsUpdated) {
+            args.status.setInfo('已刷新计数')
+          }
           return
         }
         await applyExecuteResult(args, res, elapsedMs, { override, target })
