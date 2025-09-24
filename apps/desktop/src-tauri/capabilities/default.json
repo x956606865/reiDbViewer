@@ -15,6 +15,9 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-close",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "process:allow-restart",
+    "updater:allow-check",
+    "updater:allow-download-and-install"
   ]
 }
