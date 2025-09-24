@@ -13,7 +13,7 @@ import { QueryApiScriptRunHistoryList } from "./ScriptRunHistoryList";
 
 const TAB_STORAGE_KEY = "rdv.desktop.apiScripts.taskDrawer.tab";
 
-type RunnerSectionProps = {
+export type RunnerSectionProps = {
   scripts: QueryApiScriptSummary[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -30,7 +30,7 @@ type RunnerSectionProps = {
   error?: string | null;
 };
 
-type StatusSectionProps = {
+export type StatusSectionProps = {
   run: QueryApiScriptRunRecord | null;
   loading?: boolean;
   error?: string | null;
@@ -40,7 +40,7 @@ type StatusSectionProps = {
   canceling?: boolean;
 };
 
-type HistorySectionProps = {
+export type HistorySectionProps = {
   runs: QueryApiScriptRunRecord[];
   loading?: boolean;
   error?: string | null;
@@ -57,7 +57,7 @@ type HistorySectionProps = {
   clearDisabled?: boolean;
 };
 
-type QueryApiScriptTaskDrawerProps = {
+export type QueryApiScriptTaskDrawerProps = {
   runner: RunnerSectionProps;
   status: StatusSectionProps;
   history: HistorySectionProps;

@@ -17,7 +17,7 @@ import {
   Text,
   Title,
 } from '@mantine/core';
-import { IconAlertTriangle, IconCheck, IconX } from '@tabler/icons-react';
+import { IconCheck, IconX } from '@tabler/icons-react';
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
@@ -30,7 +30,6 @@ import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
 import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
 import type { SavedItem, CalcResultState } from '@/components/queries/types';
 import { QueryApiScriptEditorDrawer, QueryApiScriptTaskDrawer } from '@/components/queries/api-scripts';
-import type { QueryApiScriptSummary, QueryApiScriptRunRecord } from '@/services/queryApiScripts';
 import {
   getSavedSql,
   createSavedSql,
@@ -49,39 +48,24 @@ import {
   DEFAULT_PAGE_SIZE,
   type ExecuteResult,
 } from '@/services/pgExec';
-import {
-  executeApiScript,
-  cancelApiScriptRun,
-  exportApiScriptRunZip,
-  ensureApiScriptRunZip,
-  readApiScriptRunLog,
-  cleanupApiScriptCache,
-  deleteApiScriptRun,
-  clearApiScriptRuns,
-  type ApiScriptRequestLogEntry,
-} from '@/services/apiScriptRunner';
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
-import { listConnections, getDsnForConn } from '@/lib/localStore';
+import { listConnections } from '@/lib/localStore';
 import { normalizeCalcItems, normalizeCalcItem } from '@/lib/calc-item-utils';
 import { useQueryApiScripts } from '@/lib/use-query-api-scripts';
 import { useApiScriptRuns } from '@/lib/use-api-script-runs';
-import { compileSql } from '@/lib/sql-template';
-import { extractRunScriptInfo } from '@/lib/api-script-run-utils';
-import { saveDialog } from '@/lib/tauri-dialog';
 import { usePersistentSet } from '@/lib/use-persistent-set';
 import {
   confirmDanger,
   notifyError,
-  notifyInfo,
   notifySuccess,
-  notifyWarning,
 } from '@/lib/notifications';
 import { useSavedSqlSelection } from '../hooks/queries/useSavedSqlSelection';
 import { usePaginationState } from '../hooks/queries/usePaginationState';
 import { useQueryResultState } from '../hooks/queries/useQueryResultState';
 import { useSavedSqlColumnWidths } from '../hooks/queries/useSavedSqlColumnWidths';
 import { useQueryExecutor, type QueryTimingState } from '../hooks/queries/useQueryExecutor';
+import { useQueryApiScriptTask } from '../hooks/queries/useQueryApiScriptTask';
 
 const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): boolean => {
   const keysA = Object.keys(a);
@@ -206,18 +190,6 @@ export default function QueriesPage() {
   const lastExecSignatureRef = useRef<string | null>(null);
   const lastRunResultRef = useRef<ExecuteResult | null>(null);
   const [lastResultAt, setLastResultAt] = useState<number | null>(null);
-  const [scriptRunning, setScriptRunning] = useState(false);
-  const [cancelingRunId, setCancelingRunId] = useState<string | null>(null);
-  const [downloadingRunId, setDownloadingRunId] = useState<string | null>(null);
-  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
-  const [clearingRuns, setClearingRuns] = useState(false);
-  const [logViewer, setLogViewer] = useState<{
-    run: QueryApiScriptRunRecord;
-    entries: ApiScriptRequestLogEntry[];
-    loading: boolean;
-    error: string | null;
-  } | null>(null);
-  const [cleanupBusy, setCleanupBusy] = useState(false);
   const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState(false);
@@ -297,47 +269,25 @@ export default function QueriesPage() {
     return connItems.find((x) => x.id === userConnId) || null;
   }, [connItems, userConnId]);
 
+  const scriptsApi = useQueryApiScripts(mode === 'temp' ? null : currentId);
+
   const {
-    scripts: apiScripts,
-    loading: scriptsLoading,
-    loadError: scriptLoadError,
     selectedId: selectedScriptId,
-    setSelectedId: setSelectedScriptId,
-    refresh: refreshScripts,
-    openCreate: openCreateScript,
-    openEdit: openEditScript,
-    openDuplicate: openDuplicateScript,
     editorOpen: scriptEditorOpen,
     editorMode: scriptEditorMode,
     editorForm: scriptEditorForm,
     setEditorForm: setScriptEditorForm,
-    closeEditor: closeScriptEditor,
     saveEditor: saveScriptEditor,
     deleteById: deleteScriptById,
     saving: scriptSaving,
     deleting: scriptDeleting,
     submitError: scriptSubmitError,
-    setSubmitError: setScriptSubmitError,
-  } = useQueryApiScripts(mode === 'temp' ? null : currentId);
+  } = scriptsApi;
 
-  const {
-    runs: scriptRunRecords,
-    loading: scriptRunLoading,
-    error: scriptRunError,
-    activeRun: activeScriptRun,
-    pendingEventCount: scriptRunPendingEvents,
-    refresh: refreshScriptRunsHistory,
-  } = useApiScriptRuns(mode === 'temp' ? null : currentId, {
+  const scriptRuns = useApiScriptRuns(mode === 'temp' ? null : currentId, {
     limit: 30,
     scriptId: mode === 'run' ? selectedScriptId : null,
   });
-
-  useEffect(() => {
-    if (mode !== 'run') return;
-    if (!currentId) return;
-    if (!selectedScriptId) return;
-    void refreshScriptRunsHistory();
-  }, [mode, currentId, selectedScriptId, refreshScriptRunsHistory]);
 
   const latestRunSignature = useMemo(
     () => JSON.stringify({ id: currentId ?? '', values: runValues }),
@@ -353,6 +303,34 @@ export default function QueriesPage() {
       ),
     [lastResultAt, latestRunSignature],
   );
+
+  const scriptTask = useQueryApiScriptTask({
+    mode,
+    queryId: currentId,
+    userConnId,
+    sql,
+    vars,
+    runValues,
+    hasFreshResultForScript,
+    latestRunSignature,
+    lastResultAt,
+    lastRunResultRef,
+    scripts: scriptsApi,
+    runs: scriptRuns,
+    isExecuting,
+  });
+
+  const {
+    drawerProps: scriptTaskDrawerProps,
+    logViewer,
+    logViewerInfo,
+    handleCloseLogViewer,
+    handleCloseScriptEditor,
+  } = scriptTask;
+
+  const scriptTaskDrawer = scriptTaskDrawerProps ? (
+    <QueryApiScriptTaskDrawer {...scriptTaskDrawerProps} />
+  ) : null;
 
   const onDetectVars = () => {
     try {
@@ -403,442 +381,6 @@ export default function QueriesPage() {
     },
     [currentId]
   );
-
-  const handleSelectScript = useCallback(
-    (id: string | null) => {
-      setSelectedScriptId(id);
-    },
-    [setSelectedScriptId],
-  );
-
-  const handleCreateScript = useCallback(() => {
-    if (!currentId) {
-      notifyWarning({
-        color: 'orange',
-        title: '请先保存查询',
-        message: '保存当前查询后才能创建 API 脚本。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    setScriptSubmitError(null);
-    openCreateScript();
-  }, [currentId, openCreateScript, setScriptSubmitError]);
-
-  const handleEditScript = useCallback(
-    (id: string) => {
-      setScriptSubmitError(null);
-      void openEditScript(id);
-    },
-    [openEditScript, setScriptSubmitError],
-  );
-
-  const handleDuplicateScript = useCallback(
-    (id: string) => {
-      setScriptSubmitError(null);
-      void openDuplicateScript(id);
-    },
-    [openDuplicateScript, setScriptSubmitError],
-  );
-
-  const handleDeleteScript = useCallback(
-    async (script: QueryApiScriptSummary) => {
-      const confirmed = await confirmDanger(`确定删除脚本「${script.name}」吗？`);
-      if (!confirmed) return;
-      const ok = await deleteScriptById(script.id);
-      if (ok) {
-        notifySuccess({
-          color: 'teal',
-          title: '删除成功',
-          message: `已删除脚本「${script.name}」。`,
-          icon: <IconCheck size={16} />,
-        });
-      } else {
-        notifyError({
-          color: 'red',
-          title: '删除失败',
-          message: '删除失败，请稍后重试。',
-          icon: <IconX size={16} />,
-        });
-      }
-    },
-    [deleteScriptById],
-  );
-
-  const handleCloseScriptEditor = useCallback(() => {
-    closeScriptEditor();
-    setScriptSubmitError(null);
-  }, [closeScriptEditor, setScriptSubmitError]);
-
-  const handleRunScript = useCallback(async () => {
-    if (mode !== 'run') {
-      notifyInfo({
-        color: 'gray',
-        title: '无法执行',
-        message: '请先切换到运行模式再执行脚本。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    if (!currentId) {
-      notifyError({
-        color: 'red',
-        title: '无法执行',
-        message: '请先保存查询后再配置脚本执行。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    if (!selectedScriptId) {
-      notifyError({
-        color: 'red',
-        title: '未选择脚本',
-        message: '请选择要执行的脚本。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    if (!hasFreshResultForScript || !lastRunResultRef.current) {
-      notifyWarning({
-        color: 'orange',
-        title: '需要最新结果',
-        message: '请先执行查询并确保结果最新，再运行脚本。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    if (!userConnId) {
-      notifyError({
-        color: 'red',
-        title: '缺少连接',
-        message: '请先选择数据库连接。',
-        icon: <IconX size={16} />,
-      });
-      return;
-    }
-    setScriptRunning(true);
-    try {
-      const compiled = compileSql(sql, vars, runValues);
-      const connectionDsn = await getDsnForConn(userConnId);
-      await executeApiScript({
-        scriptId: selectedScriptId,
-        queryId: currentId,
-        runSignature: latestRunSignature,
-        executedSql: lastRunResultRef.current.sql,
-        params: lastRunResultRef.current.params ?? [],
-        executedAt: lastResultAt ?? Date.now(),
-        userConnId,
-        connectionDsn,
-        baseSql: compiled.text,
-        baseParams: compiled.values,
-      });
-      await refreshScriptRunsHistory();
-      notifySuccess({
-        color: 'teal',
-        title: '脚本任务已提交',
-        message: '任务将在后台执行，执行结果稍后可在任务历史查看。',
-        icon: <IconCheck size={16} />,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyError({
-        color: 'red',
-        title: '执行失败',
-        message,
-        icon: <IconX size={16} />,
-      });
-    } finally {
-      setScriptRunning(false);
-    }
-  }, [
-    mode,
-    currentId,
-    selectedScriptId,
-    hasFreshResultForScript,
-    latestRunSignature,
-    lastResultAt,
-    userConnId,
-    sql,
-    vars,
-    runValues,
-    refreshScriptRunsHistory,
-  ]);
-
-  const handleCancelRunRequest = useCallback(
-    async (run: QueryApiScriptRunRecord | null) => {
-      if (!run) return;
-      if (run.status !== 'running' && run.status !== 'pending') return;
-      if (cancelingRunId) return;
-      setCancelingRunId(run.id);
-      try {
-        await cancelApiScriptRun(run.id);
-        notifyWarning({
-          color: 'orange',
-          title: '正在取消任务',
-          message: '已通知后台取消该脚本执行。',
-          icon: <IconAlertTriangle size={16} />,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyError({
-          color: 'red',
-          title: '取消失败',
-          message,
-          icon: <IconX size={16} />,
-        });
-      } finally {
-        setCancelingRunId(null);
-      }
-    },
-    [cancelingRunId],
-  );
-
-  const performSaveRunZip = useCallback(
-    async (run: QueryApiScriptRunRecord) => {
-      const info = extractRunScriptInfo(run);
-      const base = (info.name ?? `run-${run.id.slice(0, 8)}`).replace(/[^a-zA-Z0-9-_]+/g, '_');
-      const suggested = `${base || run.id}.zip`;
-      try {
-        if (!run.zipPath) {
-          try {
-            await ensureApiScriptRunZip(run.id);
-            await refreshScriptRunsHistory();
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            notifyError({
-              color: 'red',
-              title: '生成 ZIP 失败',
-              message,
-              icon: <IconX size={16} />,
-            });
-            return false;
-          }
-        }
-        const target = await saveDialog({
-          title: '保存脚本运行结果',
-          defaultPath: suggested,
-          filters: [{ name: 'ZIP', extensions: ['zip'] }],
-        });
-        if (!target) return false;
-        setDownloadingRunId(run.id);
-        await exportApiScriptRunZip(run.id, target);
-        notifySuccess({
-          color: 'teal',
-          title: '导出成功',
-          message: `已保存到 ${target}`,
-          icon: <IconCheck size={16} />,
-        });
-        await refreshScriptRunsHistory();
-        return true;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyError({
-          color: 'red',
-          title: '导出失败',
-          message,
-          icon: <IconX size={16} />,
-        });
-        return false;
-      } finally {
-        setDownloadingRunId(null);
-      }
-    },
-    [refreshScriptRunsHistory],
-  );
-
-  const handleManualExport = useCallback(
-    async (run: QueryApiScriptRunRecord) => {
-      await performSaveRunZip(run);
-    },
-    [performSaveRunZip],
-  );
-
-  const handleOpenLogViewer = useCallback(
-    async (run: QueryApiScriptRunRecord) => {
-      setLogViewer({ run, entries: [], loading: true, error: null });
-      try {
-        const entries = await readApiScriptRunLog(run.id, 500);
-        setLogViewer({ run, entries, loading: false, error: null });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setLogViewer({ run, entries: [], loading: false, error: message });
-      }
-    },
-    [],
-  );
-
-  const handleCleanupCache = useCallback(async () => {
-    if (cleanupBusy) return;
-    const confirmed = await confirmDanger('确认清理超过 24 小时的脚本缓存文件？');
-    if (!confirmed) return;
-    setCleanupBusy(true);
-    try {
-      const cleaned = await cleanupApiScriptCache();
-      notifySuccess({
-        color: 'teal',
-        title: '清理完成',
-        message:
-          cleaned > 0
-            ? `已清理 ${cleaned} 个任务缓存`
-            : '没有需要清理的缓存文件。',
-        icon: <IconCheck size={16} />,
-      });
-      if (cleaned > 0) {
-        await refreshScriptRunsHistory();
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyError({
-        color: 'red',
-        title: '清理失败',
-        message,
-        icon: <IconX size={16} />,
-      });
-    } finally {
-      setCleanupBusy(false);
-    }
-  }, [cleanupBusy, refreshScriptRunsHistory]);
-
-  const handleDeleteHistoryRun = useCallback(
-    async (run: QueryApiScriptRunRecord) => {
-      if (!run) return;
-      if (deletingRunId) return;
-      if (run.status === 'running' || run.status === 'pending') return;
-      const info = extractRunScriptInfo(run);
-      const label = info?.name ?? `任务 ${run.id.slice(0, 8)}`;
-      const confirmed = await confirmDanger(
-        `确认删除「${label}」的历史记录？该操作不可撤销。`,
-      );
-      if (!confirmed) return;
-      setDeletingRunId(run.id);
-      try {
-        const deleted = await deleteApiScriptRun(run.id);
-        notifySuccess({
-          color: deleted ? 'teal' : 'gray',
-          title: deleted ? '删除成功' : '记录不存在',
-          message: deleted ? '已移除选中的任务记录。' : '任务记录可能已被移除。',
-          icon: <IconCheck size={16} />,
-        });
-        await refreshScriptRunsHistory();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        notifyError({
-          color: 'red',
-          title: '删除失败',
-          message,
-          icon: <IconX size={16} />,
-        });
-      } finally {
-        setDeletingRunId(null);
-      }
-    },
-    [deletingRunId, refreshScriptRunsHistory],
-  );
-
-  const handleClearHistory = useCallback(async () => {
-    if (clearingRuns) return;
-    if (!currentId) {
-      notifyWarning({
-        color: 'orange',
-        title: '无法清空历史',
-        message: '请先保存查询，才能管理对应的脚本任务历史。',
-        icon: <IconAlertTriangle size={16} />,
-      });
-      return;
-    }
-    const confirmed = await confirmDanger(
-      '确认清空当前查询的脚本任务历史？正在执行的任务会被保留。',
-    );
-    if (!confirmed) return;
-    setClearingRuns(true);
-    try {
-      const removed = await clearApiScriptRuns({ queryId: currentId });
-      notifySuccess({
-        color: 'teal',
-        title: '历史已清空',
-        message:
-          removed > 0
-            ? `已移除 ${removed} 条历史记录。`
-            : '没有可清理的历史记录。',
-        icon: <IconCheck size={16} />,
-      });
-      await refreshScriptRunsHistory();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      notifyError({
-        color: 'red',
-        title: '清空失败',
-        message,
-        icon: <IconX size={16} />,
-      });
-    } finally {
-      setClearingRuns(false);
-    }
-  }, [clearingRuns, currentId, refreshScriptRunsHistory]);
-
-  const handleCloseLogViewer = useCallback(() => setLogViewer(null), []);
-
-  const statusRun = activeScriptRun ?? null;
-  const showSpinner = Boolean(
-    activeScriptRun || (!statusRun && (scriptRunLoading || scriptRunPendingEvents > 0)),
-  );
-  const logViewerInfo = useMemo(
-    () => (logViewer ? extractRunScriptInfo(logViewer.run) : null),
-    [logViewer],
-  );
-
-  const scriptTaskDrawer =
-    mode === 'run'
-      ? (
-          <QueryApiScriptTaskDrawer
-            runner={{
-              scripts: apiScripts,
-              selectedId: selectedScriptId,
-              onSelect: handleSelectScript,
-              onCreate: handleCreateScript,
-              onEdit: handleEditScript,
-              onDuplicate: handleDuplicateScript,
-              onDelete: handleDeleteScript,
-              onRun: handleRunScript,
-              disabled: !currentId || isExecuting,
-              running: scriptRunning,
-              hasFreshResult: hasFreshResultForScript,
-              loading: scriptsLoading,
-              busy: scriptSaving || scriptDeleting,
-              error: scriptLoadError ?? (scriptEditorOpen ? null : scriptSubmitError),
-            }}
-            status={{
-              run: statusRun,
-              loading: showSpinner,
-              error: scriptRunError,
-              onRefresh: refreshScriptRunsHistory,
-              onCancel: statusRun ? () => handleCancelRunRequest(statusRun) : undefined,
-              cancelDisabled: Boolean(
-                !statusRun ||
-                  statusRun.status !== 'running' ||
-                  (cancelingRunId && cancelingRunId !== statusRun.id),
-              ),
-              canceling: cancelingRunId === statusRun?.id,
-            }}
-            history={{
-              runs: scriptRunRecords,
-              loading: scriptRunLoading,
-              error: scriptRunError,
-              onRefresh: refreshScriptRunsHistory,
-              onExport: handleManualExport,
-              onViewLog: handleOpenLogViewer,
-              onCleanup: handleCleanupCache,
-              cleanupDisabled: cleanupBusy,
-              downloadingRunId,
-              onDelete: handleDeleteHistoryRun,
-              deleteDisabled: scriptRunLoading || clearingRuns,
-              deletingRunId,
-              onClear: handleClearHistory,
-              clearDisabled: clearingRuns || scriptRunLoading,
-            }}
-          />
-        )
-      : null;
 
   const openDeleteDialog = useCallback((item: SavedItem) => {
     setDeleteBusy(false);

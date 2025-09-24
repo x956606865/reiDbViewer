@@ -22,7 +22,7 @@ type EditorState = {
   form: QueryApiScriptFormState
 }
 
-type UseQueryApiScriptsResult = {
+export type UseQueryApiScriptsResult = {
   scripts: QueryApiScriptSummary[]
   loading: boolean
   loadError: string | null
