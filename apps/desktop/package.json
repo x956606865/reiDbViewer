@@ -8,7 +8,9 @@
     "build:ui": "vite build",
     "preview": "vite preview",
     "dev:tauri": "tauri dev",
-    "build:tauri": "tauri build",
+    "check:updater-signing": "node ./scripts/ensure-updater-signing.mjs",
+    "prebundle:tauri": "pnpm run check:updater-signing && pnpm run build:ui",
+    "build:tauri": "pnpm run check:updater-signing && tauri build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

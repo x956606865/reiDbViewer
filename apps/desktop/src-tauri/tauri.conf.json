@@ -4,7 +4,7 @@
   "version": "0.0.15",
   "identifier": "dev.reidbview.desktop",
   "build": {
-    "beforeBuildCommand": "pnpm --filter @rei-db-view/desktop build:ui",
+    "beforeBuildCommand": "pnpm --filter @rei-db-view/desktop prebundle:tauri",
     "beforeDevCommand": "pnpm --filter @rei-db-view/desktop dev:ui",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
@@ -23,22 +23,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app",
-      "dmg",
-      "msi",
-      "nsis",
-      "appimage",
-      "deb"
-    ],
-    "icon": [
-      "icons/icon.png",
-      "icons/icon.ico"
-    ],
+    "targets": ["app", "dmg", "msi", "nsis", "appimage", "deb"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "shortDescription": "Read-only Postgres explorer for desktop",
     "longDescription": "reiDbView Desktop packages the read-first Postgres browsing experience as an offline Tauri application.",
     "category": "Utility",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "macOS": {
       "minimumSystemVersion": "13.0",
       "bundleName": "Rei DbView Desktop",
@@ -85,11 +75,23 @@
       }
     }
   },
+  "updater": {
+    "active": true,
+    "dialog": false,
+    "endpoints": [
+      "https://github.com/natsurei/reiDbView/releases/latest/download/latest.json"
+    ],
+    "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGMUMyNjc0QjQ2NDQ5MEIKUldRTFNXUzBkQ1ljUDRJUm9WZTB4MFRRZUF4ZUpPQzRhc3VrNTFrWTZBajRqZ3prNnBIQXpaRDkK"
+  },
   "plugins": {
     "sql": {
-      "preload": [
-        "sqlite:rdv_local.db"
-      ]
+      "preload": ["sqlite:rdv_local.db"]
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/natsurei/reiDbView/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGMUMyNjc0QjQ2NDQ5MEIKUldRTFNXUzBkQ1ljUDRJUm9WZTB4MFRRZUF4ZUpPQzRhc3VrNTFrWTZBajRqZ3prNnBIQXpaRDkK"
     }
   }
 }
