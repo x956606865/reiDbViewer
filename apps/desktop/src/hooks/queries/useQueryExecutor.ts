@@ -16,6 +16,7 @@ import {
   explainSavedSql,
   type ExecuteResult,
 } from '../../services/pgExec'
+import { updateTotals } from './useRuntimeCalc'
 
 export type { QueryTimingState } from '../../components/queries/types'
 
@@ -151,13 +152,17 @@ const updateCountResult = (
   const { pagination, status } = ctx
   const hasTotals = res.totalRows != null
   if (hasTotals) {
-    pagination.setTotalRows(res.totalRows)
-    pagination.setTotalPages(res.totalPages ?? null)
-    pagination.setCountLoaded(true)
+    updateTotals(pagination, {
+      totalRows: res.totalRows ?? null,
+      totalPages: res.totalPages ?? null,
+      countLoaded: true,
+    })
   } else if (res.countSkipped) {
-    pagination.setTotalRows(null)
-    pagination.setTotalPages(null)
-    pagination.setCountLoaded(false)
+    updateTotals(pagination, {
+      totalRows: null,
+      totalPages: null,
+      countLoaded: false,
+    })
   }
   status.setQueryTiming((prev) => ({
     totalMs: elapsedMs,
@@ -190,13 +195,17 @@ const applyExecuteResult = async (
   if (res.page) pagination.setPage(res.page)
   if (res.pageSize) pagination.setPageSize(res.pageSize)
   if (res.totalRows != null) {
-    pagination.setTotalRows(res.totalRows)
-    pagination.setTotalPages(res.totalPages ?? null)
-    pagination.setCountLoaded(true)
+    updateTotals(pagination, {
+      totalRows: res.totalRows ?? null,
+      totalPages: res.totalPages ?? null,
+      countLoaded: true,
+    })
   } else if (res.countSkipped) {
-    pagination.setTotalRows(null)
-    pagination.setTotalPages(null)
-    pagination.setCountLoaded(false)
+    updateTotals(pagination, {
+      totalRows: null,
+      totalPages: null,
+      countLoaded: false,
+    })
   }
   if (options.target === 'saved') {
     const isPagination = typeof options.override?.page === 'number'

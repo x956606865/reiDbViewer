@@ -21,14 +21,13 @@ import { IconCheck, IconX } from '@tabler/icons-react';
 import type {
   SavedQueryVariableDef,
   DynamicColumnDef,
-  CalcItemDef,
 } from '@rei-db-view/types/appdb';
 import { emitQueryExecutingEvent } from '@rei-db-view/types/events';
 import { SavedQueriesSidebar } from '@/components/queries/SavedQueriesSidebar';
 import { EditQueryPanel } from '@/components/queries/EditQueryPanel';
 import { RunQueryPanel } from '@/components/queries/RunQueryPanel';
 import { TempQueryPanel } from '@/components/queries/TempQueryPanel';
-import type { SavedItem, CalcResultState } from '@/components/queries/types';
+import type { SavedItem } from '@/components/queries/types';
 import { QueryApiScriptEditorDrawer, QueryApiScriptTaskDrawer } from '@/components/queries/api-scripts';
 import {
   getSavedSql,
@@ -43,7 +42,6 @@ import {
   replaceSavedSqlColumnWidths,
 } from '@/services/savedSql';
 import {
-  computeCalcSql,
   QueryError,
   DEFAULT_PAGE_SIZE,
   type ExecuteResult,
@@ -51,7 +49,7 @@ import {
 import { parseSavedQueriesExport } from '@/lib/saved-sql-import-export';
 import { getCurrentConnId, subscribeCurrentConnId } from '@/lib/current-conn';
 import { listConnections } from '@/lib/localStore';
-import { normalizeCalcItems, normalizeCalcItem } from '@/lib/calc-item-utils';
+import { normalizeCalcItems } from '@/lib/calc-item-utils';
 import { useQueryApiScripts } from '@/lib/use-query-api-scripts';
 import { useApiScriptRuns } from '@/lib/use-api-script-runs';
 import { usePersistentSet } from '@/lib/use-persistent-set';
@@ -66,6 +64,7 @@ import { useQueryResultState } from '../hooks/queries/useQueryResultState';
 import { useSavedSqlColumnWidths } from '../hooks/queries/useSavedSqlColumnWidths';
 import { useQueryExecutor, type QueryTimingState } from '../hooks/queries/useQueryExecutor';
 import { useQueryApiScriptTask } from '../hooks/queries/useQueryApiScriptTask';
+import { useRuntimeCalc, updateTotals } from '../hooks/queries/useRuntimeCalc';
 
 const isSameWidthMap = (a: Record<string, number>, b: Record<string, number>): boolean => {
   const keysA = Object.keys(a);
@@ -182,19 +181,53 @@ export default function QueriesPage() {
       if (isExecuting) emitQueryExecutingEvent(false, 'desktop/queries');
     };
   }, [isExecuting]);
-  const [calcResults, setCalcResults] = useState<Record<string, CalcResultState>>({});
   const [queryTiming, setQueryTiming] = useState<QueryTimingState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SavedItem | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const calcAutoTriggeredRef = useRef<Record<string, boolean>>({});
-  const lastExecSignatureRef = useRef<string | null>(null);
   const lastRunResultRef = useRef<ExecuteResult | null>(null);
   const [lastResultAt, setLastResultAt] = useState<number | null>(null);
-  const runtimeCalcItemsRef = useRef<CalcItemDef[]>([]);
   const [explainFormat, setExplainFormat] = useState<'text' | 'json'>('text');
   const [explainAnalyze, setExplainAnalyze] = useState(false);
   const getNow = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const userConnId = useCurrentConnIdState();
+  const {
+    calcResults,
+    runtimeCalcItems,
+    runtimeCalcItemsRef,
+    calcAutoTriggeredRef,
+    lastExecSignatureRef,
+    runCalcItem,
+    resetCalcResults,
+    resetRuntimeFlags,
+  } = useRuntimeCalc({
+    mode,
+    calcItems,
+    pgEnabled,
+    rows,
+    pgSize,
+    runValues,
+    currentId,
+    userConnId,
+    getNow,
+    pagination: {
+      setTotalRows: setPgTotalRows,
+      setTotalPages: setPgTotalPages,
+      setCountLoaded: setPgCountLoaded,
+    },
+  });
+  const onUpdateTotals = useCallback(
+    (totalRows: number | null, totalPages: number | null) => {
+      updateTotals(
+        {
+          setTotalRows: setPgTotalRows,
+          setTotalPages: setPgTotalPages,
+          setCountLoaded: setPgCountLoaded,
+        },
+        { totalRows, totalPages },
+      );
+    },
+    [setPgTotalRows, setPgTotalPages, setPgCountLoaded],
+  );
   const [connItems, setConnItems] = useState<
     Array<{ id: string; alias: string; host?: string | null }>
   >([]);
@@ -249,15 +282,6 @@ export default function QueriesPage() {
   useEffect(() => {
     savedColumnWidthsRef.current = savedColumnWidths;
   }, [savedColumnWidths]);
-
-  useEffect(() => {
-    calcAutoTriggeredRef.current = {};
-    lastExecSignatureRef.current = null;
-  }, [currentId]);
-
-  useEffect(() => {
-    calcAutoTriggeredRef.current = {};
-  }, [calcItems]);
 
   useEffect(() => {
     lastRunResultRef.current = null;
@@ -391,11 +415,10 @@ export default function QueriesPage() {
     startNewSelection();
     resetResultState();
     setSavedColumnWidths({});
-    setCalcResults({});
+    resetCalcResults();
     setInfo('已切换为新建模式。');
     setQueryTiming(null);
-    calcAutoTriggeredRef.current = {};
-    lastExecSignatureRef.current = null;
+    resetRuntimeFlags();
     lastRunResultRef.current = null;
     setLastResultAt(null);
   };
@@ -406,11 +429,10 @@ export default function QueriesPage() {
     setInfo('已切换为临时查询模式。');
     resetResultState();
     setSavedColumnWidths({});
-    setCalcResults({});
+    resetCalcResults();
     setQueryTiming(null);
     resetPagination();
-    calcAutoTriggeredRef.current = {};
-    lastExecSignatureRef.current = null;
+    resetRuntimeFlags();
     lastRunResultRef.current = null;
     setLastResultAt(null);
   };
@@ -425,10 +447,9 @@ export default function QueriesPage() {
         setSavedColumnWidths({});
         resetResultState();
         resetPagination();
-        setCalcResults({});
+        resetCalcResults();
         setQueryTiming(null);
-        calcAutoTriggeredRef.current = {};
-        lastExecSignatureRef.current = null;
+        resetRuntimeFlags();
         lastRunResultRef.current = null;
         setLastResultAt(null);
       } catch (e: any) {
@@ -579,244 +600,6 @@ export default function QueriesPage() {
     });
   };
 
-  const onUpdateTotals = useCallback(
-    (totalRows: number | null, totalPages: number | null) => {
-      setPgTotalRows(totalRows);
-      setPgTotalPages(totalPages);
-      setPgCountLoaded(totalRows != null);
-    },
-    []
-  );
-
-  const runtimeCalcItems = useMemo(() => {
-    if (mode !== 'run') return [];
-    const base: CalcItemDef[] = [];
-    if (pgEnabled) {
-      base.push(
-        normalizeCalcItem({
-          name: '__total_count__',
-          type: 'sql',
-          code: 'select count(*)::bigint as total from ({{_sql}}) t',
-          runMode: 'manual',
-          kind: 'single',
-        }),
-      );
-    }
-    return [
-      ...base,
-      ...calcItems.map((ci) => normalizeCalcItem(ci)),
-    ];
-  }, [calcItems, pgEnabled, mode]);
-
-  useEffect(() => {
-    runtimeCalcItemsRef.current = runtimeCalcItems;
-  }, [runtimeCalcItems]);
-
-  const runCalcItem = useCallback(
-    async (
-      ci: CalcItemDef,
-      opts?: {
-        source?: 'auto' | 'manual';
-        rowsOverride?: Array<Record<string, unknown>>;
-        pageSizeOverride?: number;
-      }
-    ) => {
-      if (mode !== 'run') return;
-      const key = ci.name;
-      const variant = (ci.kind ?? 'single') as 'single' | 'group';
-      const effectiveRows = opts?.rowsOverride ?? rows;
-      const pageSizeForCount = opts?.pageSizeOverride ?? pgSize;
-      const start = getNow();
-      let connectMs: number | undefined;
-      let queryMs: number | undefined;
-      setCalcResults((s) => ({
-        ...s,
-        [key]: {
-          ...s[key],
-          loading: true,
-          error: undefined,
-          groupRows: variant === 'group' ? undefined : s[key]?.groupRows,
-          timing: undefined,
-        },
-      }));
-      try {
-        if (ci.type === 'sql') {
-          if (!currentId) throw new Error('请先保存/选择查询');
-          if (!userConnId) throw new Error('未设置当前连接');
-          const res = await computeCalcSql({
-            savedId: currentId,
-            values: runValues,
-            userConnId,
-            calcSql: ci.code,
-          });
-          const rowsRes = Array.isArray(res.rows) ? res.rows : [];
-          connectMs = res.timing?.connectMs ?? undefined;
-          queryMs = res.timing?.queryMs ?? undefined;
-          if (ci.name === '__total_count__') {
-            let num: number | null = null;
-            if (rowsRes[0]) {
-              const v =
-                (rowsRes[0] as any).total ??
-                (rowsRes[0] as any).count ??
-                Object.values(rowsRes[0])[0];
-              const n =
-                typeof v === 'string'
-                  ? Number(v)
-                  : typeof v === 'number'
-                  ? v
-                  : null;
-              num = Number.isFinite(n as number) ? (n as number) : null;
-            }
-            if (num === null)
-              throw new Error('返回格式不符合预期，应包含 total/count');
-            const normalizedPageSize = Math.max(
-              1,
-              Number.isFinite(pageSizeForCount)
-                ? Number(pageSizeForCount)
-                : pgSize
-            );
-            const totalPages =
-              num != null && normalizedPageSize > 0
-                ? Math.max(1, Math.ceil(num / normalizedPageSize))
-                : null;
-            onUpdateTotals(num, totalPages);
-            setCalcResults((s) => {
-              const totalMs = Math.round(getNow() - start);
-              return {
-                ...s,
-                [key]: {
-                  value: num,
-                  loading: false,
-                  timing: {
-                    totalMs,
-                    connectMs,
-                    queryMs,
-                  },
-                },
-              };
-            });
-          } else if (variant === 'group') {
-            const columns = res.columns?.length
-              ? res.columns
-              : Object.keys(rowsRes[0] || {});
-            if (columns.length < 2) {
-              throw new Error('计算数据组 SQL 需要至少两列（name, value）');
-            }
-            const [nameCol, valueCol] = columns;
-            const groupRows = rowsRes.map((row) => {
-              const rawName = (row as any)[nameCol as any];
-              if (rawName === undefined || rawName === null) {
-                throw new Error('name 列不能为空');
-              }
-              return {
-                name: String(rawName),
-                value: (row as any)[valueCol as any],
-              };
-            });
-            setCalcResults((s) => {
-              const totalMs = Math.round(getNow() - start);
-              return {
-                ...s,
-                [key]: {
-                  value: groupRows,
-                  groupRows,
-                  loading: false,
-                  timing: {
-                    totalMs,
-                    connectMs,
-                    queryMs,
-                  },
-                },
-              };
-            });
-          } else {
-            let display: any = null;
-            if (rowsRes.length === 0) display = null;
-            else if (rowsRes.length === 1) {
-              const cols = res.columns?.length
-                ? res.columns
-                : Object.keys(rowsRes[0] || {});
-              display = cols.length === 1 ? (rowsRes[0] as any)[cols[0] as any] : rowsRes[0];
-            } else display = rowsRes;
-            setCalcResults((s) => {
-              const totalMs = Math.round(getNow() - start);
-              return {
-                ...s,
-                [key]: {
-                  value: display,
-                  loading: false,
-                  groupRows: undefined,
-                  timing: {
-                    totalMs,
-                    connectMs,
-                    queryMs,
-                  },
-                },
-              };
-            });
-          }
-        } else {
-          const helpers = {
-            fmtDate: (v: any) => (v ? new Date(v).toISOString() : ''),
-            json: (v: any) => JSON.stringify(v),
-            sumBy: (arr: any[], sel: (r: any) => number) =>
-              arr.reduce((sum, row) => sum + (Number(sel(row)) || 0), 0),
-            avgBy: (arr: any[], sel: (r: any) => number) => {
-              const values = arr
-                .map(sel)
-                .map(Number)
-                .filter((n) => Number.isFinite(n));
-              return values.length
-                ? values.reduce((sum, n) => sum + n, 0) / values.length
-                : 0;
-            },
-          };
-          // eslint-disable-next-line no-new-func
-          const fn = new Function(
-            'vars',
-            'rows',
-            'helpers',
-            `"use strict"; return ( ${ci.code} )(vars, rows, helpers)`
-          ) as any;
-          const val = fn(runValues, effectiveRows, helpers);
-          setCalcResults((s) => {
-            const totalMs = Math.round(getNow() - start);
-            return {
-              ...s,
-              [key]: {
-                value: val,
-                loading: false,
-                groupRows: undefined,
-                timing: {
-                  totalMs,
-                },
-              },
-            };
-          });
-        }
-      } catch (e: any) {
-        const msg = e instanceof QueryError ? e.message : String(e?.message || e);
-        setCalcResults((s) => {
-          const totalMs = Math.round(getNow() - start);
-          return {
-            ...s,
-            [key]: {
-              ...s[key],
-              error: msg,
-              loading: false,
-              groupRows: undefined,
-              timing: {
-                totalMs,
-                connectMs: connectMs,
-                queryMs: queryMs,
-              },
-            },
-          };
-        });
-      }
-    },
-    [mode, currentId, userConnId, runValues, rows, pgSize, onUpdateTotals]
-  );
 
   const { preview: onPreview, execute: onExecute, explain: onExplain } = useQueryExecutor({
     mode,
