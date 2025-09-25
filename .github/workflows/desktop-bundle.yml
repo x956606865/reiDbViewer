@@ -147,6 +147,9 @@ jobs:
             exit 1
           fi
 
+          # Generate per-platform updater manifests in case the bundler did not emit latest.json
+          node apps/desktop/scripts/generate-updater-manifest.mjs --bundle-root "$bundle_artifacts_dir"
+
           manifest_paths=()
           while IFS= read -r -d '' manifest_path; do
             manifest_paths+=("$manifest_path")
