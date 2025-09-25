@@ -51,13 +51,9 @@ jobs:
             local value="$2"
             if [ -n "$value" ]; then
               if [ "$name" = "APPLE_CERTIFICATE" ]; then
-                {
-                  echo "${name}<<'EOF'"
-                  echo "$value"
-                  echo 'EOF'
-                } >> "$GITHUB_ENV"
+                printf '%s<<EOF\n%s\nEOF\n' "$name" "$value" >> "$GITHUB_ENV"
               else
-                echo "${name}=$value" >> "$GITHUB_ENV"
+                printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
               fi
             fi
           }
@@ -85,13 +81,9 @@ jobs:
             local value="$2"
             if [ -n "$value" ]; then
               if [ "$name" = "TAURI_SIGNING_PRIVATE_KEY" ] || [ "$name" = "TAURI_PRIVATE_KEY" ]; then
-                {
-                  echo "${name}<<'EOF'"
-                  echo "$value"
-                  echo 'EOF'
-                } >> "$GITHUB_ENV"
+                printf '%s<<EOF\n%s\nEOF\n' "$name" "$value" >> "$GITHUB_ENV"
               else
-                echo "${name}=$value" >> "$GITHUB_ENV"
+                printf '%s=%s\n' "$name" "$value" >> "$GITHUB_ENV"
               fi
             fi
           }
@@ -146,33 +138,43 @@ jobs:
         run: |
           set -euo pipefail
           bundle_root="apps/desktop/src-tauri/target/release"
-          updater_dir="$bundle_root/bundle/updater"
           staging="$bundle_root/ci-artifacts/$OS_LABEL"
 
-          if [ ! -d "$updater_dir" ]; then
-            echo "[updater] directory $updater_dir is missing"
+          manifest_paths=()
+          while IFS= read -r -d '' manifest_path; do
+            manifest_paths+=("$manifest_path")
+          done < <(find "$bundle_root" -type f -path '*/bundle/*/latest.json' -print0)
+
+          if [ ${#manifest_paths[@]} -eq 0 ]; then
+            echo "[updater] expected latest.json under $bundle_root"
             exit 1
           fi
 
-          shopt -s nullglob
-          updater_manifests=($updater_dir/*.json)
-          updater_zips=($updater_dir/*.zip)
-          shopt -u nullglob
-
-          if [ ${#updater_manifests[@]} -eq 0 ]; then
-            echo "[updater] expected latest.json in $updater_dir"
-            exit 1
-          fi
-
-          if [ ${#updater_zips[@]} -eq 0 ]; then
-            echo "[updater] expected updater .zip payloads in $updater_dir"
-            exit 1
-          fi
-
+          rm -rf "$staging"
           mkdir -p "$staging/updater" "$staging/bundle"
 
-          cp "${updater_manifests[@]}" "$staging/updater/"
-          cp "${updater_zips[@]}" "$staging/updater/"
+          for manifest_path in "${manifest_paths[@]}"; do
+            manifest_dir="$(dirname "$manifest_path")"
+            cp "$manifest_path" "$staging/updater/"
+
+            shopt -s nullglob
+            zip_candidates=("$manifest_dir"/*.zip)
+            shopt -u nullglob
+
+            if [ ${#zip_candidates[@]} -eq 0 ]; then
+              echo "[updater] expected updater .zip payloads in $manifest_dir"
+              exit 1
+            fi
+
+            for zip_path in "${zip_candidates[@]}"; do
+              dest="$staging/updater/$(basename "$zip_path")"
+              if [ -e "$dest" ]; then
+                echo "[updater] duplicate updater payload $(basename "$zip_path")"
+                exit 1
+              fi
+              cp "$zip_path" "$dest"
+            done
+          done
 
           shopt -s nullglob
           bundle_files=($BUNDLE_GLOB)

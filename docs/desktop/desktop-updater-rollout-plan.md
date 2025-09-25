@@ -62,7 +62,8 @@
 
 #### 实施记录（2025-09-25）
 
-- `.github/workflows/desktop-bundle.yml` 构建 job 在 `Build desktop bundles` 之后执行 `Collect desktop artifacts`，强制检查 `bundle/updater` 下的 `latest.json` 与 `.zip` 是否存在，并将安装包与 updater 产物复制到 `target/release/ci-artifacts/<os>` 目录统一归档。
+- `.github/workflows/desktop-bundle.yml` 构建 job 在 `Build desktop bundles` 之后执行 `Collect desktop artifacts`，会递归查找 `bundle/**/latest.json` 与对应 `.zip` 并归档到 `target/release/ci-artifacts/<os>`，兼容 Tauri v2 的新目录结构。
+- 同日修复 Windows Runner 写入 `$GITHUB_ENV` 的多行密钥格式，改用 `printf` 输出 `VAR<<EOF` 块，避免 `'EOF'` 分隔符在 Bash for Windows 上报错。
 - 新增脚本 `apps/desktop/scripts/compose-updater-artifacts.mjs`，发布 job 下载矩阵产物后使用 Node 20 运行该脚本，将各平台 manifest 合并为单一 `latest.json`（按 `profile` 自动生成 `latest-<profile>.json`），同时拷贝签名过的 `.zip` 至 `dist/updater/`。
 - 发布阶段仅上传 `dist/reidbview-desktop-*/bundle/*` 与 `dist/updater/*`，避免重复上传中间产物；脚本会在缺失 manifest / zip 或版本不一致时立刻失败，从 CI 层阻断发布。
 
