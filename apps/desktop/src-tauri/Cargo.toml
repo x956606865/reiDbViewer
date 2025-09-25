@@ -1,6 +1,6 @@
 [package]
 name = "reidbview-desktop"
-version = "0.0.25"
+version = "0.0.26"
 description = "reiDbView Desktop (Tauri v2)"
 authors = ["reiDbView"]
 edition = "2021"
