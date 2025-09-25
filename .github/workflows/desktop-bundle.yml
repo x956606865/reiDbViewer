@@ -132,14 +132,12 @@ jobs:
       - name: Build desktop bundles (host)
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-          CARGO_TARGET_DIR: apps/desktop/src-tauri/target/x86_64-apple-darwin
         run: pnpm --filter @rei-db-view/desktop build:tauri
 
       - name: Build desktop bundles (apple silicon)
         if: matrix.os_label == 'macos-x64'
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-          CARGO_TARGET_DIR: apps/desktop/src-tauri/target/aarch64-apple-darwin
         run: pnpm --filter @rei-db-view/desktop build:tauri -- --target aarch64-apple-darwin
 
       - name: Collect desktop artifacts
@@ -152,11 +150,9 @@ jobs:
           bundle_root="apps/desktop/src-tauri/target"
           staging="$bundle_root/release/ci-artifacts/$OS_LABEL"
 
-          bundle_roots=("$bundle_root/x86_64-apple-darwin/release/bundle")
+          bundle_roots=("$bundle_root/release/bundle")
           if [ "$OS_LABEL" = "macos-x64" ]; then
-            bundle_roots+=("apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle")
-          else
-            bundle_roots=("$bundle_root/release/bundle")
+            bundle_roots+=("$bundle_root/aarch64-apple-darwin/release/bundle")
           fi
 
           manifest_paths=()
