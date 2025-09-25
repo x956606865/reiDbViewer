@@ -19,12 +19,12 @@
 ### 阶段一：密钥与配置基线
 
 - 生成 `app.private.key` / `app.pubkey`，公钥写入 `tauri.conf.json`，私钥保存至安全存储并配置为 GitHub Secret `TAURI_UPDATER_PRIVATE_KEY`。
-- 更新 `tauri.conf.json`：`bundle.createUpdaterArtifacts=true`，`updater.active=true`、`dialog=false`、`endpoints` 指向 `https://github.com/<owner>/<repo>/releases/latest/download/latest.json`。
+- 更新 `tauri.conf.json`：`bundle.createUpdaterArtifacts="v1Compatible"`，`updater.active=true`、`dialog=false`、`endpoints` 指向 `https://github.com/<owner>/<repo>/releases/latest/download/latest.json`。
 - 构建脚本在缺失密钥时直接 fail-fast，防止未签名产物外发。
 
 #### 实施记录（2025-09-24）
 
-- `apps/desktop/src-tauri/tauri.conf.json` 已开启 `createUpdaterArtifacts`，并将 GitHub Release `latest.json` 设置为默认更新源；`updater.pubkey` 暂留占位符 `REPLACE_WITH_APP_PUBKEY`，替换后需保持 `updater.pubkey` 与 `plugins.updater.pubkey` 一致。
+- `apps/desktop/src-tauri/tauri.conf.json` 已开启 `createUpdaterArtifacts="v1Compatible"`，并将 GitHub Release `latest.json` 设置为默认更新源；`updater.pubkey` 暂留占位符 `REPLACE_WITH_APP_PUBKEY`，替换后需保持 `updater.pubkey` 与 `plugins.updater.pubkey` 一致。
 - 新增 `apps/desktop/scripts/ensure-updater-signing.mjs`，`pnpm run check:updater-signing` 会在 `build:tauri` 与 `tauri.conf.json > beforeBuildCommand` 中自动执行。当环境缺失 `TAURI_SIGNING_PRIVATE_KEY`（或仍使用旧变量 `TAURI_UPDATER_PRIVATE_KEY`）或占位公钥未替换时会立即终止构建，可通过显式设置 `ALLOW_UNSIGNED_DESKTOP_BUILD=1` 暂时跳过（仅限本地调试）。
 - 生成密钥的推荐步骤：
   1. 在仓库根目录执行 `pnpm --filter @rei-db-view/desktop exec tauri signer generate -w apps/desktop/src-tauri/app.private.key`（不会写入 git，`.gitignore` 已忽略该文件）。
@@ -62,7 +62,7 @@
 
 #### 实施记录（2025-09-25）
 
-- `.github/workflows/desktop-bundle.yml` 构建 job 在 `Build desktop bundles` 之后执行 `Collect desktop artifacts`，会在 `bundle/` 子目录内递归查找 `latest.json` 与对应 `.zip` 并归档到 `target/release/ci-artifacts/<os>`，兼容 Tauri v2 的新目录结构。
+- `.github/workflows/desktop-bundle.yml` 构建 job 在 `Build desktop bundles` 之后执行 `Collect desktop artifacts`，会在 `bundle/` 子目录内递归查找 `latest.json` 与对应 `.zip` 并归档到 `target/release/ci-artifacts/<os>`，当前使用 `createUpdaterArtifacts="v1Compatible"` 以生成 manifest。
 - 同日修复 Windows Runner 写入 `$GITHUB_ENV` 的多行密钥格式，改用 `printf` 输出 `VAR<<EOF` 块，避免 `'EOF'` 分隔符在 Bash for Windows 上报错。
 - 新增脚本 `apps/desktop/scripts/compose-updater-artifacts.mjs`，发布 job 下载矩阵产物后使用 Node 20 运行该脚本，将各平台 manifest 合并为单一 `latest.json`（按 `profile` 自动生成 `latest-<profile>.json`），同时拷贝签名过的 `.zip` 至 `dist/updater/`。
 - 发布阶段仅上传 `dist/reidbview-desktop-*/bundle/*` 与 `dist/updater/*`，避免重复上传中间产物；脚本会在缺失 manifest / zip 或版本不一致时立刻失败，从 CI 层阻断发布。

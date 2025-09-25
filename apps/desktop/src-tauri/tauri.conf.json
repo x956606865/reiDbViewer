@@ -38,7 +38,7 @@
     "shortDescription": "Read-only Postgres explorer for desktop",
     "longDescription": "reiDbView Desktop packages the read-first Postgres browsing experience as an offline Tauri application.",
     "category": "Utility",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": "v1Compatible",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "bundleName": "Rei DbView Desktop",

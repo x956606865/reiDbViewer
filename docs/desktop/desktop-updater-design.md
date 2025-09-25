@@ -3,7 +3,7 @@
 ## 背景现状
 
 - 当前通过 `.github/workflows/desktop-bundle.yml` 使用标签 `desktop-v*` 发布桌面端安装包，用户需手动下载。
-- `tauri.conf.json` 未启用 `createUpdaterArtifacts`，缺乏 `latest.json` 与 `.updater.zip`。
+- `tauri.conf.json` 需启用 `createUpdaterArtifacts`（当前采用 `"v1Compatible"`），否则缺乏 `latest.json` 与 `.updater.zip`。
 - 未集成 `@tauri-apps/plugin-updater` 与 `@tauri-apps/plugin-process`，也未配置相关 capabilities 与前端交互。
 
 ## 目标
@@ -23,7 +23,7 @@
 
 1. **生成签名**：使用 `pnpm tauri signer generate` 产生 `app.private.key`/`app.pubkey`，公钥写入 `tauri.conf.json`，私钥放入 GitHub Secrets（如 `TAURI_UPDATER_PRIVATE_KEY`）。
 2. **构建阶段**：
-   - `tauri.conf.json` 中开启 `bundle.createUpdaterArtifacts`。
+   - `tauri.conf.json` 中开启 `bundle.createUpdaterArtifacts`（采用 `"v1Compatible"` 以生成 manifest）。
    - 配置 `updater`：
      ```json
      {
