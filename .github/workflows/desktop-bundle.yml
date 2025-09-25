@@ -135,11 +135,61 @@ jobs:
           NODE_OPTIONS: --max_old_space_size=4096
         run: pnpm --filter @rei-db-view/desktop build:tauri
 
+      - name: Collect desktop artifacts
+        shell: bash
+        env:
+          BUNDLE_GLOB: "${{ matrix.artifact_glob }}"
+          OS_LABEL: "${{ matrix.os_label }}"
+        run: |
+          set -euo pipefail
+          bundle_root="apps/desktop/src-tauri/target/release"
+          updater_dir="$bundle_root/bundle/updater"
+          staging="$bundle_root/ci-artifacts/$OS_LABEL"
+
+          if [ ! -d "$updater_dir" ]; then
+            echo "[updater] directory $updater_dir is missing"
+            exit 1
+          fi
+
+          shopt -s nullglob
+          updater_manifests=($updater_dir/*.json)
+          updater_zips=($updater_dir/*.zip)
+          shopt -u nullglob
+
+          if [ ${#updater_manifests[@]} -eq 0 ]; then
+            echo "[updater] expected latest.json in $updater_dir"
+            exit 1
+          fi
+
+          if [ ${#updater_zips[@]} -eq 0 ]; then
+            echo "[updater] expected updater .zip payloads in $updater_dir"
+            exit 1
+          fi
+
+          mkdir -p "$staging/updater" "$staging/bundle"
+
+          cp "${updater_manifests[@]}" "$staging/updater/"
+          cp "${updater_zips[@]}" "$staging/updater/"
+
+          shopt -s nullglob
+          bundle_files=($BUNDLE_GLOB)
+          shopt -u nullglob
+
+          if [ ${#bundle_files[@]} -eq 0 ]; then
+            echo "[bundle] expected artifacts matching glob '$BUNDLE_GLOB'"
+            exit 1
+          fi
+
+          cp "${bundle_files[@]}" "$staging/bundle/"
+
+          echo "Collected bundles:"
+          ls -R "$staging"
+
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
         with:
           name: reidbview-desktop-${{ matrix.os_label }}
-          path: ${{ matrix.artifact_glob }}
+          path: apps/desktop/src-tauri/target/release/ci-artifacts/${{ matrix.os_label }}
           if-no-files-found: error
 
   publish-release:
@@ -159,9 +209,24 @@ jobs:
       - name: Display downloaded files
         run: ls -R dist
 
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compose updater manifest
+        env:
+          UPDATE_PROFILE: ${{ github.event.inputs.profile }}
+        run: node apps/desktop/scripts/compose-updater-artifacts.mjs --downloads dist --output dist/updater
+
+      - name: Show updater artifacts
+        run: ls -R dist/updater
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/**/*
+          files: |
+            dist/reidbview-desktop-*/bundle/*
+            dist/updater/*
           generate_release_notes: true
           make_latest: true
