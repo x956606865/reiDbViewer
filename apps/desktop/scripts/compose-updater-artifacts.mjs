@@ -157,16 +157,18 @@ async function main() {
           throw new Error(`Expected updater payload at ${sourceZip}`);
         }
 
-        if (zipSources.has(fileName)) {
-          throw new Error(`Duplicate updater payload detected for ${fileName}`);
+        const outputFileName = fileName.startsWith('updater-') ? fileName : `updater-${fileName}`;
+
+        if (zipSources.has(outputFileName)) {
+          throw new Error(`Duplicate updater payload detected for ${outputFileName}`);
         }
 
         merged.platforms[platformKey] = {
           ...platformData,
-          url: `https://github.com/${repoSlug}/releases/download/${tagName}/${fileName}`,
+          url: `https://github.com/${repoSlug}/releases/download/${tagName}/${outputFileName}`,
         };
 
-        zipSources.set(fileName, sourceZip);
+        zipSources.set(outputFileName, sourceZip);
       }
     } catch (error) {
       throw new Error(`Failed processing updater manifest in ${updaterDir}: ${error.message}`);
