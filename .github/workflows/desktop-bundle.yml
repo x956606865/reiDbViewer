@@ -140,13 +140,20 @@ jobs:
           bundle_root="apps/desktop/src-tauri/target/release"
           staging="$bundle_root/ci-artifacts/$OS_LABEL"
 
+          bundle_artifacts_dir="$bundle_root/bundle"
+
+          if [ ! -d "$bundle_artifacts_dir" ]; then
+            echo "[updater] directory $bundle_artifacts_dir is missing"
+            exit 1
+          fi
+
           manifest_paths=()
           while IFS= read -r -d '' manifest_path; do
             manifest_paths+=("$manifest_path")
-          done < <(find "$bundle_root" -type f -path '*/bundle/*/latest.json' -print0)
+          done < <(find "$bundle_artifacts_dir" -type f -name 'latest.json' -print0)
 
           if [ ${#manifest_paths[@]} -eq 0 ]; then
-            echo "[updater] expected latest.json under $bundle_root"
+            echo "[updater] expected latest.json under $bundle_artifacts_dir"
             exit 1
           fi
 
