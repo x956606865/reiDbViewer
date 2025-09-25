@@ -60,6 +60,12 @@
 - 若未来扩展 `workflow_dispatch.inputs.profile`，根据 profile 重命名 manifest（例如 `latest-beta.json`）并校验 stable 渠道不被覆盖。
 - CI 增加验证步骤：缺失 manifest / zip 或签名错误时阻断发布。
 
+#### 实施记录（2025-09-25）
+
+- `.github/workflows/desktop-bundle.yml` 构建 job 在 `Build desktop bundles` 之后执行 `Collect desktop artifacts`，强制检查 `bundle/updater` 下的 `latest.json` 与 `.zip` 是否存在，并将安装包与 updater 产物复制到 `target/release/ci-artifacts/<os>` 目录统一归档。
+- 新增脚本 `apps/desktop/scripts/compose-updater-artifacts.mjs`，发布 job 下载矩阵产物后使用 Node 20 运行该脚本，将各平台 manifest 合并为单一 `latest.json`（按 `profile` 自动生成 `latest-<profile>.json`），同时拷贝签名过的 `.zip` 至 `dist/updater/`。
+- 发布阶段仅上传 `dist/reidbview-desktop-*/bundle/*` 与 `dist/updater/*`，避免重复上传中间产物；脚本会在缺失 manifest / zip 或版本不一致时立刻失败，从 CI 层阻断发布。
+
 ### 阶段五：验证与文档
 
 - 本地/CI 校验 `latest.json` 内容：版本号、摘要、SHA256 等字段与产物一致。

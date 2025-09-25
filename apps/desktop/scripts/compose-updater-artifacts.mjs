@@ -45,6 +45,33 @@ async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
 }
 
+async function findUpdaterDirs(rootDir) {
+  const result = [];
+  const stack = [rootDir];
+
+  while (stack.length > 0) {
+    const currentDir = stack.pop();
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    let hasLatest = false;
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+
+      if (entry.isFile() && entry.name === 'latest.json') {
+        hasLatest = true;
+      } else if (entry.isDirectory()) {
+        stack.push(path.join(currentDir, entry.name));
+      }
+    }
+
+    if (hasLatest) {
+      result.push(currentDir);
+    }
+  }
+
+  return result;
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const downloadsDir = args.downloads ?? 'dist';
@@ -62,10 +89,26 @@ async function main() {
   }
 
   const entries = await fs.readdir(downloadsDir, { withFileTypes: true });
-  const artifactDirs = entries
+  const candidateRoots = entries
     .filter((entry) => entry.isDirectory() && entry.name.startsWith('reidbview-desktop-'))
-    .map((entry) => path.join(downloadsDir, entry.name, 'updater'))
-    .filter((dir) => dir);
+    .map((entry) => path.join(downloadsDir, entry.name));
+
+  const artifactDirSet = new Set();
+  for (const root of candidateRoots) {
+    const updaterDirs = await findUpdaterDirs(root);
+    for (const dir of updaterDirs) {
+      artifactDirSet.add(dir);
+    }
+  }
+
+  if (artifactDirSet.size === 0) {
+    const fallbackDirs = await findUpdaterDirs(downloadsDir);
+    for (const dir of fallbackDirs) {
+      artifactDirSet.add(dir);
+    }
+  }
+
+  const artifactDirs = Array.from(artifactDirSet).filter((dir) => dir && dir !== outputDir);
 
   if (artifactDirs.length === 0) {
     throw new Error(`No updater directories found under ${downloadsDir}`);
