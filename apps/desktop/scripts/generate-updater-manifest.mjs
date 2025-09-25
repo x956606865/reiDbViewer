@@ -44,6 +44,18 @@ function extractArchHint(fileName) {
   return null;
 }
 
+function extractArchFromSegments(segments) {
+  for (const segment of segments) {
+    const lower = segment.toLowerCase();
+    if (lower.includes('universal')) return 'universal';
+    if (lower.includes('aarch64') || lower.includes('arm64')) return 'aarch64';
+    if (lower.includes('x86_64') || lower.includes('x64') || lower.includes('amd64')) return 'x86_64';
+    if (lower.includes('armv7')) return 'armv7';
+    if (lower.includes('i686') || lower.includes('x86')) return 'x86';
+  }
+  return null;
+}
+
 function detectKind(base, fileName) {
   const lower = fileName.toLowerCase();
   if (base === 'darwin') {
@@ -135,7 +147,10 @@ async function main() {
       const segments = payloadPath.split(path.sep);
       const base = toPlatformBase(segments, process.platform);
       const kind = detectKind(base, fileName);
-      const archHint = extractArchHint(fileName) ?? normalizeArch(process.env.TAURI_ENV_ARCH ?? process.arch);
+      const archHint =
+        extractArchHint(fileName) ??
+        extractArchFromSegments(segments) ??
+        normalizeArch(process.env.TAURI_ENV_ARCH ?? process.arch);
       const platformKey = `${base}-${archHint}`;
       const priorityList = PRIORITY_BY_BASE[base] ?? ['unknown'];
       const current = artifactsByPlatform.get(platformKey);
