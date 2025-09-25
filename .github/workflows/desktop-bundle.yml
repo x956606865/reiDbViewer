@@ -266,6 +266,9 @@ jobs:
       - name: Show updater artifacts
         run: ls -R dist/updater
 
+      - name: Remove per-platform manifests from bundle payloads
+        run: find dist -path '*/bundle/latest.json' -type f -delete
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
