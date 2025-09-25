@@ -230,9 +230,20 @@ jobs:
 
           bundle_files=()
           shopt -s nullglob
-          for glob in "${bundle_roots[@]}"/dmg/*.dmg; do
-            bundle_files+=("$glob")
-          done
+          if [ "$OS_LABEL" = "macos-x64" ]; then
+            for root in "${bundle_roots[@]}"; do
+              for dmg in "$root"/dmg/*.dmg; do
+                bundle_files+=("$dmg")
+              done
+              for tarball in "$root"/macos/*.tar.gz; do
+                bundle_files+=("$tarball")
+              done
+            done
+          else
+            for resolved in $BUNDLE_GLOB; do
+              bundle_files+=("$resolved")
+            done
+          fi
           shopt -u nullglob
 
           if [ ${#bundle_files[@]} -eq 0 ]; then
