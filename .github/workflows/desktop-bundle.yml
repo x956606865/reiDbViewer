@@ -167,22 +167,40 @@ jobs:
             manifest_dir="$(dirname "$manifest_path")"
             cp "$manifest_path" "$staging/updater/"
 
-            shopt -s nullglob
-            zip_candidates=("$manifest_dir"/*.zip)
-            shopt -u nullglob
+            mapfile -t payloads < <(
+              node -e '
+                const fs = require("fs");
+                const manifestPath = process.argv[1];
+                const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+                const platforms = manifest?.platforms ? Object.values(manifest.platforms) : [];
+                const urls = platforms
+                  .map((entry) => (entry && typeof entry.url === "string" ? entry.url.trim() : ""))
+                  .filter((value) => value.length > 0);
+                if (urls.length === 0) process.exit(0);
+                process.stdout.write(urls.join("\n"));
+              ' "$manifest_path"
+            )
 
-            if [ ${#zip_candidates[@]} -eq 0 ]; then
-              echo "[updater] expected updater .zip payloads in $manifest_dir"
+            if [ ${#payloads[@]} -eq 0 ]; then
+              echo "[updater] manifest $manifest_path does not declare any payload urls"
               exit 1
             fi
 
-            for zip_path in "${zip_candidates[@]}"; do
-              dest="$staging/updater/$(basename "$zip_path")"
-              if [ -e "$dest" ]; then
-                echo "[updater] duplicate updater payload $(basename "$zip_path")"
+            for payload in "${payloads[@]}"; do
+              [ -z "$payload" ] && continue
+              source_path="$manifest_dir/$payload"
+              if [ ! -f "$source_path" ]; then
+                echo "[updater] expected payload $source_path referenced by $manifest_path"
                 exit 1
               fi
-              cp "$zip_path" "$dest"
+
+              dest="$staging/updater/$(basename "$payload")"
+              if [ -e "$dest" ]; then
+                echo "[updater] duplicate updater payload $(basename "$payload")"
+                exit 1
+              fi
+
+              cp "$source_path" "$dest"
             done
           done
 
