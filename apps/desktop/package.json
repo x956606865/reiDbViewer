@@ -1,7 +1,7 @@
 {
   "name": "@rei-db-view/desktop",
   "private": true,
-  "version": "0.0.22",
+  "version": "0.0.23",
   "type": "module",
   "scripts": {
     "dev:ui": "vite",
