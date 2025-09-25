@@ -157,7 +157,11 @@ async function main() {
           throw new Error(`Expected updater payload at ${sourceZip}`);
         }
 
-        const outputFileName = fileName.startsWith('updater-') ? fileName : `updater-${fileName}`;
+        const sanitizedPlatform = platformKey.replace(/[^a-z0-9_-]/gi, '-');
+        const baseOutputName = fileName.startsWith('updater-') ? fileName : `updater-${fileName}`;
+        const outputFileName = baseOutputName.includes(sanitizedPlatform)
+          ? baseOutputName
+          : baseOutputName.replace('updater-', `updater-${sanitizedPlatform}-`);
 
         if (zipSources.has(outputFileName)) {
           throw new Error(`Duplicate updater payload detected for ${outputFileName}`);

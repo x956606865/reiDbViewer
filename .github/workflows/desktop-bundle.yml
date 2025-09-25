@@ -125,10 +125,20 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build desktop bundles
+      - name: Install Apple Silicon Rust target
+        if: matrix.os_label == 'macos-x64'
+        run: rustup target add aarch64-apple-darwin
+
+      - name: Build desktop bundles (host)
         env:
           NODE_OPTIONS: --max_old_space_size=4096
         run: pnpm --filter @rei-db-view/desktop build:tauri
+
+      - name: Build desktop bundles (apple silicon)
+        if: matrix.os_label == 'macos-x64'
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --target aarch64-apple-darwin
 
       - name: Collect desktop artifacts
         shell: bash
@@ -140,23 +150,29 @@ jobs:
           bundle_root="apps/desktop/src-tauri/target/release"
           staging="$bundle_root/ci-artifacts/$OS_LABEL"
 
-          bundle_artifacts_dir="$bundle_root/bundle"
-
-          if [ ! -d "$bundle_artifacts_dir" ]; then
-            echo "[updater] directory $bundle_artifacts_dir is missing"
-            exit 1
+          bundle_roots=("$bundle_root/bundle")
+          if [ "$OS_LABEL" = "macos-x64" ]; then
+            bundle_roots+=("apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle")
           fi
 
-          # Generate per-platform updater manifests in case the bundler did not emit latest.json
-          node apps/desktop/scripts/generate-updater-manifest.mjs --bundle-root "$bundle_artifacts_dir"
-
           manifest_paths=()
-          while IFS= read -r -d '' manifest_path; do
-            manifest_paths+=("$manifest_path")
-          done < <(find "$bundle_artifacts_dir" -type f -name 'latest.json' -print0)
+
+          for artifacts_dir in "${bundle_roots[@]}"; do
+            if [ ! -d "$artifacts_dir" ]; then
+              echo "[updater] directory $artifacts_dir is missing"
+              continue
+            fi
+
+            # Generate per-platform updater manifests in case the bundler did not emit latest.json
+            node apps/desktop/scripts/generate-updater-manifest.mjs --bundle-root "$artifacts_dir"
+
+            while IFS= read -r -d '' manifest_path; do
+              manifest_paths+=("$manifest_path")
+            done < <(find "$artifacts_dir" -type f -name 'latest.json' -print0)
+          done
 
           if [ ${#manifest_paths[@]} -eq 0 ]; then
-            echo "[updater] expected latest.json under $bundle_artifacts_dir"
+            echo "[updater] expected latest.json under ${bundle_roots[*]}"
             exit 1
           fi
 
@@ -212,8 +228,18 @@ jobs:
             done
           done
 
+          bundle_globs=("$BUNDLE_GLOB")
+          if [ "$OS_LABEL" = "macos-x64" ]; then
+            bundle_globs+=("apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg")
+          fi
+
+          bundle_files=()
           shopt -s nullglob
-          bundle_files=($BUNDLE_GLOB)
+          for glob in "${bundle_globs[@]}"; do
+            for file in $glob; do
+              bundle_files+=("$file")
+            done
+          done
           shopt -u nullglob
 
           if [ ${#bundle_files[@]} -eq 0 ]; then
