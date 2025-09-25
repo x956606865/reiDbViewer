@@ -93,7 +93,7 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/natsurei/reiDbView/releases/latest/download/latest.json"
+        "https://github.com/x956606865/reiDbViewer/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNGMUMyNjc0QjQ2NDQ5MEIKUldRTFNXUzBkQ1ljUDRJUm9WZTB4MFRRZUF4ZUpPQzRhc3VrNTFrWTZBajRqZ3prNnBIQXpaRDkK"
     }
