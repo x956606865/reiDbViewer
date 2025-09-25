@@ -9,6 +9,7 @@ import {
 } from '@tabler/icons-react';
 import ConnectionSwitcher from '@/components/ConnectionSwitcher';
 import { ActiveApiScriptRunIndicator } from '@/components/queries/api-scripts/ActiveRunIndicator';
+import { AppUpdateIndicator } from '@/components/AppUpdateIndicator';
 import appIcon from '../../src-tauri/icons/icon.png';
 
 type AppFrameProps = {
@@ -106,6 +107,7 @@ export function AppFrame({ active, onNavigate }: AppFrameProps) {
           </Tabs>
         </Group>
         <Group gap="sm" align="center">
+          <AppUpdateIndicator />
           <ActiveApiScriptRunIndicator onNavigateToQueries={() => onNavigate('queries')} />
           <ConnectionSwitcher />
         </Group>

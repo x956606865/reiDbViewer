@@ -6,6 +6,7 @@
     "paths": {
       "@/lib/*": ["src/lib/*"],
       "@/components/*": ["src/components/*"],
+      "@/hooks/*": ["src/hooks/*"],
       "@/routes/*": ["src/routes/*"],
       "@/services/*": ["src/services/*"]
     }
