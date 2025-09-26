@@ -208,7 +208,12 @@ jobs:
 
           for manifest_path in "${manifest_paths[@]}"; do
             manifest_dir="$(dirname "$manifest_path")"
-            cp "$manifest_path" "$staging/updater/"
+            platform_suffix="$(basename "$manifest_dir")"
+            manifest_dest="latest.json"
+            if [ -n "$platform_suffix" ]; then
+              manifest_dest="latest-${platform_suffix}.json"
+            fi
+            cp "$manifest_path" "$staging/updater/$manifest_dest"
 
             payloads_output="$(
               node -e '
@@ -245,7 +250,11 @@ jobs:
                 exit 1
               fi
 
-              dest="$staging/updater/$(basename "$payload")"
+              dest_name="$payload"
+              if [ -n "$platform_suffix" ]; then
+                dest_name="${platform_suffix}-${payload}"
+              fi
+              dest="$staging/updater/$dest_name"
               if [ -e "$dest" ]; then
                 echo "[updater] duplicate updater payload $(basename "$payload")"
                 exit 1
