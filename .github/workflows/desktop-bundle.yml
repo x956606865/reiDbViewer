@@ -132,24 +132,101 @@ jobs:
       - name: Build desktop bundles (host)
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri -- --no-bundle --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+        run: pnpm --filter @rei-db-view/desktop build:tauri
 
-      - name: Bundle desktop (host)
-        env:
-          NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri -- --bundles app,dmg --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+      - name: Rename macOS host artifacts
+        if: matrix.os_label == 'macos-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/desktop/src-tauri/target/release/bundle"
+          rename_with_suffix() {
+            local pattern="$1"
+            local suffix="$2"
+            shopt -s nullglob
+            for file in "$bundle_dir"/$pattern; do
+              [ -e "$file" ] || continue
+              local name="$(basename "$file")"
+              if [[ "$name" == *"-x86_64"* || "$name" == *"-aarch64"* ]]; then
+                if [[ "$name" == *"-${suffix}"* ]]; then
+                  continue
+                fi
+                if [[ "$suffix" = "aarch64" && "$name" == *"-x86_64"* ]]; then
+                  continue
+                fi
+                if [[ "$suffix" = "x86_64" && "$name" == *"-aarch64"* ]]; then
+                  continue
+                fi
+              fi
+              if [[ "$file" == *.tar.gz ]]; then
+                local base="${file%.tar.gz}"
+                if [[ "$base" == *"-${suffix}" ]]; then
+                  continue
+                fi
+                mv "$file" "${base}-${suffix}.tar.gz"
+              else
+                local base="${file%.*}"
+                local ext="${file##*.}"
+                if [[ "$base" == *"-${suffix}" ]]; then
+                  continue
+                fi
+                mv "$file" "${base}-${suffix}.${ext}"
+              fi
+            done
+            shopt -u nullglob
+          }
+          rename_with_suffix "macos/*.tar.gz" "x86_64"
+          rename_with_suffix "dmg/*.dmg" "x86_64"
 
       - name: Build desktop bundles (apple silicon)
         if: matrix.os_label == 'macos-x64'
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri -- --no-bundle --target aarch64-apple-darwin --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --target aarch64-apple-darwin
 
-      - name: Bundle desktop (apple silicon)
+      - name: Rename macOS apple-silicon artifacts
         if: matrix.os_label == 'macos-x64'
-        env:
-          NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri -- --bundles app,dmg --target aarch64-apple-darwin --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="apps/desktop/src-tauri/target/release/bundle"
+          rename_with_suffix() {
+            local pattern="$1"
+            local suffix="$2"
+            shopt -s nullglob
+            for file in "$bundle_dir"/$pattern; do
+              [ -e "$file" ] || continue
+              local name="$(basename "$file")"
+              if [[ "$name" == *"-x86_64"* || "$name" == *"-aarch64"* ]]; then
+                if [[ "$name" == *"-${suffix}"* ]]; then
+                  continue
+                fi
+                if [[ "$suffix" = "aarch64" && "$name" == *"-x86_64"* ]]; then
+                  continue
+                fi
+                if [[ "$suffix" = "x86_64" && "$name" == *"-aarch64"* ]]; then
+                  continue
+                fi
+              fi
+              if [[ "$file" == *.tar.gz ]]; then
+                local base="${file%.tar.gz}"
+                if [[ "$base" == *"-${suffix}" ]]; then
+                  continue
+                fi
+                mv "$file" "${base}-${suffix}.tar.gz"
+              else
+                local base="${file%.*}"
+                local ext="${file##*.}"
+                if [[ "$base" == *"-${suffix}" ]]; then
+                  continue
+                fi
+                mv "$file" "${base}-${suffix}.${ext}"
+              fi
+            done
+            shopt -u nullglob
+          }
+          rename_with_suffix "macos/*.tar.gz" "aarch64"
+          rename_with_suffix "dmg/*.dmg" "aarch64"
 
       - name: Collect desktop artifacts
         shell: bash
@@ -162,9 +239,6 @@ jobs:
           staging="$bundle_root/release/ci-artifacts/$OS_LABEL"
 
           bundle_roots=("$bundle_root/release/bundle")
-          if [ "$OS_LABEL" = "macos-x64" ]; then
-            bundle_roots+=("$bundle_root/aarch64-apple-darwin/release/bundle")
-          fi
 
           manifest_paths=()
 
