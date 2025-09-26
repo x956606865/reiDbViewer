@@ -163,7 +163,10 @@ async function main() {
         }
 
         const sanitizedPlatform = platformKey.replace(/[^a-z0-9_-]/gi, '-');
-        const baseOutputName = fileName.startsWith('updater-') ? fileName : `updater-${fileName}`;
+        const sanitizedBaseName = fileName.replace(/\s+/g, '-');
+        const baseOutputName = sanitizedBaseName.startsWith('updater-')
+          ? sanitizedBaseName
+          : `updater-${sanitizedBaseName}`;
         const outputFileName = baseOutputName.includes(sanitizedPlatform)
           ? baseOutputName
           : baseOutputName.replace('updater-', `updater-${sanitizedPlatform}-`);
