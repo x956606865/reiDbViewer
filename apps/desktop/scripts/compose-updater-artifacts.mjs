@@ -52,20 +52,20 @@ async function findUpdaterDirs(rootDir) {
   while (stack.length > 0) {
     const currentDir = stack.pop();
     const entries = await fs.readdir(currentDir, { withFileTypes: true });
-    let hasLatest = false;
+    const manifestFiles = [];
 
     for (const entry of entries) {
       if (entry.isSymbolicLink()) continue;
 
-      if (entry.isFile() && entry.name === 'latest.json') {
-        hasLatest = true;
+      if (entry.isFile() && /^latest.*\.json$/i.test(entry.name)) {
+        manifestFiles.push(entry.name);
       } else if (entry.isDirectory()) {
         stack.push(path.join(currentDir, entry.name));
       }
     }
 
-    if (hasLatest) {
-      result.push(currentDir);
+    for (const manifest of manifestFiles) {
+      result.push({ dir: currentDir, manifest });
     }
   }
 
@@ -93,22 +93,27 @@ async function main() {
     .filter((entry) => entry.isDirectory() && entry.name.startsWith('reidbview-desktop-'))
     .map((entry) => path.join(downloadsDir, entry.name));
 
-  const artifactDirSet = new Set();
+  const artifactEntryMap = new Map();
+  const addEntries = (entriesList) => {
+    for (const entry of entriesList) {
+      if (!entry) continue;
+      const resolvedDir = path.resolve(entry.dir);
+      const manifestKey = `${resolvedDir}::${entry.manifest}`;
+      if (path.resolve(entry.dir) === path.resolve(outputDir)) continue;
+      artifactEntryMap.set(manifestKey, { dir: resolvedDir, manifest: entry.manifest });
+    }
+  };
   for (const root of candidateRoots) {
     const updaterDirs = await findUpdaterDirs(root);
-    for (const dir of updaterDirs) {
-      artifactDirSet.add(dir);
-    }
+    addEntries(updaterDirs);
   }
 
-  if (artifactDirSet.size === 0) {
+  if (artifactEntryMap.size === 0) {
     const fallbackDirs = await findUpdaterDirs(downloadsDir);
-    for (const dir of fallbackDirs) {
-      artifactDirSet.add(dir);
-    }
+    addEntries(fallbackDirs);
   }
 
-  const artifactDirs = Array.from(artifactDirSet).filter((dir) => dir && dir !== outputDir);
+  const artifactDirs = Array.from(artifactEntryMap.values());
 
   if (artifactDirs.length === 0) {
     throw new Error(`No updater directories found under ${downloadsDir}`);
@@ -117,8 +122,8 @@ async function main() {
   const merged = { version: null, pub_date: null, notes: null, platforms: {} };
   const zipSources = new Map();
 
-  for (const updaterDir of artifactDirs) {
-    const manifestPath = path.join(updaterDir, 'latest.json');
+  for (const { dir: updaterDir, manifest: manifestFile } of artifactDirs) {
+    const manifestPath = path.join(updaterDir, manifestFile);
     try {
       const manifest = await readJson(manifestPath);
       const { version, pub_date: pubDate, notes, platforms } = manifest;
@@ -175,7 +180,7 @@ async function main() {
         zipSources.set(outputFileName, sourceZip);
       }
     } catch (error) {
-      throw new Error(`Failed processing updater manifest in ${updaterDir}: ${error.message}`);
+      throw new Error(`Failed processing updater manifest in ${manifestPath}: ${error.message}`);
     }
   }
 
