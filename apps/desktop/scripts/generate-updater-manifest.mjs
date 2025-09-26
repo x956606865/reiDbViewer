@@ -145,10 +145,14 @@ async function main() {
       if (!isLikelyUpdaterPayload(fileName)) return;
 
       const segments = payloadPath.split(path.sep);
+      const archiveSegment = segments.find((segment) => /^macos(-[A-Za-z0-9_]+)?$/.test(segment));
+      const archiveSuffix = archiveSegment?.split('-')[1];
+      const archiveArchHint = archiveSuffix ? extractArchHint(archiveSuffix) : null;
       const base = toPlatformBase(segments, process.platform);
       const kind = detectKind(base, fileName);
       const archHint =
         extractArchHint(fileName) ??
+        archiveArchHint ??
         extractArchFromSegments(segments) ??
         normalizeArch(process.env.TAURI_ENV_ARCH ?? process.arch);
       const platformKey = `${base}-${archHint}`;
