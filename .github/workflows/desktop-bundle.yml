@@ -132,13 +132,24 @@ jobs:
       - name: Build desktop bundles (host)
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --no-bundle --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+
+      - name: Bundle desktop (host)
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --bundles app,dmg --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
 
       - name: Build desktop bundles (apple silicon)
         if: matrix.os_label == 'macos-x64'
         env:
           NODE_OPTIONS: --max_old_space_size=4096
-        run: pnpm --filter @rei-db-view/desktop build:tauri -- --target aarch64-apple-darwin
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --no-bundle --target aarch64-apple-darwin --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
+
+      - name: Bundle desktop (apple silicon)
+        if: matrix.os_label == 'macos-x64'
+        env:
+          NODE_OPTIONS: --max_old_space_size=4096
+        run: pnpm --filter @rei-db-view/desktop build:tauri -- --bundles app,dmg --target aarch64-apple-darwin --target-dir $GITHUB_WORKSPACE/apps/desktop/src-tauri/target
 
       - name: Collect desktop artifacts
         shell: bash
