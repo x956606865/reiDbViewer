@@ -153,6 +153,7 @@ jobs:
         if: matrix.os_label == 'macos-x64'
         env:
           NODE_OPTIONS: --max_old_space_size=4096
+          SKIP_UI_BUILD: '1'
         run: pnpm --filter @rei-db-view/desktop build:tauri -- --target aarch64-apple-darwin
 
       - name: Separate macOS apple-silicon artifacts

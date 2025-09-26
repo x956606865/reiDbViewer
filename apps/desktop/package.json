@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "dev:tauri": "tauri dev",
     "check:updater-signing": "node ./scripts/ensure-updater-signing.mjs",
-    "prebundle:tauri": "pnpm run check:updater-signing && pnpm run build:ui",
+    "prebundle:tauri": "node ./scripts/prebundle-tauri.mjs",
     "build:tauri": "pnpm run check:updater-signing && tauri build",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
