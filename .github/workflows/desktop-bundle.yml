@@ -126,13 +126,19 @@ jobs:
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prebuild desktop UI bundle
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @rei-db-view/desktop prebundle:tauri
+
       - name: Install Apple Silicon Rust target
         if: matrix.os_label == 'macos-x64'
         run: rustup target add aarch64-apple-darwin
 
       - name: Build desktop bundles (host)
         env:
-          NODE_OPTIONS: --max_old_space_size=4096
+          NODE_OPTIONS: --max-old-space-size=4096
+          SKIP_UI_BUILD: '1'
         run: pnpm --filter @rei-db-view/desktop build:tauri
 
       - name: Separate macOS host artifacts
