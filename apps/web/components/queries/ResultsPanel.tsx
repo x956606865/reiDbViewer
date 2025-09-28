@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Code, LoadingOverlay, Paper, ScrollArea, Stack, Title } from "@mantine/core";
+import { Button, Code, Group, LoadingOverlay, Paper, ScrollArea, Stack, Title, Tooltip } from "@mantine/core";
+import { IconChartLine } from "@tabler/icons-react";
 import { DataGrid } from "../../components/DataGrid";
 
 export function ResultsPanel({
@@ -11,6 +12,8 @@ export function ResultsPanel({
   gridCols,
   rows,
   footer,
+  chartEnabled = false,
+  onOpenChart,
 }: {
   isExecuting: boolean;
   top?: React.ReactNode;
@@ -18,7 +21,11 @@ export function ResultsPanel({
   gridCols: string[];
   rows: Array<Record<string, unknown>>;
   footer?: React.ReactNode;
+  chartEnabled?: boolean;
+  onOpenChart?: () => void;
 }) {
+  const showChartButton = typeof onOpenChart === "function";
+
   return (
     <div style={{ position: "relative" }}>
       <LoadingOverlay visible={isExecuting} zIndex={1000} overlayProps={{ radius: "sm", blur: 2 }} />
@@ -30,7 +37,22 @@ export function ResultsPanel({
           </Paper>
         )}
         <Paper withBorder p="xs">
-          <Title order={4}>查询结果</Title>
+          <Group justify="space-between" align="center">
+            <Title order={4}>查询结果</Title>
+            {showChartButton && !textResult && (
+              <Tooltip label="仅基于当前页的数据绘制" position="left" withArrow>
+                <Button
+                  size="xs"
+                  variant="default"
+                  leftSection={<IconChartLine size={16} />}
+                  onClick={onOpenChart}
+                  disabled={!chartEnabled || rows.length === 0}
+                >
+                  折线图预览
+                </Button>
+              </Tooltip>
+            )}
+          </Group>
           <div style={{ marginTop: 8 }}>
             {textResult ? (
               <Paper withBorder p="sm">

@@ -48,6 +48,8 @@ export type QueryRunnerLayoutResults = {
   timing: QueryTimingState | null;
   columnWidths?: Record<string, number>;
   onColumnWidthsChange?: (next: Record<string, number>) => void;
+  chartEnabled?: boolean;
+  onOpenChart?: () => void;
 };
 
 export type QueryRunnerLayoutProps = {
@@ -112,6 +114,8 @@ export function QueryRunnerLayout({
         timing={results.timing}
         columnWidths={results.columnWidths}
         onColumnWidthsChange={results.onColumnWidthsChange}
+        chartEnabled={results.chartEnabled}
+        onOpenChart={results.onOpenChart}
         footer={
           <PaginationBar
             visible={pagination.enabled && !results.textResult}

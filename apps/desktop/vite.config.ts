@@ -15,6 +15,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@rei-db-view/shared': path.resolve(__dirname, '../shared'),
     },
   },
 })

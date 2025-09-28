@@ -3,6 +3,7 @@
 import React from "react";
 import {
   ActionIcon,
+  Button,
   Code,
   CopyButton,
   Group,
@@ -15,7 +16,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { ResizableDataGrid } from "../../components/ResizableDataGrid";
-import { IconCopy } from "@tabler/icons-react";
+import { IconChartLine, IconCopy } from "@tabler/icons-react";
 import type { QueryTimingState } from "./types";
 
 const formatDuration = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`);
@@ -41,6 +42,8 @@ export function ResultsPanel({
   timing,
   columnWidths,
   onColumnWidthsChange,
+  chartEnabled = false,
+  onOpenChart,
 }: {
   isExecuting: boolean;
   top?: React.ReactNode;
@@ -51,12 +54,15 @@ export function ResultsPanel({
   timing?: QueryTimingState | null;
   columnWidths?: Record<string, number>;
   onColumnWidthsChange?: (next: Record<string, number>) => void;
+  chartEnabled?: boolean;
+  onOpenChart?: () => void;
 }) {
   const durationLabel = buildTimingLabel(timing);
   const textPlaceholder = "（无返回）";
   const trimmedText = (textResult ?? "").trim();
   const hasCopyableText = trimmedText.length > 0;
   const displayText = textResult && textResult.length > 0 ? textResult : textPlaceholder;
+  const showChartButton = typeof onOpenChart === "function";
 
   return (
     <div style={{ position: "relative" }}>
@@ -71,11 +77,26 @@ export function ResultsPanel({
         <Paper withBorder p="xs">
           <Group justify="space-between" align="center" gap="xs">
             <Title order={4}>查询结果</Title>
-            {durationLabel ? (
-              <Text size="xs" c="dimmed">
-                耗时 {durationLabel}
-              </Text>
-            ) : null}
+            <Group gap="xs" align="center">
+              {durationLabel ? (
+                <Text size="xs" c="dimmed">
+                  耗时 {durationLabel}
+                </Text>
+              ) : null}
+              {showChartButton && !textResult && (
+                <Tooltip label="仅基于当前页的数据绘制" position="left" withArrow>
+                  <Button
+                    size="xs"
+                    variant="default"
+                    leftSection={<IconChartLine size={16} />}
+                    onClick={onOpenChart}
+                    disabled={!chartEnabled || rows.length === 0}
+                  >
+                    折线图预览
+                  </Button>
+                </Tooltip>
+              )}
+            </Group>
           </Group>
           <div style={{ marginTop: 8 }}>
             {textResult ? (
