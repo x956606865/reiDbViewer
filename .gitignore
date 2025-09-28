@@ -15,4 +15,6 @@ apps/desktop/src-tauri/app.private.key
 apps/desktop/src-tauri/app.private.key.*
 apps/desktop/apps/desktop/src-tauri/app.private.key
 AGENTS.md
-AGENTS.md
+
+docs/design/
+docs/desktop/
