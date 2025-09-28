@@ -14,3 +14,4 @@ apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/app.private.key
 apps/desktop/src-tauri/app.private.key.*
 apps/desktop/apps/desktop/src-tauri/app.private.key
+AGENTS.md
