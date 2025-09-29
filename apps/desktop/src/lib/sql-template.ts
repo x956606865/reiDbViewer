@@ -761,6 +761,12 @@ export function compileSql(
 
   const applyTypeCast = (placeholder: string, def: SavedQueryVariableDef): string => {
     switch (def.type) {
+      case 'date':
+        return `(${placeholder})::date`
+      case 'timestamp':
+        return `(${placeholder})::timestamptz`
+      case 'json':
+        return `(${placeholder})::jsonb`
       case 'uuid':
         return `(${placeholder})::uuid`
       default:
